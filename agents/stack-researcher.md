@@ -50,4 +50,6 @@ sources:
 
 Budget: at most 4 searches and 4 fetches per candidate; at most 40 tool calls total. If a candidate exhausts its budget without an official install command, write "no install command verified" rather than guessing.
 
+- **No meta commentary** in anything you write: no "the user asked", "as requested", "I decided", "after reviewing". State the fact, the decision, or the reason. `.claude/conventions.md` "Writing docs" applies to every file an agent produces.
+
 Reply with only: `research written: <N> candidates, <M> sources`.

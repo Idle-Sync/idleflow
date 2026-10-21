@@ -22,6 +22,16 @@ idleflow run. Commit this file. Edit it by hand whenever a decision changes, or 
 - **Match the repo.** When this file and the surrounding code disagree, the surrounding code
   wins inside an existing module; this file wins for new modules.
 
+## Writing docs, commits and comments (always on)
+
+- **No meta commentary.** Nothing in this repo narrates how it came to be: no "the user
+  asked", "as requested", "per our discussion", "I'll now", "after review". State the fact,
+  the decision, or the reason. Applies to every `.md`, commit message, pull request, issue,
+  session note, research file and code comment. The conformance reviewer rejects on it.
+- **Docs describe the code as it is.** A change that makes a sentence wrong fixes the
+  sentence in the same commit. Plans live in `prd.md` and `progress.md` "Next", nowhere else.
+- **Attribution and releases** follow the `co_author_claude:` and `releases:` lines in `CLAUDE.md`.
+
 ## Readability mode
 
 mode: unset

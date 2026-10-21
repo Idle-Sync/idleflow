@@ -51,6 +51,40 @@ See `.claude/conventions.md`. The short version: the simplest thing that is corr
 robust, plain names a newcomer can read, one idea per function, failures handled where they
 happen, boring over clever.
 
+## No meta commentary, anywhere
+
+No file in this repo narrates how it came to be. Not in docs, commit messages, pull requests,
+issues, code comments, session notes or research files. Banned: "the user asked", "as
+requested", "per our discussion", "user said so", "I'll now", "using skill X", "after
+reviewing", "Claude decided". Write the fact, the decision, or the reason. A session note says
+"Switched auth to cookie sessions: the token refresh path leaked on logout", not "The user
+wanted cookies so I switched". Reviewers reject a diff for this the same as for a bug.
+
+## Git attribution
+
+co_author_claude: <yes|no>
+
+`no`: commits carry only the human's identity. Never add a `Co-Authored-By: Claude` trailer
+and never add a "Generated with Claude Code" footer to a commit, pull request or anything else.
+`yes`: every commit an agent makes ends with `Co-Authored-By: Claude <noreply@anthropic.com>`;
+still no footers anywhere.
+
+## Releases
+
+releases: <github-tagged | none>
+
+`github-tagged`: semantic versions. When a `prd.md` milestone completes and the suite is green,
+tag `vX.Y.Z` (minor bump per milestone, patch for fixes, major when a public interface breaks)
+and publish a GitHub release whose notes are that milestone's `progress.md` entries. Nothing is
+tagged automatically; a run that completes a milestone proposes the tag and a human runs:
+
+```
+git tag -a vX.Y.Z -m "vX.Y.Z: <milestone>" && git push --tags
+gh release create vX.Y.Z --title "vX.Y.Z — <milestone>" --notes-file <notes>
+```
+
+`none`: local git only; nothing is tagged. Change this line when that changes.
+
 ## Commands
 
 - Install: `<command>`

@@ -134,7 +134,9 @@ After the last merge, run the plan's "Verification after merge" command. If it f
 
 Spawn `idleflow-retro` with the run directory path and the `docs:` value from `.claude/conventions.md`. When `docs: yes` it also appends this run to `progress.md` and rewrites `index.md`. Then `bash $RUN finish done`. Remove worktrees: `bash $RUN wt list` → `RUN wt rm` each.
 
-Final message to the human, and nothing more: one line per task (id, title, lines, tests), the run id, whether a lesson was added, whether `progress.md` / `index.md` were updated, and any config proposal the retro wrote. If the merge touched a public interface or a schema, say so in one line. Do not summarise the debate; the files are in `.claude/runs/<ID>/debate/` if they want it.
+Final message to the human, and nothing more: one line per task (id, title, lines, tests), the run id, whether a lesson was added, whether `progress.md` / `index.md` were updated, and any config proposal the retro wrote. If `CLAUDE.md` says `releases: github-tagged` and this run completed a `prd.md` milestone (every "Must do" item of that milestone now has a landed task), add one line with the proposed tag and the two commands from `CLAUDE.md` "Releases"; do not tag or push yourself.
+
+Commit messages in this run follow `CLAUDE.md`: add the `Co-Authored-By: Claude <noreply@anthropic.com>` trailer only when `co_author_claude: yes`; never add a "Generated with Claude Code" footer; no meta commentary in any message or file. If the merge touched a public interface or a schema, say so in one line. Do not summarise the debate; the files are in `.claude/runs/<ID>/debate/` if they want it.
 
 ---
 

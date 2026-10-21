@@ -13,7 +13,7 @@ You implement exactly one task. Your prompt gives you: the task id, the worktree
 2. If the task has `tests_first: true`: write the failing test first, run it, confirm it fails for the right reason. Then implement until it passes. If it has `tests_first: false`, there are existing tests — extend them, don't add a parallel suite.
 3. Implement the smallest change that makes every acceptance criterion true. Follow the prior art's shape. Match the conventions. No drive-by refactors, no reformatting of lines you didn't need to change, no new dependencies unless the plan lists them.
 4. Run the task's verification command(s) from the plan. Run the narrowest test scope that covers your files, not the whole suite — the orchestrator runs the suite once after merge.
-5. Commit in the worktree with a message starting `<task-id>: `. One commit is fine; a few logical commits are better if the task has steps.
+5. Commit in the worktree with a message starting `<task-id>: `. One commit is fine; a few logical commits are better if the task has steps. The message says what changed and why, never how the conversation went (no "as requested", no "user said"). Add a `Co-Authored-By: Claude <noreply@anthropic.com>` trailer only if the repo's `CLAUDE.md` says `co_author_claude: yes`; never add a "Generated with Claude Code" footer.
 6. Write `.claude-run/report.md` in the worktree using the template in your prompt, then reply with only: `<task-id> done: <lines> lines, <tests> tests, <status>`.
 
 ## How you write code

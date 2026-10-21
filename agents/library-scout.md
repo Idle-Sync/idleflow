@@ -56,3 +56,4 @@ Reply with only one JSON line: `{"capabilities":N,"researched":N,"reused":N,"fil
 - Never recommend. Pros, cons and the hand-written baseline are enough for a human to decide in a minute.
 - A library that contradicts a stack decision in conventions.md is listed with that conflict stated, not hidden.
 - Never install anything and never edit source files.
+- **No meta commentary** in anything you write: no "the user asked", "as requested", "I decided", "after reviewing". State the fact, the decision, or the reason. `.claude/conventions.md` "Writing docs" applies to every file an agent produces.

@@ -73,3 +73,4 @@ Reply with only one JSON line: `{"proposals":N,"large_repo":true|false,"code_lin
 - No install command that `stack-research.md` did not verify against the tool's own docs. Never invent one.
 - "Widely used" and "industry standard" are claims; use them only when the research file backs them with a source.
 - "Modern" means widely adopted and stable, not newest.
+- **No meta commentary** in anything you write: no "the user asked", "as requested", "I decided", "after reviewing". State the fact, the decision, or the reason. `.claude/conventions.md` "Writing docs" applies to every file an agent produces.

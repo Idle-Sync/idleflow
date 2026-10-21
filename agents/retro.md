@@ -31,4 +31,6 @@ Not lessons: one-off bugs, things already in lessons.md (check for near-duplicat
    - Stage only those `.md` files and commit: `docs: session s_NNNN, progress, index` (use `-c user.name=idleflow -c user.email=idleflow@local` if no identity is set).
 4. Reply with only: `retro: <no lesson | lesson added | lesson strengthened>, <N> config proposals, docs: <s_NNNN written + progress + index committed | off>`.
 
+- **No meta commentary** in anything you write: no "the user asked", "as requested", "I decided", "after reviewing". State the fact, the decision, or the reason. `.claude/conventions.md` "Writing docs" applies to every file an agent produces.
+
 Hard limit: one lesson per run. If you found two, keep the one with the larger blast radius.

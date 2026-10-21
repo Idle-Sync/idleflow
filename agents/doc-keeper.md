@@ -30,3 +30,4 @@ Reply with only one line: `docs: <N> claims checked, <M> fixed, <committed <shor
 - A doc never gets a claim that the code does not back. "Will support X" belongs in `prd.md` under "Nice to have" or in `progress.md` under "Next", nowhere else.
 - Never touch files outside `*.md`. Never run tests, builds, installs or anything that writes outside the repo.
 - Never rewrite for style. Stale means wrong, not ugly.
+- **No meta commentary** in anything you write: no "the user asked", "as requested", "I decided", "after reviewing". State the fact, the decision, or the reason. `.claude/conventions.md` "Writing docs" applies to every file an agent produces.

@@ -11,10 +11,13 @@ issue ─► explore (Sonnet) ─► classify S/M/L (Haiku) ─► plan (Fable)
       ─► merge in plan order, run suite ─► retro writes ≤1 lesson (Haiku)
 ```
 
-Around the pipeline, three things that keep a repo honest:
+For an empty folder, `/idleflow:init` runs the first session instead: a four-round brainstorm, a **market-research** agent (competitors, what their users complain about, table stakes, a viability verdict, every claim with a URL) into `docs/market-research.md`, the repo's rules (readability mode, whether Claude is co-authored on commits, tagged GitHub releases or not, docs in git or not), stack and library research, a PRD written by the planner and approved by the human, the project docs, the first commit and optionally the GitHub repo. It hands off to `/idleflow:feature "Milestone 1"`.
+
+Around the pipeline, four things that keep a repo honest:
 
 - **Code style is a contract, not advice.** `.claude/conventions.md` (committed) holds the KISS rules — simplest correct thing, plain names a newcomer can read, one idea per function, failures handled where they happen — and a **readability mode** (`explicit` / `idiomatic` / `balanced`) that decides whether a list comprehension or a loop is the right shape. The first run asks once, with pros and cons; `/idleflow:style` changes it later. Implementers write to it and the conformance reviewer rejects on it.
 - **Research before code.** On greenfield and M/L runs, a **stack advisor** scans the repo and the machine (pyproject vs requirements.txt, venv, Docker present, lockfiles, linters, CI), a **researcher** checks several internet sources per candidate with a URL on every claim, and the human accepts or declines each proposal. A **library scout** does the same for the capabilities the change needs (canvas animation → p5.js / three.js, not hand-rolled canvas code), writing `docs/research/<capability>.md`. Repos at or above `LARGE_REPO_LOC` hand-written code lines get a proposal for a code map (Graphify, Serena MCP, Sourcegraph, ctags).
+- **No meta commentary, ever.** The generated `CLAUDE.md` and `.claude/conventions.md` ban process narration ("the user asked", "as requested", "I'll now") from every doc, commit, PR, comment and note in the repo, and record whether commits carry a `Co-Authored-By: Claude` trailer (`co_author_claude: yes|no`; footers never). The conformance reviewer rejects on both.
 - **No doc goes stale.** With project docs on (automatic for greenfield), the repo gets `prd.md`, `progress.md`, `index.md`, a `CLAUDE.md` block and `docs/sessions/`. A **doc-keeper** runs before every run, checks each claim in those docs against the code, fixes what is stale and commits. The retro writes a session note and updates progress and index after every run. The generated `CLAUDE.md` makes plain Claude Code sessions follow the same start-and-end protocol.
 
 ## Decisions baked in (and where to change them)
@@ -34,6 +37,8 @@ Around the pipeline, three things that keep a repo honest:
 | Readability mode | asked once per repo; `balanced` when nobody answers | `.claude/conventions.md`, `commands/style.md` |
 | Stack / library research | greenfield or M/L; ≥3 sources per candidate, URL on every claim | `agents/stack-advisor.md`, `agents/stack-researcher.md`, `agents/library-scout.md` |
 | Large repo | ≥ 100 000 hand-written code lines → code-map proposal | `LARGE_REPO_LOC`, `run.sh loc` |
+| Attribution, releases, meta commentary | asked by `/idleflow:init`, recorded in `CLAUDE.md` | `templates/CLAUDE.md`, `agents/review-conform.md` §4c |
+| Market research | `/idleflow:init` only; verdict viable / viable-if / crowded / weak | `agents/market-researcher.md` |
 | Project docs | on for greenfield; doc-keeper before, retro after every run | `docs:` in conventions.md, `agents/doc-keeper.md`, `agents/retro.md`, `templates/CLAUDE.md` |
 
 ## Layout
@@ -43,6 +48,7 @@ Around the pipeline, three things that keep a repo honest:
 .claude-plugin/marketplace.json lets the repo itself be added as a marketplace
 commands/feature.md             the orchestrator — the whole procedure lives here
 commands/fix.md                 same, bug-biased
+commands/init.md                first session for an empty folder: brainstorm, market research, rules, PRD, first commit
 commands/style.md               set or change the readability mode
 agents/                         one file per role; frontmatter sets the model
 hooks/hooks.json                PreToolUse → ownership-guard

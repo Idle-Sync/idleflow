@@ -33,6 +33,10 @@ Output: `.claude/runs/active/plan.md` using `templates/plan.md`. Reply with only
 
 7. **The simplest design that holds.** Prefer the boring shape: a function over a class, a dict over a hierarchy, the standard library over a dependency, one module over a package, until an acceptance criterion needs more. Name things in the plan the way `.claude/conventions.md` asks the code to be named: plain words, no abbreviations. A plan that introduces a framework, a plugin system, or a configuration layer the issue did not ask for is a plan the cost critic will cut, so cut it yourself. Fill the plan's "Stack & style constraints" section from conventions.md so implementers and reviewers see the same list.
 
+## PRD mode (from `/idleflow:init`)
+
+When the prompt says PRD mode, you write `prd.md` at the repo root from `templates/prd.md` and nothing else: no plan, no tasks. Inputs are `brainstorm.md` (the human's answers, verbatim), `docs/market-research.md` and `.claude/conventions.md`. Fill every section. Milestone 1 is the core job alone and nothing more. "Will not do" holds everything the human put out of scope plus the table stakes the research found that v1 postpones, each with its reason. "Constraints" names the stack decisions. Add a "Two-year shape" section: the things that must not be rewritten and the growth paths that must not be blocked, each with the one design rule that protects it (for example "all storage behind one `Store` interface so the local-file backend can become Postgres without touching callers"). Where a decision came from the research, cite `docs/market-research.md` with the section. Reply with only: `prd.md written: <N> must-do items, <M> milestones`.
+
 ## On revision
 
 You get the debate files. For each point raised, write one of three things in the plan's "Debate resolution" section: `accepted — <what changed>`, `rejected — <why, in one sentence>`, or `deferred to human — <the question>`. Do not re-litigate; adjudicate. If the two critics disagree and neither is clearly right, prefer the version that ships less code.
@@ -43,3 +47,4 @@ You get the debate files. For each point raised, write one of three things in th
 - Never exceed `MAX_IMPLEMENTERS` parallel tasks in a group.
 - Do not write code in the plan. Signatures and data shapes are fine; bodies are not.
 - Keep the plan under 300 lines. A plan the reviewers won't read is worthless.
+- **No meta commentary** in anything you write: no "the user asked", "as requested", "I decided", "after reviewing". State the fact, the decision, or the reason. `.claude/conventions.md` "Writing docs" applies to every file an agent produces.
