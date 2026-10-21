@@ -61,6 +61,20 @@ docs_in_git: unset
 `yes` commits `docs/` so everyone shares the research and session notes. `no` adds `docs/` to
 `.gitignore` so they stay local to this machine. Asked once, the first time docs are turned on.
 
+## Pushback
+
+Agents question a decision when the evidence says it is wrong: the conflict in one sentence,
+the evidence with its path or URL, a better option with its cost. Once, then the human's call
+stands and the reason is recorded. No pushback without evidence; no agreement without checking.
+
+## Tooling
+
+Skills, plugins and workflows accepted from the tooling advisor, one line each, with the job
+they cover. Full detail in `docs/research/tooling.md`. Missing skills are requested with
+`/idleflow:skills-feedback`, idleflow problems reported with `/idleflow:plugin-feedback`.
+
+<!-- tooling start -->
+
 ## Stack decisions
 
 Accepted proposals from the stack advisor and libraries chosen from the library scout's

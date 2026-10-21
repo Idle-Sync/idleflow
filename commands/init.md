@@ -46,6 +46,8 @@ Round D — future-proofing
 - How you will know it is working: the measurable signal (users, time saved, revenue, a test passing).
 - What is explicitly out of scope for v1.
 
+**Push back when an answer is wrong.** You are not a yes machine. After each round, if an answer conflicts with something you can point at (an earlier answer, a well-known constraint of the chosen platform, a licence, a number that does not add up), say so before the next round: the conflict in one sentence, the evidence, a better option with its cost. Once. If the human keeps their answer, write both the answer and the reason into `brainstorm.md` and move on. Do the same after the market research (step 2), the stack proposals (step 4) and the PRD (step 5), where the evidence is the research file. No pushback without something to cite.
+
 After the rounds, write a ten-line summary at the top of `brainstorm.md` (what, who, core job, platform, data, integrations, stack vetoes, constraints, growth paths, success signal) and show it to the human. Ask: **Looks right** / **Change something** (free text) / **Start over**. Loop on "Change something" until "Looks right".
 
 ## 2. Market research (Sonnet)
@@ -66,6 +68,14 @@ Write the answers: `mode:` and `docs_in_git:` in `.claude/conventions.md` (set `
 ## 4. Stack and libraries
 
 Run steps **2b** and **2c** of `${CLAUDE_PLUGIN_ROOT}/commands/feature.md` exactly as written there (read that file now), with `greenfield` true and `brainstorm.md` standing in for `context.md` and the issue. The stack advisor scans an empty folder, so its proposals come from the brainstorm (language, platform, hosting) and the machine (Docker, uv, pnpm present?), the researcher grounds them, the human accepts or declines; the library scout researches the capabilities the core job needs. Both write under `docs/research/`.
+
+## 4b. Tooling: skills, plugins, workflows (Sonnet, one question)
+
+Spawn `idleflow-tooling-advisor` with `brainstorm.md`, `.claude/conventions.md`, output paths `.claude/runs/active/tooling.md` and `docs/research/tooling.md`. It inventories installed plugins and skills, checks the Idle-Sync/skills catalogue against what is installed, and proposes the skills, marketplace plugins and workflows this project will use often, plus the skills that do not exist yet. Wait.
+
+Read `tooling.md`. Ask once with AskUserQuestion, `multiSelect: true`, one option per proposal (label = name and kind; description = job, one con, install command or "installed"). Defaults first. For each accepted item: run its `install:` command exactly as the advisor quoted it (plugins via `claude plugin install …`, Idle-Sync skills via the catalogue's documented method); if a command fails, show the error and the command and move on. Append accepted items under "Tooling" in `.claude/conventions.md`: `- <name> (<kind>): <job>`. If "Skills that do not exist yet" is non-empty, list them and say each can be requested with `/idleflow:skills-feedback "<line>"`; do not open issues unasked.
+
+Tell the human: `Tooling: <N> installed, <M> declined, <K> skills to request.`
 
 ## 5. PRD (Fable)
 
@@ -113,3 +123,5 @@ Then ask: **Start milestone 1 now** / **Stop here**. On "Start", run `${CLAUDE_P
 - Never put meta commentary in any file you create: no "the user asked", "as requested", "I decided". State the decision.
 - Never add `Co-Authored-By: Claude` unless `co_author_claude: yes` was chosen; never add "Generated with Claude Code" footers at all.
 - Never create the GitHub repo without the human confirming owner, name and visibility in this session.
+- Never install a plugin or skill the human did not accept by name in this session.
+- Never agree with an answer the evidence contradicts without saying so once, with the evidence.

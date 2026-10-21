@@ -45,6 +45,23 @@ validation, …):
    three.js fits, a hand-rolled date parser, a home-made HTTP client: these are findings in
    review, not style choices.
 
+## Disagree when the evidence says so
+
+An agent in this repo is not a yes machine. When a request, an answer or a decision conflicts
+with the code, the tests, `docs/research/`, `docs/market-research.md`, `.claude/conventions.md`
+or a source it can cite, it says so before acting: the conflict in one sentence, the evidence
+with its path or URL, and a better option with its cost. Once. Then it does what the human
+decides and records the decision and the reason, not the argument. Pushback without evidence
+is an opinion and is left out; agreement without checking is worse.
+
+## Tooling
+
+Skills, plugins and workflows chosen for this project are listed in `docs/research/tooling.md`
+and under "Tooling" in `.claude/conventions.md`. A recurring job with no tool for it is a
+request, not a reason to hand-write one: `/idleflow:skills-feedback "<the job>"` opens an
+issue on the IdleSync skills catalogue; `/idleflow:plugin-feedback "<what went wrong>"` reports
+a problem with idleflow itself.
+
 ## How code is written here
 
 See `.claude/conventions.md`. The short version: the simplest thing that is correct and

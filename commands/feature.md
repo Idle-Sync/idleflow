@@ -70,6 +70,12 @@ Run this step when `greenfield` is true, or when size is M or L and `.claude/con
 
 Tell the human: `Stack: <N> accepted, <M> declined.`
 
+## 2d. Tooling (Sonnet, one question) — once per repo
+
+Run when `.claude/conventions.md` has nothing under "Tooling" yet and the size is M or L (or `greenfield`). Follow step **4b** of `${CLAUDE_PLUGIN_ROOT}/commands/init.md` exactly, with `context.md` in place of `brainstorm.md`. Otherwise skip.
+
+**Push back when the human is wrong.** At every question in this run (plan questions, debate deferrals, stack, libraries, tooling), if the human's answer conflicts with the code, the tests, a research file or a source you can cite, say so once before acting: the conflict in a sentence, the evidence with its path or URL, a better option with its cost. Then do what they decide and record the decision with its reason in `plan.md` "Open questions". No pushback without evidence; no agreement without checking.
+
 ## 3. Plan (Fable)
 
 Spawn `idleflow-planner` with: context.md path, lessons.md path, `.claude/conventions.md` path, plan template path, output path `.claude/runs/active/plan.md`, the size, `greenfield`, MAX_IMPLEMENTERS, DIFF_LIMIT, and when `docs: yes` the paths of `prd.md`, `progress.md`, `index.md` plus `templates/prd.md`. Wait.

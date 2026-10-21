@@ -13,11 +13,14 @@ issue ─► explore (Sonnet) ─► classify S/M/L (Haiku) ─► plan (Fable)
 
 For an empty folder, `/idleflow:init` runs the first session instead: a four-round brainstorm, a **market-research** agent (competitors, what their users complain about, table stakes, a viability verdict, every claim with a URL) into `docs/market-research.md`, the repo's rules (readability mode, whether Claude is co-authored on commits, tagged GitHub releases or not, docs in git or not), stack and library research, a PRD written by the planner and approved by the human, the project docs, the first commit and optionally the GitHub repo. It hands off to `/idleflow:feature "Milestone 1"`.
 
-Around the pipeline, four things that keep a repo honest:
+Around the pipeline, five things that keep a repo honest:
+
+- **Not a yes machine.** When a request or an answer conflicts with the code, the tests, a research file or a source an agent can cite, it says so once, with the evidence and a better option, then does what the human decides and records why. Pushback without evidence is left out; agreement without checking is rejected in review.
 
 - **Code style is a contract, not advice.** `.claude/conventions.md` (committed) holds the KISS rules — simplest correct thing, plain names a newcomer can read, one idea per function, failures handled where they happen — and a **readability mode** (`explicit` / `idiomatic` / `balanced`) that decides whether a list comprehension or a loop is the right shape. The first run asks once, with pros and cons; `/idleflow:style` changes it later. Implementers write to it and the conformance reviewer rejects on it.
 - **Research before code.** On greenfield and M/L runs, a **stack advisor** scans the repo and the machine (pyproject vs requirements.txt, venv, Docker present, lockfiles, linters, CI), a **researcher** checks several internet sources per candidate with a URL on every claim, and the human accepts or declines each proposal. A **library scout** does the same for the capabilities the change needs (canvas animation → p5.js / three.js, not hand-rolled canvas code), writing `docs/research/<capability>.md`. Repos at or above `LARGE_REPO_LOC` hand-written code lines get a proposal for a code map (Graphify, Serena MCP, Sourcegraph, ctags).
 - **No meta commentary, ever.** The generated `CLAUDE.md` and `.claude/conventions.md` ban process narration ("the user asked", "as requested", "I'll now") from every doc, commit, PR, comment and note in the repo, and record whether commits carry a `Co-Authored-By: Claude` trailer (`co_author_claude: yes|no`; footers never). The conformance reviewer rejects on both.
+- **The right tooling, not hand-rolled.** A tooling advisor inventories installed plugins and skills, checks the [Idle-Sync/skills](https://github.com/Idle-Sync/skills) catalogue against what is installed, and proposes the skills, marketplace plugins and workflows the project will use often; accepted items are installed, missing ones become `/idleflow:skills-feedback` requests. `/idleflow:plugin-feedback` reports idleflow's own bugs with the run's evidence attached.
 - **No doc goes stale.** With project docs on (automatic for greenfield), the repo gets `prd.md`, `progress.md`, `index.md`, a `CLAUDE.md` block and `docs/sessions/`. A **doc-keeper** runs before every run, checks each claim in those docs against the code, fixes what is stale and commits. The retro writes a session note and updates progress and index after every run. The generated `CLAUDE.md` makes plain Claude Code sessions follow the same start-and-end protocol.
 
 ## Decisions baked in (and where to change them)
@@ -39,6 +42,8 @@ Around the pipeline, four things that keep a repo honest:
 | Large repo | ≥ 100 000 hand-written code lines → code-map proposal | `LARGE_REPO_LOC`, `run.sh loc` |
 | Attribution, releases, meta commentary | asked by `/idleflow:init`, recorded in `CLAUDE.md` | `templates/CLAUDE.md`, `agents/review-conform.md` §4c |
 | Market research | `/idleflow:init` only; verdict viable / viable-if / crowded / weak | `agents/market-researcher.md` |
+| Tooling | skills from Idle-Sync/skills, marketplace plugins, workflows; installed only when accepted by name | `agents/tooling-advisor.md`, "Tooling" in conventions.md |
+| Pushback | once, with evidence, then the human's call stands | `templates/CLAUDE.md`, planner, both orchestrators |
 | Project docs | on for greenfield; doc-keeper before, retro after every run | `docs:` in conventions.md, `agents/doc-keeper.md`, `agents/retro.md`, `templates/CLAUDE.md` |
 
 ## Layout
@@ -50,6 +55,8 @@ commands/feature.md             the orchestrator — the whole procedure lives h
 commands/fix.md                 same, bug-biased
 commands/init.md                first session for an empty folder: brainstorm, market research, rules, PRD, first commit
 commands/style.md               set or change the readability mode
+commands/skills-feedback.md     open a skill request on github.com/Idle-Sync/skills
+commands/plugin-feedback.md     report a bug or idea about idleflow on github.com/Idle-Sync/idleflow
 agents/                         one file per role; frontmatter sets the model
 hooks/hooks.json                PreToolUse → ownership-guard
 scripts/run.sh                  run lifecycle: new / wt / own / set / inc / gate / merge / finish / conf
