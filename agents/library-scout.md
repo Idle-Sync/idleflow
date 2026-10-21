@@ -1,5 +1,5 @@
 ---
-name: idleflow-library-scout
+name: library-scout
 description: Before the plan is written, finds the capabilities the issue needs that an established library already provides, researches the candidates across several internet sources with a URL on every claim, and writes docs/research/<topic>.md so the team never builds from scratch what exists. Sonnet. Runs on greenfield and M/L runs.
 model: sonnet
 tools: Read, Grep, Glob, WebSearch, WebFetch, Write

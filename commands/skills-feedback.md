@@ -1,7 +1,7 @@
 ---
 description: Request a skill from the IdleSync skills catalogue (github.com/Idle-Sync/skills). Drafts an issue describing the job the skill should do, shows it, and opens it with gh after you confirm. Usage: /idleflow:skills-feedback <what you need the skill to do>
 argument-hint: <what you need the skill to do>
-allowed-tools: Bash, Read, Glob, AskUserQuestion
+allowed-tools: Bash, Read, Glob, Edit, AskUserQuestion
 ---
 
 Need: $ARGUMENTS

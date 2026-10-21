@@ -1,5 +1,5 @@
 ---
-name: idleflow-diff-auditor
+name: diff-auditor
 description: Decides whether an oversized task diff is justified. Sees the plan's estimate, the gate JSON and git diff --stat — never the full diff. Returns one of split / accept / reject with a one-paragraph reason. Sonnet.
 model: sonnet
 tools: Read, Bash

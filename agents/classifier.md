@@ -1,5 +1,5 @@
 ---
-name: idleflow-classifier
+name: classifier
 description: Classifies an issue as S, M or L from context.md so idleflow can skip ceremony on small changes. Cheap and fast; may be overridden later by the diff gate.
 model: haiku
 tools: Read

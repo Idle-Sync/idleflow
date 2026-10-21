@@ -52,8 +52,9 @@ When the human later pushes this to `github.com/Idle-Sync/idleflow`, the same tw
 mkdir -p ~/.claude/agents ~/.claude/commands/idleflow ~/.claude/idleflow
 cp agents/*.md ~/.claude/agents/
 cp commands/*.md ~/.claude/commands/idleflow/
-cp -r scripts config templates ~/.claude/idleflow/
+cp -r scripts config templates commands agents procedures ~/.claude/idleflow/
 ```
+(`commands`, `agents` and `procedures` are copied under `~/.claude/idleflow/` too because the command files read each other and the procedure file by path.)
 Then the commands reference `${CLAUDE_PLUGIN_ROOT}`, which only exists for plugins. Replace it:
 ```
 sed -i 's#\${CLAUDE_PLUGIN_ROOT}#'"$HOME"'/.claude/idleflow#g' ~/.claude/commands/idleflow/*.md
@@ -67,7 +68,7 @@ And merge the hook into `~/.claude/settings.json` (read it first; preserve exist
   ]
 }
 ```
-Commands will be `/idleflow/feature` and `/idleflow/fix` in this layout (directory namespacing) rather than `/idleflow:feature`.
+In this layout the commands are namespaced by the directory; check `/help` for the exact names (`/idleflow:feature` on current versions). Agents are plain `explorer`, `planner`, … without the `idleflow:` prefix, so when a command prompt says `idleflow:planner`, use `planner`.
 
 ## Step 3 — Verify the model names resolve
 
@@ -82,16 +83,16 @@ If this errors with an unknown-model message: edit `agents/planner.md` and chang
 Make a scratch repo and simulate a run:
 ```
 d=$(mktemp -d) && cd "$d" && git init -q && echo hi > a.txt && git add . && git -c user.name=t -c user.email=t@t commit -qm init
-RUN=<plugin root>/scripts/run.sh
-bash $RUN new hook-test
-bash $RUN wt add T1
-bash $RUN own T1 '["src/**"]'
+RUN="<plugin root>/scripts/run.sh"
+bash "$RUN" new hook-test
+bash "$RUN" wt add T1         # prints the worktree path
+bash "$RUN" own T1 '["src/**"]'
 ```
 Now, from inside Claude Code with the plugin enabled, try to Write a file at `<the worktree path>/other.txt`. Success: the write is **blocked** with a `[idleflow] BLOCKED` message. Then try `<worktree>/src/ok.txt`: it should succeed. Finally:
 ```
-bash $RUN gate T1          # should print JSON with "verdict":"ok"
-bash $RUN wt rm T1
-bash $RUN finish test
+bash "$RUN" gate T1          # should print JSON with "verdict":"ok"
+bash "$RUN" wt rm T1
+bash "$RUN" finish test
 cd ~ && rm -rf "$d" "${d}__wt"
 ```
 If the write was *not* blocked: the hook isn't registered. Run `/hooks` inside Claude Code to see what's loaded, and check that `hooks/hooks.json` is referenced by `plugin.json` (Option A) or merged into settings.json (Option B).

@@ -1,5 +1,5 @@
 ---
-name: idleflow-stack-researcher
+name: stack-researcher
 description: Researches the tools and practices the stack advisor's scan named as candidates, across several internet sources per candidate (official docs, the project's repository, and at least one independent comparison or adoption signal), and writes a fact sheet with a URL on every claim. Sonnet. Runs between stack-advisor scan and propose.
 model: sonnet
 tools: WebSearch, WebFetch, Read, Write

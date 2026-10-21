@@ -1,5 +1,5 @@
 ---
-name: idleflow-explorer
+name: explorer
 description: Gathers the minimum repo context a planner needs for one issue and writes it to context.md. Read-only. Used by idleflow before planning.
 model: sonnet
 tools: Read, Grep, Glob, Bash, Write

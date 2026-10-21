@@ -42,6 +42,6 @@ git add -A -N . 2>/dev/null || true
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 git diff --numstat "$BASE" -- . > "$tmp/all" 2>/dev/null || true
-git diff --numstat "$BASE" -- . "${EXCL[@]}" > "$tmp/code" 2>/dev/null || true
+git diff --numstat "$BASE" -- . ${EXCL[@]+"${EXCL[@]}"} > "$tmp/code" 2>/dev/null || true
 
 idleflow_rt gate "$LIMIT" "$SLACK" "$tmp/all" "$tmp/code"

@@ -5,9 +5,11 @@
 #   IDLEFLOW_RUNTIME=node   bash scripts/selftest.sh
 #   IDLEFLOW_RUNTIME=python bash scripts/selftest.sh
 #
-# Exercises: new, wt add, own, guard (blocked + allowed, with POSIX and native paths),
-# gate (ok and split, with excludes), set/inc, merge, finish, and a second `new` that
-# parks a leftover run. Exit 0 and a final "PASS" line mean everything worked.
+# Exercises: new (including on a repo with no commits and with a slug that needs JSON
+# escaping), snapshot, wt add, own, guard (blocked + allowed, POSIX and native paths,
+# main checkout during build), report, gate (ok / audit / split, excludes, per-task base
+# after an earlier merge), get / set / inc, merge, wt rm after finish, finish, and a
+# second `new` that parks a leftover run. Exit 0 and a final "PASS" line mean everything worked.
 
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,87 +24,127 @@ fail() { echo "  FAIL  $1"; fails=$((fails+1)); }
 check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
 
 native() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else echo "$1"; fi; }
+json_esc() { echo "$1" | sed 's/\\/\\\\/g'; }
 guard_rc() { # guard_rc <file_path> <cwd>  -> exit code of the hook
-  printf '{"tool_name":"Write","cwd":"%s","tool_input":{"file_path":"%s","content":"x"}}' "$2" "$1" | bash "$GUARD" 2>/dev/null
+  printf '{"tool_name":"Write","cwd":"%s","tool_input":{"file_path":"%s","content":"x"}}' "$(json_esc "$2")" "$(json_esc "$1")" | bash "$GUARD" 2>/dev/null
   echo $?
 }
-json_esc() { echo "$1" | sed 's/\\/\\\\/g'; }
+commit() { git -c user.name=t -c user.email=t@t commit -q "$@"; }
 
 echo "runtime: $(idleflow_rt_name)"
 d="$(mktemp -d)"; d="$(cd "$d" && pwd)"
 cleanup() { cd / ; rm -rf "$d" "${d}__wt" 2>/dev/null || true; }
 trap cleanup EXIT
 
-cd "$d" && git init -q && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
-mkdir -p src && echo 'a' > src/a.txt && git add . && git -c user.name=t -c user.email=t@t commit -qm base
+echo "--- new on a repo with no commits (what /idleflow:init does)"
+cd "$d" && git init -q
+id0="$(bash "$RUN" new 'fix "quoted" thing' 2>/dev/null)"
+check "new works on an unborn branch"     '[ -n "$id0" ] && [ -f .claude/runs/active/run.json ]'
+check "slug with quotes is valid JSON"    '[ "$(bash "$RUN" get slug)" = "fix-quoted-thing" ]'
+check "base_sha empty before first commit" '[ "$(bash "$RUN" get base_sha)" = "" ]'
+check "wt add refuses without a commit"   '! bash "$RUN" wt add T0 2>/dev/null'
+printf '# proj\n' > README.md; printf 'mode: balanced\n' > .claude/conventions.md
+s="$(bash "$RUN" snapshot)"
+check "snapshot commits repo docs"        'echo "$s" | grep -q "committed" && git log --oneline | grep -q "project conventions"'
+check "snapshot is a no-op when clean"    '[ "$(bash "$RUN" snapshot)" = "snapshot: nothing to commit" ]'
+bash "$RUN" finish setup >/dev/null
 
-echo "--- new / set / inc"
-id="$(bash "$RUN" new "self test")"
+mkdir -p src && echo 'a' > src/a.txt && git add . && commit -m base
+
+echo "--- new / get / set / inc"
+id="$(bash "$RUN" new "self test" 2>/dev/null)"
 check "new prints an id"               '[ -n "$id" ]'
 check "active/run.json exists"         '[ -f .claude/runs/active/run.json ]'
 check ".gitignore has runs/"           'grep -qx ".claude/runs/" .gitignore'
 bash "$RUN" set size '"M"'
-check "set size"                       '[ "$(idleflow_rt get .claude/runs/active/run.json size)" = "M" ]'
+check "get/set size"                   '[ "$(bash "$RUN" get size)" = "M" ]'
 bash "$RUN" set tasks.T1.status '"building"'
-check "set nested key"                 '[ "$(idleflow_rt get .claude/runs/active/run.json tasks.T1.status)" = "building" ]'
+check "set nested key"                 '[ "$(bash "$RUN" get tasks.T1.status)" = "building" ]'
+check "get non-string is compact JSON" '[ "$(bash "$RUN" get tasks)" = "{\"T1\":{\"status\":\"building\"}}" ]'
 check "inc retries -> 1"               '[ "$(bash "$RUN" inc retries)" = "1" ]'
 check "inc review_findings 3 -> 3"     '[ "$(bash "$RUN" inc review_findings 3)" = "3" ]'
+bash "$RUN" set gate_trips '"2"'
+check "inc coerces a string counter"   '[ "$(bash "$RUN" inc gate_trips)" = "3" ]'
+bash "$RUN" set gate_trips '"abc"'
+check "inc rejects a non-number"       '! bash "$RUN" inc gate_trips 2>/dev/null'
+bash "$RUN" set gate_trips 0
 
 echo "--- worktree / ownership"
 wt="$(bash "$RUN" wt add T1)"
 check "wt add prints path"             '[ -n "$wt" ] && [ -d "$wt" ]'
 check "wt on task branch"              'git -C "$wt" rev-parse --abbrev-ref HEAD | grep -q "^idleflow/$id/T1$"'
 check "wt marker written"              '[ "$(cat "$wt/.claude-run/task-id")" = "T1" ]'
+check "task base_sha recorded"         '[ "$(bash "$RUN" get tasks.T1.base_sha)" = "$(git rev-parse HEAD)" ]'
+wt_again="$(bash "$RUN" wt add T1)"
+check "wt add again after a crash"     '[ "$wt_again" = "$wt" ] && [ -d "$wt" ]'
 bash "$RUN" own T1 '["src/**","tests/**"]'
 check "ownership recorded"             'idleflow_rt get .claude/runs/active/ownership.json tasks.T1.owns | grep -q "src/\*\*"'
 
 echo "--- guard"
 wtn="$(native "$wt")"; dn="$(native "$d")"
-check "blocks unowned file (native path)" '[ "$(guard_rc "$(json_esc "$wtn/other.txt")" "$(json_esc "$wtn")")" = "2" ]'
+check "blocks unowned file (native path)" '[ "$(guard_rc "$wtn/other.txt" "$wtn")" = "2" ]'
 check "blocks unowned file (posix path)"  '[ "$(guard_rc "$wt/other.txt" "$wt")" = "2" ]'
-check "allows owned file"                 '[ "$(guard_rc "$(json_esc "$wtn/src/new.txt")" "$(json_esc "$wtn")")" = "0" ]'
-check "allows owned nested file"          '[ "$(guard_rc "$(json_esc "$wtn/tests/a/b/c.txt")" "$(json_esc "$wtn")")" = "0" ]'
-check "allows .claude-run report"         '[ "$(guard_rc "$(json_esc "$wtn/.claude-run/report.md")" "$(json_esc "$wtn")")" = "0" ]'
-check "allows main checkout"              '[ "$(guard_rc "$(json_esc "$dn/plan.md")" "$(json_esc "$dn")")" = "0" ]'
+check "allows owned file"                 '[ "$(guard_rc "$wtn/src/new.txt" "$wtn")" = "0" ]'
+check "allows owned nested file"          '[ "$(guard_rc "$wtn/tests/a/b/c.txt" "$wtn")" = "0" ]'
+check "allows .claude-run report"         '[ "$(guard_rc "$wtn/.claude-run/report.md" "$wtn")" = "0" ]'
+check "blocks main checkout code while building" '[ "$(guard_rc "$dn/src/a.txt" "$dn")" = "2" ]'
+check "allows main checkout plan.md while building" '[ "$(guard_rc "$dn/.claude/runs/active/plan.md" "$dn")" = "0" ]'
+check "allows root progress.md while building"      '[ "$(guard_rc "$dn/progress.md" "$dn")" = "0" ]'
+check "allows docs/ while building"                 '[ "$(guard_rc "$dn/docs/research/x.md" "$dn")" = "0" ]'
+bash "$RUN" set tasks.T1.status '"review"'
+check "allows main checkout when not building"      '[ "$(guard_rc "$dn/src/a.txt" "$dn")" = "0" ]'
+bash "$RUN" set tasks.T1.status '"building"'
 check "allows outside any repo"           '[ "$(guard_rc "/nowhere/x.txt" "/nowhere")" = "0" ]'
 check "allows on garbage payload"         '[ "$(echo "not json" | bash "$GUARD" 2>/dev/null; echo $?)" = "0" ]'
-if [ -n "${IDLEFLOW_RUNTIME:-}" ]; then
-  check "no-runtime still allows"         '[ "$(printf "{}" | IDLEFLOW_RUNTIME=/no/such/bin bash "$GUARD" 2>/dev/null; echo $?)" = "0" ]'
-fi
+check "no-runtime still allows"           '[ "$(printf "{}" | IDLEFLOW_RUNTIME=/no/such/bin bash "$GUARD" 2>/dev/null; echo $?)" = "0" ]'
 
-echo "--- gate"
-( cd "$wt" && printf 'x\ny\nz\n' > src/code.py && printf '%s\n' $(seq 1 50) > README.md )
+echo "--- report / gate"
+( cd "$wt" && printf 'x\ny\nz\n' > src/code.py && printf '%s\n' $(seq 1 50) > README.md && printf 'task: T1\nstatus: done\n' > .claude-run/report.md )
+r="$(bash "$RUN" report T1)"
+check "report copied into run dir"     '[ -f .claude/runs/active/tasks/T1/report.md ] && grep -q "status: done" "$r"'
 g="$(bash "$RUN" gate T1)"
 check "gate verdict ok"                'echo "$g" | grep -q "\"verdict\":\"ok\""'
 check "gate counts code lines (3)"     'echo "$g" | grep -q "\"total\":3,"'
-check "gate excludes .md (50)"         'echo "$g" | grep -q "\"excluded_total\":50"'
+check "gate excludes .md (50+1)"       'echo "$g" | grep -q "\"excluded_total\":51"'
 check "gate.json written"              '[ -f .claude/runs/active/tasks/T1/gate.json ]'
 ( cd "$wt" && seq 1 40 > src/big.py )
-g2="$("$HERE/diff-gate.sh" "$wt" "$(git rev-parse HEAD)" 10 5)"
-check "gate verdict split past slack"  'echo "$g2" | grep -q "\"verdict\":\"split\""'
+check "gate limit override -> audit"   'bash "$RUN" gate T1 10 | grep -q "\"verdict\":\"audit\""'
+check "gate verdict split past slack"  '"$HERE/diff-gate.sh" "$wt" "$(git rev-parse HEAD)" 10 5 | grep -q "\"verdict\":\"split\""'
 g3="$("$HERE/diff-gate.sh" "$wt" "$(git rev-parse HEAD)" 40 5)"
 check "gate verdict audit in slack"    'echo "$g3" | grep -q "\"verdict\":\"audit\""'
 
-echo "--- merge / finish"
+echo "--- merge, then a second group gates against its own base"
+bash "$RUN" set tasks.T1.status '"approved"'
 m="$(bash "$RUN" merge T1)"
 check "merge reports merged"           '[ "$m" = "merged T1" ]'
 check "merged file on main"            '[ -f src/code.py ]'
-bash "$RUN" wt rm T1
-check "wt removed"                     '[ ! -d "$wt" ]'
+wt2="$(bash "$RUN" wt add T2 HEAD)"
+bash "$RUN" own T2 '["src/**"]'
+( cd "$wt2" && printf '1\n2\n3\n4\n5\n' > src/second.py )
+g2="$(bash "$RUN" gate T2)"
+check "T2 gate sees only T2 lines (5)" 'echo "$g2" | grep -q "\"total\":5,"'
+check "merge conflict exits 3"         '( cd "$wt2" && printf "changed\n" > src/code.py ); printf "other\n" > src/code.py; git add -A; commit -m main-change; bash "$RUN" merge T2 >/dev/null 2>&1; [ $? -eq 3 ]'
+check "conflict left no MERGE_HEAD"    '[ ! -f .git/MERGE_HEAD ]'
+
+echo "--- finish, then worktrees can still be removed"
 f="$(bash "$RUN" finish done)"
 check "finish message"                 'echo "$f" | grep -q "finished: done"'
 check "active renamed to id"           '[ ! -e .claude/runs/active ] && [ -f ".claude/runs/$id/run.json" ]'
 check "log.jsonl appended"             'grep -q "\"id\": *\"$id\"" .claude/runs/log.jsonl'
 check "status in run.json"             '[ "$(idleflow_rt get ".claude/runs/$id/run.json" status)" = "done" ]'
+check "wt list works without a run"    'bash "$RUN" wt list | grep -q "idleflow/$id/T2"'
+bash "$RUN" wt rm T1; bash "$RUN" wt rm T2
+check "wt rm works without a run"      '[ ! -d "$wt" ] && [ ! -d "$wt2" ]'
 
 echo "--- leftover run is parked by next new"
 id2="$(bash "$RUN" new second 2>/dev/null)"
 id3="$(bash "$RUN" new third 2>/dev/null)"
 check "second run parked"              '[ -f ".claude/runs/$id2/run.json" ] && [ "$(idleflow_rt get ".claude/runs/$id2/run.json" status)" = "abandoned" ]'
-check "third run active"               '[ "$(idleflow_rt get .claude/runs/active/run.json id)" = "$id3" ]'
+check "third run active"               '[ "$(bash "$RUN" get id)" = "$id3" ]'
 bash "$RUN" finish test >/dev/null
 
-echo "--- conf"
+echo "--- loc / conf"
+check "loc counts code lines only"     '[ "$(bash "$RUN" loc)" = "$(cat src/big.py src/code.py .gitignore | wc -l | tr -d " ")" ]'
 check "conf prints runtime"            'bash "$RUN" conf | grep -q "^RUNTIME="'
 
 echo

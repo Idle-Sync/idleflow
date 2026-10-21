@@ -1,5 +1,5 @@
 ---
-name: idleflow-market-researcher
+name: market-researcher
 description: Researches whether a product idea is viable before any code exists. Finds the competition, what their users complain about, pricing, the size and direction of the space, and the gap the idea could fill, across several internet sources with a URL on every claim. Writes docs/market-research.md. Sonnet. Runs from /idleflow:init.
 model: sonnet
 tools: WebSearch, WebFetch, Read, Write

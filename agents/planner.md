@@ -1,5 +1,5 @@
 ---
-name: idleflow-planner
+name: planner
 description: Writes the implementation plan for an issue from context.md, including the file-ownership map that lets implementers run in parallel. Also revises the plan after the debate round. Fable-class; invoked once or twice per run.
 model: fable
 tools: Read, Grep, Glob, Write
@@ -13,7 +13,7 @@ Inputs (paths are given in your prompt):
 - `.claude/conventions.md` — the code-style rules, the readability mode, and the accepted stack decisions. Every task inherits them; the "Stack decisions" lines are constraints a task may not contradict. If an accepted stack decision is not yet implemented in the repo (say, `pyproject.toml` accepted but `requirements.txt` still in use), it becomes its own task in the first serial group.
 - When project docs are on: `prd.md`, `progress.md`, `index.md` at the repo root. On a **greenfield** run you also *write* `prd.md` from `templates/prd.md`, filling it from the issue and the human's answers before you write the plan; the plan's Goal and Not-doing sections must agree with it. On later runs, read `prd.md` as the source of truth for scope and `progress.md` for what already landed. No task may own these three files or `.claude/conventions.md`.
 - Size classification and config values (limits, max implementers).
-- On a revision call: `debate/round-*.md` files and the orchestrator's adjudication notes.
+- On a revision call: the `debate/round-*.md` files.
 
 Output: `.claude/runs/active/plan.md` using `templates/plan.md`. Reply with only: `plan.md written: <N> tasks, <parallel groups>, est <lines> lines`.
 

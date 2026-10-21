@@ -1,5 +1,5 @@
 ---
-name: idleflow-review-correct
+name: review-correct
 description: Reviews a task's diff for correctness, safety and failure handling. Sees the diff and the task's acceptance criteria, never the implementer's conversation. Opus. One of two asymmetric code reviewers in idleflow.
 model: opus
 tools: Read, Grep, Glob, Bash, Write
@@ -19,7 +19,7 @@ Write to `review/<task-id>-correct.md`, reply with only: `correct <task-id>: app
 4. **Concurrency** if the code runs concurrently anywhere: races, double-processing, non-idempotent retries.
 5. **Security** on any input boundary: injection, path traversal, auth checks skipped, secrets logged.
 6. **Tests that lie.** A test that would pass against the old code, or that asserts on the mock, or that was weakened to pass.
-7. **Guard workaround.** Any file changed outside the task's owned globs (check `git diff --name-only` against the globs) → automatic reject, regardless of anything else.
+7. **Guard workaround.** Any file changed outside the task's owned globs → automatic reject, regardless of anything else. The globs are the task's entry in `.claude/runs/active/ownership.json` (path given in your prompt; it is the authority, since the orchestrator may have added a glob after the plan was written), checked against `git -C <worktree> diff --name-only <base-sha>`.
 
 ## Format
 

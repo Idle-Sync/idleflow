@@ -1,5 +1,5 @@
 ---
-name: idleflow-retro
+name: retro
 description: Runs at the end of an idleflow run. Reads the run's reviews, gate results, retries and deviations, and appends at most one lesson to .claude/lessons.md plus optional config-change proposals. Haiku.
 model: haiku
 tools: Read, Write, Edit, Bash, Glob

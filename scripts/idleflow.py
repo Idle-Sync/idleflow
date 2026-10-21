@@ -30,9 +30,26 @@ def load(path):
 
 
 def save(path, obj):
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(obj, f, indent=1)
+    # LF and raw UTF-8 so the bytes match what idleflow.js writes, on every platform
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(obj, f, indent=1, ensure_ascii=False)
         f.write("\n")
+
+
+def to_number(v):
+    """Counters may have been written as strings by hand; accept "3", reject "abc"."""
+    if v is None or v == "":
+        return 0
+    if isinstance(v, bool):
+        return int(v)
+    if isinstance(v, (int, float)):
+        return v
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        sys.stderr.write("idleflow: not a number: %r\n" % (v,))
+        sys.exit(1)
+    return int(f) if f.is_integer() else f
 
 
 def walk(obj, key, create):
@@ -53,7 +70,7 @@ def cmd_get(path, key):
     if cur is None or last not in cur:
         sys.exit(1)
     v = cur[last]
-    print(v if isinstance(v, str) else json.dumps(v))
+    print(v if isinstance(v, str) else json.dumps(v, separators=(",", ":"), ensure_ascii=False))
 
 
 def cmd_set(path, key, val):
@@ -66,7 +83,7 @@ def cmd_set(path, key, val):
 def cmd_inc(path, key, n="1"):
     obj = load(path)
     cur, last = walk(obj, key, True)
-    cur[last] = (cur.get(last) or 0) + int(n)
+    cur[last] = to_number(cur.get(last)) + to_number(n)
     save(path, obj)
     print(cur[last])
 
@@ -76,8 +93,8 @@ def cmd_finish(path, status, log):
     r["status"] = status
     r["finished"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     save(path, r)
-    with open(log, "a", encoding="utf-8") as f:
-        f.write(json.dumps(r) + "\n")
+    with open(log, "a", encoding="utf-8", newline="\n") as f:
+        f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
 
 def cmd_own(path, tid, wt, globs):
@@ -217,10 +234,50 @@ def cmd_guard():
                 % (rel, tid, json.dumps(owns))
             )
             sys.exit(2)
+
+    # Not in a worktree. While tasks are building, the main checkout is off limits for code:
+    # an implementer that forgot to cd would otherwise write where no reviewer looks.
+    repo = norm(omap.get("repo", ""))
+    if repo and (path == repo or path.startswith(repo + "/")) and building(os.path.dirname(mp)):
+        rel = path[len(repo) + 1:] if path != repo else ""
+        if not orchestrator_file(rel):
+            sys.stderr.write(
+                "[idleflow] BLOCKED: %s is in the main checkout while tasks are building.\n"
+                "Implementers edit only inside their worktree; the orchestrator edits only "
+                ".claude/**, docs/**, root *.md and .gitignore during the build.\n" % rel
+            )
+            sys.exit(2)
     sys.exit(0)
 
 
+def building(run_dir):
+    """True while any task in run.json has status "building"."""
+    try:
+        run = load(os.path.join(run_dir, "run.json"))
+    except Exception:
+        return False
+    for t in (run.get("tasks") or {}).values():
+        if isinstance(t, dict) and t.get("status") == "building":
+            return True
+    return False
+
+
+def orchestrator_file(rel):
+    """Paths the orchestrator may write in the main checkout mid-build."""
+    return (
+        rel.startswith(".claude/") or rel.startswith("docs/")
+        or rel == ".gitignore" or ("/" not in rel and rel.endswith(".md"))
+    )
+
+
 def main(argv):
+    # -I (isolated mode) ignores PYTHONUTF8, so on Windows stdout/stderr would be cp1252
+    # and a BLOCKED message with a non-ASCII filename would come out garbled.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
     if not argv:
         sys.stderr.write(__doc__)
         sys.exit(1)

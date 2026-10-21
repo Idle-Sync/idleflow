@@ -11,8 +11,17 @@ cd idleflow
 claude plugin validate --strict .
 ```
 
-`validate` checks the manifests only; it does not open agent, command or hook files. So also do a
-full local install loop before pushing:
+On this layout (marketplace and plugin in one folder) that call validates `marketplace.json` and the
+plugin manifest; point it at the component folders too, since agent and command frontmatter are
+only checked that way:
+
+```
+claude plugin validate --strict agents
+claude plugin validate --strict commands
+```
+
+It never runs the scripts, so also run `bash scripts/selftest.sh` on both runtimes
+(`IDLEFLOW_RUNTIME=node`, `IDLEFLOW_RUNTIME=python`) and a full local install loop before pushing:
 
 ```
 claude plugin marketplace add ./

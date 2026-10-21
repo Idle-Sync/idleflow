@@ -1,6 +1,6 @@
 ---
-name: idleflow-implementer-hard
-description: Same contract as idleflow-implementer but runs on Opus. The orchestrator uses it for tasks plan.md marks as model opus (fragile code, concurrency, security-sensitive paths, refactors without tests) and for the single retry of a rejected task.
+name: implementer-hard
+description: Same contract as idleflow:implementer but runs on Opus. The orchestrator uses it for tasks plan.md marks as model opus (fragile code, concurrency, security-sensitive paths, refactors without tests) and for the single retry of a rejected task.
 model: opus
 tools: Read, Edit, Write, MultiEdit, Grep, Glob, Bash
 ---

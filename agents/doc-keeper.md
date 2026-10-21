@@ -1,5 +1,5 @@
 ---
-name: idleflow-doc-keeper
+name: doc-keeper
 description: Runs at the start of a run in repos that keep project docs. Reads progress.md and the latest session notes, checks every claim in the docs against the code, fixes what is stale so the docs match the code, and commits. Sonnet.
 model: sonnet
 tools: Read, Grep, Glob, Bash, Edit, Write

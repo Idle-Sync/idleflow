@@ -53,10 +53,20 @@ function cmdSet(p, key, val) {
   cur[last] = JSON.parse(val);
   save(p, obj);
 }
+// Counters may have been written as strings by hand; accept "3", reject "abc".
+function toNumber(v) {
+  if (v === undefined || v === null || v === "") return 0;
+  const n = Number(v);
+  if (Number.isNaN(n)) {
+    process.stderr.write(`idleflow: not a number: ${JSON.stringify(v)}\n`);
+    process.exit(1);
+  }
+  return n;
+}
 function cmdInc(p, key, n = "1") {
   const obj = load(p);
   const [cur, last] = walk(obj, key, true);
-  cur[last] = (cur[last] || 0) + parseInt(n, 10);
+  cur[last] = toNumber(cur[last]) + toNumber(n);
   save(p, obj);
   console.log(String(cur[last]));
 }
@@ -216,7 +226,36 @@ function cmdGuard() {
       process.exit(2);
     }
   }
+
+  // Not in a worktree. While tasks are building, the main checkout is off limits for code:
+  // an implementer that forgot to cd would otherwise write where no reviewer looks.
+  const repo = norm(omap.repo || "");
+  if (repo && (p === repo || p.startsWith(repo + "/")) && building(path.dirname(mp))) {
+    const rel = p === repo ? "" : p.slice(repo.length + 1);
+    if (!orchestratorFile(rel)) {
+      process.stderr.write(
+        `[idleflow] BLOCKED: ${rel} is in the main checkout while tasks are building.\n` +
+          `Implementers edit only inside their worktree; the orchestrator edits only ` +
+          `.claude/**, docs/**, root *.md and .gitignore during the build.\n`
+      );
+      process.exit(2);
+    }
+  }
   process.exit(0);
+}
+// True while any task in run.json has status "building".
+function building(runDir) {
+  let run;
+  try {
+    run = load(path.join(runDir, "run.json"));
+  } catch {
+    return false;
+  }
+  return Object.values(run.tasks || {}).some((t) => isObj(t) && t.status === "building");
+}
+// Paths the orchestrator may write in the main checkout mid-build.
+function orchestratorFile(rel) {
+  return rel.startsWith(".claude/") || rel.startsWith("docs/") || rel === ".gitignore" || (!rel.includes("/") && rel.endsWith(".md"));
 }
 
 const table = { get: cmdGet, set: cmdSet, inc: cmdInc, finish: cmdFinish, own: cmdOwn, gate: cmdGate, guard: cmdGuard };

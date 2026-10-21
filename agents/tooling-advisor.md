@@ -1,5 +1,5 @@
 ---
-name: idleflow-tooling-advisor
+name: tooling-advisor
 description: Proposes the Claude Code skills, workflows and marketplace plugins a project will lean on, checks which Idle-Sync/skills the user already has installed, and names the skills that do not exist yet so the human can request them. Sonnet. Runs from /idleflow:init and on the first non-trivial /idleflow:feature run in a repo.
 model: sonnet
 tools: Read, Grep, Glob, Bash, WebFetch, Write

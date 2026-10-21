@@ -1,6 +1,6 @@
 ---
-name: idleflow-implementer
-description: Implements one task from plan.md inside its own git worktree, touching only the files it owns. Sonnet by default; the orchestrator uses idleflow-implementer-hard for tasks the plan marks opus.
+name: implementer
+description: Implements one task from plan.md inside its own git worktree, touching only the files it owns. Sonnet by default; the orchestrator uses idleflow:implementer-hard for tasks the plan marks opus.
 model: sonnet
 tools: Read, Edit, Write, MultiEdit, Grep, Glob, Bash
 ---

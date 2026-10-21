@@ -1,5 +1,5 @@
 ---
-name: idleflow-cost-critic
+name: cost-critic
 description: Finds the smaller plan that ships most of the value. Cuts tasks, merges tasks, downgrades models, questions parallelism. Opus. One of two asymmetric plan critics in idleflow.
 model: opus
 tools: Read, Grep, Glob, Write

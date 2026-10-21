@@ -51,7 +51,8 @@ Around the pipeline, five things that keep a repo honest:
 ```
 .claude-plugin/plugin.json      manifest
 .claude-plugin/marketplace.json lets the repo itself be added as a marketplace
-commands/feature.md             the orchestrator — the whole procedure lives here
+commands/feature.md             the orchestrator — the run procedure lives here
+procedures/repo-setup.md        setup steps R1–R6 shared by feature and init (mode, docs, stack, libraries, tooling, snapshot)
 commands/fix.md                 same, bug-biased
 commands/init.md                first session for an empty folder: brainstorm, market research, rules, PRD, first commit
 commands/style.md               set or change the readability mode
@@ -59,7 +60,7 @@ commands/skills-feedback.md     open a skill request on github.com/Idle-Sync/ski
 commands/plugin-feedback.md     report a bug or idea about idleflow on github.com/Idle-Sync/idleflow
 agents/                         one file per role; frontmatter sets the model
 hooks/hooks.json                PreToolUse → ownership-guard
-scripts/run.sh                  run lifecycle: new / wt / own / set / inc / gate / merge / finish / conf
+scripts/run.sh                  run lifecycle: new / wt / own / get / set / inc / report / gate / merge / snapshot / finish / loc / conf
 scripts/diff-gate.sh            counts hand-written code lines vs base, emits JSON verdict
 scripts/ownership-guard.sh      the hook; blocks edits outside a task's globs
 scripts/rt.sh                   picks Python or Node, whichever is installed

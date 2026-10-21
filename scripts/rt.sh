@@ -18,7 +18,7 @@ idleflow_rt() {
   local py
   case "${IDLEFLOW_RUNTIME:-}" in
     "") ;;
-    node|*/node|*/node.exe|node.exe) node "$_IDLEFLOW_RT_DIR/idleflow.js" "$@"; return ;;
+    node|*/node|*/node.exe|node.exe) "${IDLEFLOW_RUNTIME}" "$_IDLEFLOW_RT_DIR/idleflow.js" "$@"; return ;;
     *) "${IDLEFLOW_RUNTIME}" -I "$_IDLEFLOW_RT_DIR/idleflow.py" "$@"; return ;;
   esac
   for py in python3 python; do
@@ -38,7 +38,7 @@ idleflow_rt_name() {
   local py
   case "${IDLEFLOW_RUNTIME:-}" in
     "") ;;
-    node|*/node|*/node.exe|node.exe) echo "node ($(node --version 2>/dev/null))"; return ;;
+    node|*/node|*/node.exe|node.exe) echo "${IDLEFLOW_RUNTIME} ($("${IDLEFLOW_RUNTIME}" --version 2>/dev/null))"; return ;;
     *) echo "${IDLEFLOW_RUNTIME} ($("${IDLEFLOW_RUNTIME}" --version 2>&1 | head -1))"; return ;;
   esac
   for py in python3 python; do

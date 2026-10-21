@@ -1,6 +1,6 @@
 ---
-name: idleflow-stack-advisor
-description: Two modes. `scan` inventories how a repo is set up (packaging, environments, containers, lint, CI, code size) and what tools the machine has, and names the gaps. `propose` turns the scan plus idleflow-stack-researcher's findings into at most six proposals with pros and cons for the human to accept or decline. Sonnet. Runs on greenfield runs and the first non-trivial run in a repo.
+name: stack-advisor
+description: Two modes. `scan` inventories how a repo is set up (packaging, environments, containers, lint, CI, code size) and what tools the machine has, and names the gaps. `propose` turns the scan plus idleflow:stack-researcher's findings into at most six proposals with pros and cons for the human to accept or decline. Sonnet. Runs on greenfield runs and the first non-trivial run in a repo.
 model: sonnet
 tools: Read, Grep, Glob, Bash, Write
 ---
@@ -40,7 +40,7 @@ Reply with only one JSON line: `{"gaps":N,"candidates":["..."],"large_repo":true
 
 ## Mode `propose`
 
-Inputs: `stack-scan.md`, `stack-research.md` (written by `idleflow-stack-researcher`; every claim in it carries a source URL), `.claude/conventions.md`.
+Inputs: `stack-scan.md`, `stack-research.md` (written by `idleflow:stack-researcher`; every claim in it carries a source URL), `.claude/conventions.md`.
 
 Write `.claude/runs/active/stack.md`:
 

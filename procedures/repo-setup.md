@@ -1,0 +1,60 @@
+# Repo setup procedure
+
+Shared by `commands/feature.md` and `commands/init.md`. Each section states when it applies; the caller runs the ones that apply, in order R1 → R5, then returns to its own steps. `RUN` is `"${CLAUDE_PLUGIN_ROOT}/scripts/run.sh"` (always quoted; the path may contain spaces). Agent names are the ones the plugin exposes: `idleflow:<name>`.
+
+Pushback applies throughout: when the human's answer conflicts with something you can cite (a research file, the code, the tests, a documented platform limit), say so once before acting, with the evidence and a better option with its cost; then do what they decide and record the decision and its reason. Nothing without evidence.
+
+## R1. Readability mode — when `mode:` in `.claude/conventions.md` is `unset`
+
+Ensure `.claude/conventions.md` exists (copy `templates/conventions.md` if not). Ask once with AskUserQuestion, three options in this order, with these descriptions:
+
+- **Balanced (Recommended)** — an idiom only when it reads as one plain sentence; otherwise explicit. Pros: short where short is clear, explicit where it is not. Cons: the line is a judgement call, so the reviewer will sometimes disagree with the implementer.
+- **Explicit** — loops, named intermediate values, one step per line; no comprehensions, chaining or one-liners. Pros: anyone can follow it, easy to step through in a debugger. Cons: more lines per feature; experienced readers will find it long.
+- **Idiomatic** — the language's native idioms wherever they fit (comprehensions, built-ins, chaining). Pros: shorter, what fluent readers expect. Cons: denser; a nested idiom hides what happens, and newcomers slow down.
+
+Write the answer into the `mode:` line. If the human is not present, write `balanced` and say so. `/idleflow:style` changes it later.
+
+## R2. Project docs — when `docs:` in `.claude/conventions.md` is `unset`
+
+Set `docs: yes` when the run is greenfield, or when `prd.md` or `progress.md` exists at the repo root, or when `CLAUDE.md` contains `<!-- idleflow start -->`. Otherwise set `docs: no` and skip the rest of R2.
+
+When `yes`:
+
+1. Copy any of `templates/prd.md`, `templates/progress.md`, `templates/index.md` whose target does not exist at the repo root. Create `docs/research/` and `docs/sessions/`; copy `templates/session.md` to `docs/sessions/TEMPLATE.md` if missing.
+2. `CLAUDE.md`: if absent, copy `templates/CLAUDE.md`. If present without the `<!-- idleflow start -->` marker, append the template's block. Never overwrite a human's content. Fill the "Commands" lines from `context.md` §5 when known; leave `co_author_claude:` and `releases:` as they are unless R2 is running from `/idleflow:init`, which fills them.
+3. If `docs_in_git:` is `unset`, ask once: **Keep docs/ in the repo (Recommended)** — research, market research and session notes are shared with everyone who clones; cons: more files in review. **Gitignore docs/** — notes stay on this machine; cons: the next person starts without the research or the session history. Write the answer. On `no`, add `docs/` to `.gitignore`. If the human is not present, choose `yes` and say so.
+
+Who writes these later: the planner fills `prd.md` on a greenfield run; the retro writes the session note and updates `progress.md` and `index.md` after every run; the doc-keeper grounds all of them before every run. No task may own them.
+
+## R3. Stack conventions — when greenfield, or size M/L with nothing under "Stack decisions"
+
+1. `LOC=$(bash "$RUN" loc)`. Spawn `idleflow:stack-advisor` in mode `scan` with: repo root, `greenfield`, the conventions path, `LARGE_REPO_LOC` from `bash "$RUN" conf`, `LOC`, and the project description path (`context.md`, or `brainstorm.md` from init). It writes `.claude/runs/active/stack-scan.md` and replies with a JSON line. If `gaps` is 0, tell the human `Stack: already current.` and continue to R4.
+2. Spawn `idleflow:stack-researcher` with the scan path and output path `.claude/runs/active/stack-research.md`. It checks several internet sources per candidate and cites every claim. Wait.
+3. Spawn `idleflow:stack-advisor` in mode `propose` with the scan, research and conventions paths. It writes `.claude/runs/active/stack.md`.
+4. Read `stack.md`. Ask once with AskUserQuestion, `multiSelect: true`, one option per proposal: label = title, description = `proposal` + one pro + one con + `needs_install`. Defaults first. If the human is not present, take the defaults and say so.
+5. Append one line per accepted proposal under "Stack decisions": `- [<ID>] <title>: <proposal>  (why: <one pro>; evidence: <one URL>)`. Declined: `- [<ID>] declined: <title>`.
+6. Copy `stack-research.md` to `docs/research/stack-<YYYY-MM-DD>.md` when `docs: yes`.
+
+Tell the human: `Stack: <N> accepted, <M> declined.` An accepted proposal that changes the repo (a `pyproject.toml`, a `Dockerfile`, a code-map tool) becomes a task in the plan; nothing is installed into the repo here.
+
+## R4. Libraries before code — when greenfield, or size M/L
+
+Spawn `idleflow:library-scout` with: the issue path (or `brainstorm.md`), `context.md` path (or `brainstorm.md`), the conventions path, `docs/research/` (create it; research lives there even when `docs: no`), and output path `.claude/runs/active/libraries.md`. It names the generic capabilities the change needs, checks what the repo already depends on, researches established libraries across several sources with a URL on every claim, and writes one `docs/research/<capability>.md` per capability. Wait.
+
+Read `libraries.md`. If every capability is `reused` or there are none, tell the human `Libraries: nothing new needed.` and continue. Otherwise ask once with AskUserQuestion (at most four questions per call; a second call if needed), one question per capability: options = each library (label = name; description = one pro, one con, install present/absent) plus **Write it by hand** with the scout's line-and-upkeep cost. Write every answer under "Stack decisions" as `- [<ID>] <capability>: <library> (<why>; research: docs/research/<file>)` or `- [<ID>] <capability>: hand-written (<why>)`, and set `status: decided: <choice>` at the top of the research file. If the human is not present, choose the option with the most recent maintained release and say so.
+
+Tell the human: `Libraries: <N> chosen, <M> hand-written, <K> reused.`
+
+## R5. Tooling — when nothing is under "Tooling" yet and the run is greenfield or size M/L
+
+Spawn `idleflow:tooling-advisor` with the project description path, the conventions path, and output paths `.claude/runs/active/tooling.md` and `docs/research/tooling.md`. It inventories installed plugins and skills, checks the Idle-Sync/skills catalogue against what is installed, and proposes the skills, marketplace plugins and workflows this project will use often, plus the skills that do not exist yet. Wait.
+
+Read `tooling.md`. Ask once with AskUserQuestion, `multiSelect: true`, one option per proposal (label = name and kind; description = job, one con, the exact install command or "installed"). Defaults first.
+
+For each accepted item, show the `install:` command and run it exactly as quoted. These commands change only the user's Claude Code setup (`claude plugin install …`, a skill folder under `~/.claude/skills/`), never the repo; that is why this is allowed while installing into the repo is not. If a command fails, show the error and move on. Append accepted items under "Tooling" in conventions: `- <name> (<kind>): <job>`. List any "Skills that do not exist yet" and say each can be requested with `/idleflow:skills-feedback "<line>"`; do not open issues unasked.
+
+Tell the human: `Tooling: <N> installed, <M> declined, <K> skills to request.`
+
+## R6. Snapshot — always, after R1–R5 and before any worktree is created
+
+`bash "$RUN" snapshot` commits `.claude/conventions.md`, `.claude/lessons.md`, `CLAUDE.md`, `prd.md`, `progress.md`, `index.md`, `README.md`, `.gitignore`, `.gitattributes` and `docs/` if any changed. Worktrees branch from HEAD, so without this step implementers would not see the conventions they are told to read.
