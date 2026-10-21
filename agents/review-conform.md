@@ -43,7 +43,7 @@ findings:
 ### F<n>. <title>   kind: scope_creep | ownership | untested_criterion | convention | readability | meta_commentary | dependency | report_mismatch | uncommitted
 where: <file:line, commit sha, or criterion id>
 what: <concretely>
-fix: <smallest change; for a commit-message-only meta_commentary finding: "reword commit <sha>">
+fix: <smallest change; for a commit-message-only meta_commentary finding: `reword commit <sha> to: "<the full replacement message, stating what changed and why; add the Co-Authored-By trailer only when co_author_claude is yes>"`>
 ```
 
 `reject` iff any `ownership`, `untested_criterion`, `dependency`, `report_mismatch` or `uncommitted` finding; any `meta_commentary` finding in a file (a commit-message-only one gives the `reword` verdict instead of `reject`); more than two `scope_creep`; or three or more `readability` findings. `convention` findings alone do not block unless the plan or `.claude/lessons.md` calls that convention out explicitly.

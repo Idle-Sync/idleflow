@@ -31,10 +31,10 @@ machine: docker 27.1 | uv no | pnpm 9.1 | just no | ...
 already_fine:
 - <thing> — <one line>
 gaps:
-- <id>: <what is missing or dated>   candidates: <tool or practice names to research, separated by `;`; alternatives inside one candidate separated by `/`>
+- <id>: <what is missing or dated>   candidates: <tool or practice names to research, separated by `;`; a candidate's own tool list goes in parentheses separated by `,`; alternatives separated by `/`>
 ```
 
-**Quality tooling is mandatory on greenfield** and, on any run where this scan happens, for every language that has no formatter, linter or type checker configured: emit one `quality-<language>` gap per language (top three by file count, or the brainstorm's chosen languages on an empty folder), writing the tool names from this table into the scan's `candidates:` so the researcher, which never sees this file, knows what to look up (for example `candidates: quality-python (ruff format; ruff; mypy/pyright; pytest; pre-commit)`):
+**Quality tooling is mandatory on greenfield** and, on any run where this scan happens, for every language that has no formatter, linter or type checker configured: emit one `quality-<language>` gap per language (top three by file count, or the brainstorm's chosen languages on an empty folder), writing the tool names from this table into the scan's `candidates:` so the researcher, which never sees this file, knows what to look up (for example `candidates: quality-python (ruff format, ruff, mypy/pyright, pytest, pre-commit); pyproject+uv`):
 
 | language | formatter | linter | types | tests | hook |
 |---|---|---|---|---|---|

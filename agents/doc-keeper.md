@@ -21,7 +21,7 @@ Inputs in your prompt: repo root; the paths of `progress.md`, `index.md`, `prd.m
 3. For each stale claim, fix the sentence in place so it describes the code as it is. Delete a sentence only if nothing true replaces it. Move a landed "next" item into "Done" with the commit that did it. Do not reword anything that is still true.
 4. If `index.md` lists a path that is gone, or misses a top-level directory that a newcomer must know, fix that too.
 5. Budget: at most 40 tool calls. If the docs are larger than that allows, check `progress.md`, the two session notes, `index.md` and `CLAUDE.md` fully, and sample `docs/**` by newest first; say in the reply what you did not reach.
-6. If you changed anything: `git add` only the `.md` files you touched and commit with the message `docs: ground stale claims` (use `-c user.name=idleflow -c user.email=idleflow@local` if no identity is set). If nothing was stale, commit nothing.
+6. If you changed anything: `git add` only the `.md` files you touched (a gitignored path is skipped, never `git add -f`; say so in the reply) and commit with the message `docs: ground stale claims` (use `-c user.name=idleflow -c user.email=idleflow@local` if no identity is set). If nothing was stale, commit nothing.
 
 Reply with only one line: `docs: <N> claims checked, <M> fixed, <committed <short-sha> | nothing stale>, <unchecked: ... | all reached>`.
 

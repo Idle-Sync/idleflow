@@ -215,13 +215,27 @@ function cmdGuard() {
   } catch {
     process.exit(0);
   }
+
+  // The run's own state is never edited through the editing tools: the orchestrator goes
+  // through run.sh, and a task that could rewrite ownership.json, run.json or a worktree
+  // marker could grant itself globs, approve itself, or make this guard find no map.
+  const name = path.basename(p);
+  if (p.includes("/.claude/runs/") && ["ownership.json", "run.json", "gate.json"].includes(name)) {
+    process.stderr.write(`[idleflow] BLOCKED: ${name} is run state; use scripts/run.sh (set, own, inc) instead.\n`);
+    process.exit(2);
+  }
+  if (p.includes("/.claude-run/") && name !== "report.md") {
+    process.stderr.write(`[idleflow] BLOCKED: ${name} is a worktree marker; only .claude-run/report.md may be written.\n`);
+    process.exit(2);
+  }
+
   for (const [tid, t] of Object.entries(omap.tasks || {})) {
     const wt = norm(t.worktree || "");
     if (!wt) continue;
     if (p === wt || p.startsWith(wt + "/")) {
       const rel = p === wt ? "" : p.slice(wt.length + 1);
       const owns = Array.isArray(t.owns) ? t.owns : [];
-      if (globMatch(rel, owns.concat([".claude-run/**"]))) process.exit(0);
+      if (globMatch(rel, owns.concat([".claude-run/report.md"]))) process.exit(0);
       process.stderr.write(
         `[idleflow] BLOCKED: ${rel} is not owned by task ${tid}.\n` +
           `Owned globs: ${JSON.stringify(owns)}\n` +
@@ -241,7 +255,7 @@ function cmdGuard() {
       process.stderr.write(
         `[idleflow] BLOCKED: ${rel} is in the main checkout while tasks are building.\n` +
           `Implementers edit only inside their worktree; the orchestrator edits only ` +
-          `.claude/**, docs/**, root *.md and .gitignore during the build.\n`
+          `.claude/runs/**, .claude/conventions.md, .claude/lessons.md, docs/**, root *.md and .gitignore during the build.\n`
       );
       process.exit(2);
     }

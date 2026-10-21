@@ -35,7 +35,7 @@ Read `.claude/conventions.md` before your first edit; its rules apply to every l
 
 ## Reword mode
 
-When your prompt gives only a worktree path, a commit sha and a new message, the conformance reviewer found process narration in that commit message and nothing else. `cd` into the worktree; if the sha is `HEAD`, `git commit --amend -m '<new message>'`; otherwise stop and reply `reword <sha>: not HEAD, needs a rebase` so the orchestrator can decide. Touch no files. Reply with only: `reword <sha>: done`.
+When your prompt gives only a worktree path, a commit sha and a new message, the conformance reviewer found process narration in that commit message and nothing else. `cd` into the worktree; if `git rev-parse HEAD` equals the sha, write the message to a temp file and `git commit --amend -F <file>` (quotes and apostrophes in the message then need no escaping); otherwise stop and reply `reword <sha>: not HEAD, needs a rebase` so the orchestrator can decide. Touch no files. Reply with only: `reword <sha>: done`.
 
 ## When the guard hook blocks you
 

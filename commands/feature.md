@@ -34,7 +34,7 @@ Spawn `idleflow:explorer` with: the issue path, the output path `.claude/runs/ac
 
 ## 2. Classify (Haiku), then set the repo up
 
-Spawn `idleflow:classifier` with the context.md path and the `SIZE_*` values. Parse its JSON line. `bash "$RUN" set size '"<S|M|L>"'` and `bash "$RUN" set greenfield <true|false>`. If the line has a `plugin_gap`, append `plugin_gap: classifier — <text>` to `.claude/runs/active/gaps.md`.
+Spawn `idleflow:classifier` with the context.md path and the `SIZE_*` values. Parse its JSON line. `bash "$RUN" set size '"<S|M|L>"'` and `bash "$RUN" set greenfield <true|false>`. If the line has a `plugin_gap`, append (`>>`) `plugin_gap: classifier — <text>` to `.claude/runs/active/gaps.md`.
 
 If `greenfield` is true, the diff limit for this run is `DIFF_LIMIT * 3`; pass that limit as the second argument to every later `gate` call and to the auditor. Implementers per group: `SIZE_M_IMPLEMENTERS` for size M, `MAX_IMPLEMENTERS` for L, 1 for S.
 
@@ -99,11 +99,11 @@ Size S: `idleflow:review-correct` only. M and L: `idleflow:review-correct` and `
 
 For each task:
 - every reviewer that ran approves → `bash "$RUN" set tasks.<id>.status '"approved"'`.
-- any reject → `bash "$RUN" inc review_findings <count>` (the n from each reply). A `reword <sha>` reply is not a retry: spawn `idleflow:implementer` in reword mode with only the worktree path, the sha and the new message (you never touch the worktree yourself), then re-run the conformance reviewer only. On a `reject`, if `retries < MAX_RETRIES`: `bash "$RUN" inc retries`, `bash "$RUN" set tasks.<id>.status '"building"'`, re-spawn the task's implementer (`idleflow:implementer-hard` for the retry regardless of original model; quality first) with its original prompt plus the paths of the rejecting review files, then re-gate and re-review that task only. Else stop: tell the human which task, which findings (titles only) and the review file paths; remove worktrees (`bash "$RUN" wt list` → `wt rm` each), run the **Plugin gaps** question from step 9, then `bash "$RUN" finish needs-human`. Merge nothing.
+- any reject → `bash "$RUN" inc review_findings <count>` (the n from each reply). A `reword <sha>` reply is not a retry: `bash "$RUN" inc review_findings 1`; spawn `idleflow:implementer` in reword mode with only the worktree path, the sha and the replacement message quoted from the review file's `fix:` line (you never touch the worktree yourself), then re-run the conformance reviewer only. If the implementer replies `not HEAD`, treat it as a `reject` and take the retry path below. On a `reject`, if `retries < MAX_RETRIES`: `bash "$RUN" inc retries`, `bash "$RUN" set tasks.<id>.status '"building"'`, re-spawn the task's implementer (`idleflow:implementer-hard` for the retry regardless of original model; quality first) with its original prompt plus the paths of the rejecting review files, then re-gate and re-review that task only. Else stop: tell the human which task, which findings (titles only) and the review file paths; remove worktrees (`bash "$RUN" wt list` → `wt rm` each), run the **Plugin gaps** question from step 9, then `bash "$RUN" finish needs-human`. Merge nothing.
 
 ## 8. Merge and verify
 
-In plan merge order: `bash "$RUN" merge <task-id>`. Exit 3 (`CONFLICT`) means the ownership map was wrong; do not resolve by hand. Re-run the later task against the new base (`wt rm`, `wt add <id> HEAD`, `set tasks.<id>.status '"building"'`, re-spawn with the same prompt), re-gate, re-review, merge. One attempt; then stop and ask the human as in step 7. Exit 4 is a different failure (dirty checkout, unknown branch): show the message and stop.
+In plan merge order: `bash "$RUN" merge <task-id>`. Exit 3 (`CONFLICT`) means the ownership map was wrong; do not resolve by hand. Re-run the later task against the new base (`wt rm`, `wt add <id> HEAD`, `set tasks.<id>.status '"building"'`, re-spawn with the same prompt), re-gate, re-review, merge. One attempt; then stop and ask the human as in step 7. Exit 4 is a different failure (unapproved task, unknown branch, dirty checkout): show the message, remove the worktrees, run the **Plugin gaps** question from step 9, and `bash "$RUN" finish needs-human`.
 
 After the last merge, run the plan's "Verification after merge" command. If it fails, show the human the head of the failing output, remove the worktrees, run the **Plugin gaps** question from step 9, and finish with `needs-human`. Never spawn agents to fix a red suite; that is a new run.
 

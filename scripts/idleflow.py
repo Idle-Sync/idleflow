@@ -227,6 +227,17 @@ def cmd_guard():
     except Exception:
         sys.exit(0)
 
+    # The run's own state is never edited through the editing tools: the orchestrator goes
+    # through run.sh, and a task that could rewrite ownership.json, run.json or a worktree
+    # marker could grant itself globs, approve itself, or make this guard find no map.
+    name = os.path.basename(path)
+    if "/.claude/runs/" in path and name in ("ownership.json", "run.json", "gate.json"):
+        sys.stderr.write("[idleflow] BLOCKED: %s is run state; use scripts/run.sh (set, own, inc) instead.\n" % name)
+        sys.exit(2)
+    if "/.claude-run/" in path and name != "report.md":
+        sys.stderr.write("[idleflow] BLOCKED: %s is a worktree marker; only .claude-run/report.md may be written.\n" % name)
+        sys.exit(2)
+
     for tid, t in (omap.get("tasks") or {}).items():
         wt = norm(t.get("worktree", ""))
         if not wt:
@@ -234,7 +245,7 @@ def cmd_guard():
         if path == wt or path.startswith(wt + "/"):
             rel = path[len(wt) + 1:] if path != wt else ""
             owns = t.get("owns") or []
-            implicit = [".claude-run/**"]
+            implicit = [".claude-run/report.md"]
             if glob_match(rel, list(owns) + implicit):
                 sys.exit(0)
             sys.stderr.write(
@@ -255,7 +266,7 @@ def cmd_guard():
             sys.stderr.write(
                 "[idleflow] BLOCKED: %s is in the main checkout while tasks are building.\n"
                 "Implementers edit only inside their worktree; the orchestrator edits only "
-                ".claude/**, docs/**, root *.md and .gitignore during the build.\n" % rel
+                ".claude/runs/**, .claude/conventions.md, .claude/lessons.md, docs/**, root *.md and .gitignore during the build.\n" % rel
             )
             sys.exit(2)
     sys.exit(0)

@@ -61,8 +61,10 @@ bash "$RUN" finish setup >/dev/null
 
 mkdir -p src && echo 'a' > src/a.txt && git add . && commit -m base
 
+printf 'node_modules/' > .gitignore   # no trailing newline on purpose
 echo "--- new / get / set / inc"
 id="$(bash "$RUN" new "self test" 2>/dev/null)"
+check ".gitignore newline repaired"    '[ "$(wc -l < .gitignore | tr -d " ")" = "2" ] && grep -qx "node_modules/" .gitignore'
 check "new prints an id"               '[ -n "$id" ]'
 check "active/run.json exists"         '[ -f .claude/runs/active/run.json ]'
 check ".gitignore has runs/"           'grep -qx ".claude/runs/" .gitignore'
@@ -106,6 +108,10 @@ check "blocks unowned file (posix path)"  '[ "$(guard_rc "$wt/other.txt" "$wt")"
 check "allows owned file"                 '[ "$(guard_rc "$wtn/src/new.txt" "$wtn")" = "0" ]'
 check "allows owned nested file"          '[ "$(guard_rc "$wtn/tests/a/b/c.txt" "$wtn")" = "0" ]'
 check "allows .claude-run report"         '[ "$(guard_rc "$wtn/.claude-run/report.md" "$wtn")" = "0" ]'
+check "blocks worktree marker rewrite"    '[ "$(guard_rc "$wtn/.claude-run/repo" "$wtn")" = "2" ]'
+check "blocks ownership.json via editor"  '[ "$(guard_rc "$dn/.claude/runs/active/ownership.json" "$wtn")" = "2" ]'
+check "blocks run.json via editor"        '[ "$(guard_rc "$dn/.claude/runs/active/run.json" "$dn")" = "2" ]'
+check "blocks run state in parked runs"   '[ "$(guard_rc "$dn/.claude/runs/$id0/run.json" "$dn")" = "2" ]'
 check "blocks main checkout code while building" '[ "$(guard_rc "$dn/src/a.txt" "$dn")" = "2" ]'
 check "allows main checkout plan.md while building" '[ "$(guard_rc "$dn/.claude/runs/active/plan.md" "$dn")" = "0" ]'
 check "allows root progress.md while building"      '[ "$(guard_rc "$dn/progress.md" "$dn")" = "0" ]'
@@ -134,9 +140,9 @@ check "gate excludes .md (50+1)"       'echo "$g" | grep -q "\"excluded_total\":
 check "gate.json written"              '[ -f .claude/runs/active/tasks/T1/gate.json ]'
 ( cd "$wt" && seq 1 40 > src/big.py )
 check "gate limit override -> audit"   'bash "$RUN" gate T1 10 | grep -q "\"verdict\":\"audit\""'
-check "gate verdict split past slack"  '"$HERE/diff-gate.sh" "$wt" "$(git rev-parse HEAD)" 10 5 | grep -q "\"verdict\":\"split\""'
-check "gate with no exclude list"      'IDLEFLOW_CONF=/nonexistent "$HERE/diff-gate.sh" "$wt" "$(git rev-parse HEAD)" | grep -q "\"excluded_total\":0"'
-check "gate rejects a bad base"        '! "$HERE/diff-gate.sh" "$wt" deadbeef >/dev/null 2>&1'
+check "gate verdict split past slack"  'bash "$HERE/diff-gate.sh" "$wt" "$(git rev-parse HEAD)" 10 5 | grep -q "\"verdict\":\"split\""'
+check "gate with no exclude list"      'IDLEFLOW_CONF=/nonexistent bash "$HERE/diff-gate.sh" "$wt" "$(git rev-parse HEAD)" | grep -q "\"excluded_total\":0"'
+check "gate rejects a bad base"        '! bash "$HERE/diff-gate.sh" "$wt" deadbeef >/dev/null 2>&1'
 bash "$RUN" set tasks.T1.base_sha null
 check "gate falls back to run base on null" 'bash "$RUN" gate T1 | grep -q "\"verdict\":\"ok\""'
 bash "$RUN" set tasks.T1.base_sha '"deadbeef"'

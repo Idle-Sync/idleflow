@@ -70,7 +70,7 @@ park_active() {
   [ -d "$ACTIVE" ] || return 0
   local old=""
   [ -f "$ACTIVE/run.json" ] && old="$(idleflow_rt get "$ACTIVE/run.json" id 2>/dev/null || true)"
-  [ -n "$old" ] || old="abandoned-$(date +%Y%m%d-%H%M%S)"
+  [ -n "$old" ] && [ "$old" != "null" ] || old="abandoned-$(date +%Y%m%d-%H%M%S)"
   if [ -f "$ACTIVE/run.json" ]; then
     idleflow_rt set "$ACTIVE/run.json" status '"abandoned"' || true
   fi
@@ -177,7 +177,7 @@ JSON
     base="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$tid.base_sha" 2>/dev/null || true)"
     if [ -z "$base" ] || [ "$base" = "null" ]; then base="$(idleflow_rt get "$ACTIVE/run.json" base_sha)"; fi
     [ -n "$base" ] && [ "$base" != "null" ] || { echo "gate $tid: no base sha recorded (was the worktree created with run.sh wt add?)" >&2; exit 1; }
-    out="$("$HERE/diff-gate.sh" "$(wt_path "$tid")" "$base" ${2:+"$2"})" || { echo "gate $tid failed: $out" >&2; exit 1; }
+    out="$(bash "$HERE/diff-gate.sh" "$(wt_path "$tid")" "$base" ${2:+"$2"})" || { echo "gate $tid failed: $out" >&2; exit 1; }
     mkdir -p "$ACTIVE/tasks/$tid"
     echo "$out" > "$ACTIVE/tasks/$tid/gate.json"
     copy_report "$tid" >/dev/null 2>&1 || true
@@ -197,7 +197,7 @@ JSON
     fi
     if "${G[@]}" ${IDENTITY[@]+"${IDENTITY[@]}"} merge --no-ff -q -m "idleflow: merge $tid ($id)" "$br"; then
       echo "merged $tid"
-    elif [ -f "$("${G[@]}" rev-parse --git-dir)/MERGE_HEAD" ] || [ -f "$REPO/.git/MERGE_HEAD" ]; then
+    elif [ -f "$("${G[@]}" rev-parse --absolute-git-dir)/MERGE_HEAD" ]; then
       "${G[@]}" merge --abort || true
       echo "CONFLICT merging $tid — resolve by re-running the owning task against the new base, or merge by hand" >&2
       exit 3

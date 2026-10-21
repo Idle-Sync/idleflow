@@ -12,7 +12,7 @@
       "name": "idleflow",
       "source": "./",
       "description": "Plan-debate-build-review workflow for issues and features.",
-      "version": "0.1.2"
+      "version": "0.1.3"
     }
   ]
 }

@@ -49,7 +49,7 @@ claude plugin marketplace add Idle-Sync/idleflow
 claude plugin install idleflow@idlesync
 ```
 
-One step on recent versions (shell ≥ 2.1.292, in-session ≥ 2.1.275):
+One step on recent versions:
 
 ```
 claude plugin install idleflow --marketplace Idle-Sync/idleflow
