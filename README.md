@@ -98,7 +98,11 @@ docs/sessions/s_NNNN.md            one note per run or session; gitignored or co
 
 ## Install
 
-See `setup.md`, or hand it to Claude Code: *"read setup.md and set this up globally"*. To publish, see `PUBLISHING.md`.
+```
+claude plugin install idleflow --marketplace Idle-Sync/idleflow
+```
+
+Older Claude Code: `claude plugin marketplace add Idle-Sync/idleflow` then `claude plugin install idleflow@idlesync`. For a local checkout, or to hand the whole setup to Claude Code (*"read setup.md and set this up globally"*), see `setup.md`. To publish a new version, see `PUBLISHING.md`.
 
 ## Known gaps (v0.1)
 
