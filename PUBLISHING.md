@@ -11,7 +11,8 @@ cd idleflow
 claude plugin validate --strict .
 ```
 
-On this layout (marketplace and plugin in one folder) that call validates `marketplace.json` and the
+`plugin.json` carries an `icon` field for the directory listing; `validate --strict` on Claude Code older than
+2.1.281 rejects that field, so validate on a current version. On this layout (marketplace and plugin in one folder) that call validates `marketplace.json` and the
 plugin manifest; point it at the component folders too, since agent and command frontmatter are
 only checked that way:
 

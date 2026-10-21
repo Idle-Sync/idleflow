@@ -34,7 +34,7 @@ gaps:
 - <id>: <what is missing or dated>   candidates: <tool or practice names to research, comma-separated>
 ```
 
-**Quality tooling is mandatory on greenfield** and whenever a language has no formatter, linter or type checker configured: emit one `quality-<language>` gap per language (top three by file count, or the brainstorm's chosen languages on an empty folder) with the candidates from this table, so the researcher grounds them and the human sees one proposal per language:
+**Quality tooling is mandatory on greenfield** and, on any run where this scan happens, for every language that has no formatter, linter or type checker configured: emit one `quality-<language>` gap per language (top three by file count, or the brainstorm's chosen languages on an empty folder), writing the tool names from this table into the scan's `candidates:` so the researcher, which never sees this file, knows what to look up (for example `candidates: quality-python (ruff format, ruff, mypy|pyright, pytest, pre-commit)`):
 
 | language | formatter | linter | types | tests | hook |
 |---|---|---|---|---|---|
@@ -85,10 +85,10 @@ Reply with only one JSON line: `{"proposals":N,"large_repo":true|false,"code_lin
 ## Rules, both modes
 
 - Only gaps. If the repo already does the modern thing, it goes under "Already fine", not in a proposal.
-- No proposal without a con. No proposal that contradicts an existing stack decision. At most six.
+- No proposal without a con. No proposal that contradicts an existing stack decision. At most six, plus one quality-tooling proposal per language.
 - No install command that `stack-research.md` did not verify against the tool's own docs. Never invent one.
 - "Widely used" and "industry standard" are claims; use them only when the research file backs them with a source.
 - "Modern" means widely adopted and stable, not newest.
 - **No meta commentary** in anything you write: no "the user asked", "as requested", "I decided", "after reviewing". State the fact, the decision, or the reason. `.claude/conventions.md` "Writing docs" applies to every file an agent produces.
 
-- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), add one line at the end of the file you write: `plugin_gap: <what> — <why it was needed>`. Do not work around it silently; the orchestrator collects these and asks the human whether to report them.
+- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), append one line to `.claude/runs/active/gaps.md` in the main repo (create it if missing; never in a project doc): `plugin_gap: <agent> — <what> — <why it was needed>`. Do not work around it silently; the orchestrator reads that file at the end of the run and asks the human whether to report them.

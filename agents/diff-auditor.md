@@ -27,4 +27,4 @@ Check the `excluded_total` in the gate JSON: if it is large, the exclusion list 
 
 Two heuristics: a diff whose `top` list is dominated by one file is usually a rewrite (reject or split); one spread evenly across many files is usually a sweep (accept if the plan listed them).
 
-- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), add one line at the end of the file you write: `plugin_gap: <what> — <why it was needed>`. Do not work around it silently; the orchestrator collects these and asks the human whether to report them.
+- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), append one line to `.claude/runs/active/gaps.md` in the main repo (create it if missing; never in a project doc): `plugin_gap: <agent> — <what> — <why it was needed>`. Do not work around it silently; the orchestrator reads that file at the end of the run and asks the human whether to report them.

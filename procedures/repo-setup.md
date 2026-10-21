@@ -59,4 +59,4 @@ Tell the human: `Tooling: <N> installed, <M> declined, <K> skills to request.`
 
 ## R6. Snapshot — always, after R1–R5 and before any worktree is created
 
-`bash "$RUN" snapshot` commits `.claude/conventions.md`, `.claude/lessons.md`, `CLAUDE.md`, `prd.md`, `progress.md`, `index.md`, `README.md`, `.gitignore`, `.gitattributes` and `docs/` if any changed. Worktrees branch from HEAD, so without this step implementers would not see the conventions they are told to read.
+`bash "$RUN" snapshot` commits `.claude/conventions.md`, `.claude/lessons.md`, `CLAUDE.md`, `prd.md`, `progress.md`, `index.md`, `README.md`, `.gitignore`, `.gitattributes` and `docs/` if any changed. Worktrees branch from HEAD, so without this step implementers would not see the conventions they are told to read. A path the repo gitignores (a `docs/` the human chose to keep local, a `.claude/` someone ignored) is reported on stderr and left uncommitted; tell the human in one line when that happens to `.claude/conventions.md`, because the implementers then cannot read it.

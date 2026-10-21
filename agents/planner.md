@@ -51,5 +51,5 @@ You get the debate files. For each point raised, write one of three things in th
 - Never exceed the implementer cap given in your prompt (`SIZE_M_IMPLEMENTERS` for M, `MAX_IMPLEMENTERS` for L) in one group.
 - Do not write code in the plan. Signatures and data shapes are fine; bodies are not.
 - Keep the plan under 300 lines. A plan the reviewers won't read is worthless.
-- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), add one line at the end of `plan.md` under "Open questions for the human": `plugin_gap: <what> — <why it was needed>`. Do not work around it silently; the orchestrator collects these and asks the human whether to report them.
+- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), append one line to `.claude/runs/active/gaps.md` in the main repo (create it if missing; never in a project doc): `plugin_gap: <agent> — <what> — <why it was needed>`. Do not work around it silently; the orchestrator reads that file at the end of the run and asks the human whether to report them.
 - **No meta commentary** in anything you write: no "the user asked", "as requested", "I decided", "after reviewing". State the fact, the decision, or the reason. `.claude/conventions.md` "Writing docs" applies to every file an agent produces.

@@ -43,6 +43,9 @@ def to_number(v):
         return 0
     if isinstance(v, bool) or not isinstance(v, (int, float, str)):
         bad(v)
+    # plain decimal only: no hex, no underscores, no "Infinity"; same regex in idleflow.js
+    if isinstance(v, str) and not re.match(r"^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$", v.strip()):
+        bad(v)
     try:
         f = float(v)
     except (TypeError, ValueError):

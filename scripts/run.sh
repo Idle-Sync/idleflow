@@ -51,7 +51,10 @@ json_str() { printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')";
 
 active_id() {
   [ -f "$ACTIVE/run.json" ] || { echo "no active run (run.sh new <slug> first)" >&2; exit 1; }
-  idleflow_rt get "$ACTIVE/run.json" id
+  local id
+  id="$(idleflow_rt get "$ACTIVE/run.json" id)"
+  [ -n "$id" ] || { echo "active run.json has no id; fix or delete .claude/runs/active" >&2; exit 1; }
+  echo "$id"
 }
 
 wt_path() { echo "${REPO}${SUFFIX}/$1"; }
@@ -102,7 +105,7 @@ case "$cmd" in
 {"id":"$id","slug":"$safe","base":$(json_str "$base"),"base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"gate_trips":0,"review_findings":0}
 JSON
     echo "{\"repo\":$(json_str "$(native_path "$REPO")"),\"tasks\":{}}" > "$ACTIVE/ownership.json"
-    grep -qxF '.claude/runs/' "$REPO/.gitignore" 2>/dev/null || echo '.claude/runs/' >> "$REPO/.gitignore"
+    grep -q '^\.claude/runs/\r\?$' "$REPO/.gitignore" 2>/dev/null || echo '.claude/runs/' >> "$REPO/.gitignore"
     # worktree marker dir: excluded locally (shared by all worktrees), never committed or merged
     excl="$("${G[@]}" rev-parse --git-common-dir)/info/exclude"
     case "$excl" in /*|?:*) ;; *) excl="$REPO/$excl";; esac
@@ -170,7 +173,7 @@ JSON
     base="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$tid.base_sha" 2>/dev/null || true)"
     if [ -z "$base" ] || [ "$base" = "null" ]; then base="$(idleflow_rt get "$ACTIVE/run.json" base_sha)"; fi
     [ -n "$base" ] && [ "$base" != "null" ] || { echo "gate $tid: no base sha recorded (was the worktree created with run.sh wt add?)" >&2; exit 1; }
-    out="$("$HERE/diff-gate.sh" "$(wt_path "$tid")" "$base" ${2:+"$2"})"
+    out="$("$HERE/diff-gate.sh" "$(wt_path "$tid")" "$base" ${2:+"$2"})" || { echo "gate $tid failed: $out" >&2; exit 1; }
     mkdir -p "$ACTIVE/tasks/$tid"
     echo "$out" > "$ACTIVE/tasks/$tid/gate.json"
     copy_report "$tid" >/dev/null 2>&1 || true
@@ -179,9 +182,13 @@ JSON
   merge)
     tid="${1:?task-id}"; id="$(active_id)"
     br="idleflow/$id/$tid"; p="$(wt_path "$tid")"
-    # commit anything the implementer left uncommitted in the worktree
+    # the "never merge an unapproved task" rule, enforced here and not only in the prompt
+    st="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$tid.status" 2>/dev/null || true)"
+    [ "$st" = "approved" ] || { echo "refusing to merge $tid: status is '${st:-unset}', not approved" >&2; exit 4; }
+    # commit tracked changes the implementer left uncommitted; untracked files (test caches,
+    # scratch) stay out, since the reviewers already rejected anything that should have been added
     if [ -d "$p" ]; then
-      git -C "$p" add -A
+      git -C "$p" add -u
       git -C "$p" diff --cached --quiet || git -C "$p" ${IDENTITY[@]+"${IDENTITY[@]}"} commit -qm "$tid: finish task"
     fi
     if "${G[@]}" ${IDENTITY[@]+"${IDENTITY[@]}"} merge --no-ff -q -m "idleflow: merge $tid ($id)" "$br"; then
@@ -199,13 +206,18 @@ JSON
     # The orchestrator creates repo-level docs in the main checkout before any worktree exists.
     # Commit them so worktrees (branched from HEAD) see them. Only these paths are committed,
     # never other staged work; ignored paths (a gitignored docs/) are skipped, never forced.
+    [ -f "$("${G[@]}" rev-parse --git-dir)/MERGE_HEAD" ] && { echo "snapshot: a merge is in progress; finish or abort it first" >&2; exit 1; }
     paths=()
     for f in .claude/conventions.md .claude/lessons.md CLAUDE.md prd.md progress.md index.md README.md .gitignore .gitattributes docs; do
       [ -e "$REPO/$f" ] || continue
-      "${G[@]}" check-ignore -q -- "$f" && continue
-      paths+=("$f")
+      if "${G[@]}" check-ignore -q --no-index -- "$f"; then
+        # an ignored path: update what is already tracked under it, never force-add new files
+        if [ -n "$("${G[@]}" ls-files -- "$f")" ]; then "${G[@]}" add -u -- "$f"; paths+=("$f")
+        else echo "snapshot: $f is gitignored, not committed" >&2; fi
+        continue
+      fi
+      "${G[@]}" add -A -- "$f"; paths+=("$f")
     done
-    [ "${#paths[@]}" -gt 0 ] && "${G[@]}" add -A -- "${paths[@]}"
     if [ "${#paths[@]}" -eq 0 ] || "${G[@]}" diff --cached --quiet -- "${paths[@]}"; then
       echo "snapshot: nothing to commit"
     else

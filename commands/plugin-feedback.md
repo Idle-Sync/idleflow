@@ -6,7 +6,7 @@ allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion
 
 Feedback: $ARGUMENTS
 
-When the orchestrator calls this at the end of a run with a list of `plugin_gap:` lines the human agreed to report, treat each line as its own feedback of kind `workflow` (or `idea`), with the run id and the file the gap came from as evidence, and the human's single yes in that run as the confirmation for step 4; still show each draft before opening it.
+**Batch mode.** The orchestrator reads this file at the end of a run and follows it with a list of `plugin_gap:` lines the human already agreed to report. Then: step 1 applies once; step 2 runs per line but only skips duplicates, it asks nothing; each line becomes its own issue of kind `workflow` (or `idea`), evidence = the run id and the agent named in the line; step 4 is replaced by showing all drafts together once, with one AskUserQuestion: **Open all** / **Cancel** (no per-issue questions); step 5 runs per issue; step 6 lists every URL.
 
 1. `gh auth status` must succeed. If `gh` is missing or logged out, say so, print the draft from step 3 so it can be pasted at https://github.com/Idle-Sync/idleflow/issues/new, and stop.
 2. Check for duplicates: `gh issue list --repo Idle-Sync/idleflow --search "<three key words>" --state all --limit 10`. If one matches, say which and offer to comment there instead (only if the human says yes).

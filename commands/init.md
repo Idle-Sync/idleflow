@@ -99,11 +99,11 @@ git commit -m "init: <project name>"      # add the Co-Authored-By trailer only 
 
 If releases were chosen: confirm the repo name (default: the folder name) and owner with one AskUserQuestion (options: `<your login>/<name>`, `<each org gh lists>/<name>`), then `gh repo create <owner>/<name> --<public|private> --source . --push`. If `gh` is missing or not logged in, say so, print the exact command for later, and continue. Do not tag anything now; the first tag comes when milestone 1 completes (`CLAUDE.md` "Releases" says how).
 
+**Plugin gaps** (before `finish`). Read `.claude/runs/active/gaps.md` if it exists, plus any gap you hit yourself. If there are lines, list them and ask once: **Report them to Idle-Sync/idleflow** (one issue per line from the human's GitHub account: read `${CLAUDE_PLUGIN_ROOT}/commands/plugin-feedback.md` and follow its batch mode) / **Not now**. Never open an issue without that answer.
+
 `bash "$RUN" finish done`.
 
 ## 8. Hand off
-
-`grep -rh '^plugin_gap:' .claude/runs/active/ docs/research/ docs/market-research.md` plus any gap you hit yourself. If there are any, list them and ask once: **Report them to Idle-Sync/idleflow** (one issue per gap from the human's GitHub account, through `${CLAUDE_PLUGIN_ROOT}/commands/plugin-feedback.md`) / **Not now**. Never open an issue without that answer.
 
 Final message, nothing more:
 - one line: the verdict from market research and the PRD milestone count,

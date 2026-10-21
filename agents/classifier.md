@@ -20,4 +20,4 @@ Rules of thumb, in order:
 
 When unsure between two sizes, pick the larger. Being wrong upward costs tokens; being wrong downward costs a retroactive debate and a re-review, which is worse.
 
-If this plugin lacked an input you needed to classify, append `"plugin_gap":"<what — why>"` to the JSON line.
+If this plugin lacked an input you needed to classify, append `"plugin_gap":"<what — why>"` to the JSON line; the orchestrator copies it into `gaps.md`.

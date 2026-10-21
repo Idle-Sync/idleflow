@@ -62,7 +62,8 @@ function bad(v) {
 function toNumber(v) {
   if (v === undefined || v === null || v === "") return 0;
   if (typeof v === "boolean" || (typeof v !== "number" && typeof v !== "string")) bad(v);
-  if (typeof v === "string" && v.trim() === "") bad(v);
+  // plain decimal only: no hex, no underscores, no "Infinity"; same regex in idleflow.py
+  if (typeof v === "string" && !/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(v.trim())) bad(v);
   const n = Number(v);
   if (!Number.isFinite(n)) bad(v);
   return n;

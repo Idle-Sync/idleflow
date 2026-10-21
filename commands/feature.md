@@ -34,7 +34,7 @@ Spawn `idleflow:explorer` with: the issue path, the output path `.claude/runs/ac
 
 ## 2. Classify (Haiku), then set the repo up
 
-Spawn `idleflow:classifier` with the context.md path and the `SIZE_*` values. Parse its JSON line. `bash "$RUN" set size '"<S|M|L>"'` and `bash "$RUN" set greenfield <true|false>`.
+Spawn `idleflow:classifier` with the context.md path and the `SIZE_*` values. Parse its JSON line. `bash "$RUN" set size '"<S|M|L>"'` and `bash "$RUN" set greenfield <true|false>`. If the line has a `plugin_gap`, append `plugin_gap: classifier — <text>` to `.claude/runs/active/gaps.md`.
 
 If `greenfield` is true, the diff limit for this run is `DIFF_LIMIT * 3`; pass that limit as the second argument to every later `gate` call and to the auditor. Implementers per group: `SIZE_M_IMPLEMENTERS` for size M, `MAX_IMPLEMENTERS` for L, 1 for S.
 
@@ -89,17 +89,17 @@ For each done task: `bash "$RUN" gate <task-id> [limit]` → JSON (pass the gree
 - `audit` or `split` → `bash "$RUN" inc gate_trips`; spawn `idleflow:diff-auditor` with the task's plan section, the gate JSON, the worktree path and the task's base sha. Then:
   - `accept` → review.
   - `reject` → `bash "$RUN" set tasks.<id>.status '"building"'`, send the auditor's reason to the implementer as a retry (counts toward `MAX_RETRIES`), re-gate.
-  - `split` → `bash "$RUN" wt rm <task-id>`; send the auditor's sub-tasks and globs to `idleflow:planner` for a one-task revision that replaces the task with a new group; re-read the plan; register ownership; build that group. You never edit the task list yourself.
+  - `split` → `bash "$RUN" set tasks.<id>.status '"split"'`, `bash "$RUN" wt rm <task-id>`; send the auditor's sub-tasks and globs to `idleflow:planner` for a one-task revision that replaces the task with a new group; re-read the plan; register ownership; build that group. You never edit the task list yourself.
 
 **Retroactive upgrade:** if size was S and any gate `total` exceeds `SIZE_S_OVERRUN`, set size to M, run step 4 on the plan now, and if the revision changes the task's acceptance criteria, re-run that task once.
 
 ## 7. Review (Opus + Sonnet, per task, in parallel)
 
-Size S: `idleflow:review-correct` only. M and L: `idleflow:review-correct` and `idleflow:review-conform` for every task in one message. Each gets: the worktree path, the task's base sha, the task's plan section (paste), the report path under `tasks/<id>/`, the output path under `review/`, and the `ownership.json` path (the authority on owned globs). The conformance reviewer also gets the `context.md`, `.claude/conventions.md` and `.claude/lessons.md` paths and the value of `co_author_claude` from `CLAUDE.md` (`no` if there is no such file). Spawn the conformance reviewer first and the correctness reviewer once it has replied: test runs leave caches that would otherwise show up as scope creep.
+Size S: `idleflow:review-correct` only. M and L: `idleflow:review-correct` and `idleflow:review-conform` for every task in one message. Each gets: the worktree path, the task's base sha, the task's plan section (paste), the report path under `tasks/<id>/`, the output path under `review/`, and the `ownership.json` path (the authority on owned globs). The conformance reviewer also gets the `context.md`, `.claude/conventions.md` and `.claude/lessons.md` paths and the value of `co_author_claude` from `CLAUDE.md` (`no` if there is no such file). Both run in parallel; the correctness reviewer runs tests with caches disabled and the conformance reviewer ignores cache directories, so they do not pollute each other.
 
 For each task:
 - both approve → `bash "$RUN" set tasks.<id>.status '"approved"'`.
-- any reject → `bash "$RUN" inc review_findings <count>` (the n from each reply). If the only rejecting finding is a commit-message-only `meta_commentary`, it is not a retry: tell the implementer to reword that commit in the worktree, then re-run the conformance reviewer only. Otherwise, if `retries < MAX_RETRIES`: `bash "$RUN" inc retries`, `bash "$RUN" set tasks.<id>.status '"building"'`, re-spawn the task's implementer (`idleflow:implementer-hard` for the retry regardless of original model; quality first) with its original prompt plus the paths of the rejecting review files, then re-gate and re-review that task only. Else stop: tell the human which task, which findings (titles only) and the review file paths; remove worktrees (`bash "$RUN" wt list` → `wt rm` each), then `bash "$RUN" finish needs-human`. Merge nothing.
+- any reject → `bash "$RUN" inc review_findings <count>` (the n from each reply). If the only rejecting finding is a commit-message-only `meta_commentary`, it is not a retry: spawn `idleflow:implementer` with only the worktree path, the commit sha and the new message to set (it amends or rewords in the worktree; you never touch the worktree yourself), then re-run the conformance reviewer only. Otherwise, if `retries < MAX_RETRIES`: `bash "$RUN" inc retries`, `bash "$RUN" set tasks.<id>.status '"building"'`, re-spawn the task's implementer (`idleflow:implementer-hard` for the retry regardless of original model; quality first) with its original prompt plus the paths of the rejecting review files, then re-gate and re-review that task only. Else stop: tell the human which task, which findings (titles only) and the review file paths; remove worktrees (`bash "$RUN" wt list` → `wt rm` each), then `bash "$RUN" finish needs-human`. Merge nothing.
 
 ## 8. Merge and verify
 
@@ -109,9 +109,9 @@ After the last merge, run the plan's "Verification after merge" command. If it f
 
 ## 9. Retro and finish
 
-Spawn `idleflow:retro` with the run directory path and the `docs:` value. When `docs: yes` it also writes the session note and updates `progress.md` and `index.md`, and commits them. Then remove worktrees: `bash "$RUN" wt list` → `bash "$RUN" wt rm <id>` each. Then `bash "$RUN" finish done`.
+**Plugin gaps** (before `finish`, while `active/` still exists). Read `.claude/runs/active/gaps.md` if it exists, plus any gap you hit yourself. If there are lines, list them and ask once with AskUserQuestion: **Report them to Idle-Sync/idleflow** (one issue per line from the human's GitHub account: read `${CLAUDE_PLUGIN_ROOT}/commands/plugin-feedback.md` and follow its batch mode with the lines and the run id) / **Not now**. Never open an issue without that answer.
 
-**Plugin gaps.** `grep -rh '^plugin_gap:' .claude/runs/active/` (reports, reviews, plan, debate, stack, libraries, tooling files) plus any gap you hit yourself. If there are any, list them and ask once with AskUserQuestion: **Report them to Idle-Sync/idleflow** (opens one issue per gap from the human's GitHub account, through `${CLAUDE_PLUGIN_ROOT}/commands/plugin-feedback.md` with the gap line as the feedback and the run id as evidence) / **Not now**. Never open an issue without that answer.
+Spawn `idleflow:retro` with the run directory path and the `docs:` value. When `docs: yes` it also writes the session note and updates `progress.md` and `index.md`, and commits them. Then remove worktrees: `bash "$RUN" wt list` → `bash "$RUN" wt rm <id>` each. Then `bash "$RUN" finish done`.
 
 Final message to the human, and nothing more: one line per task (id, title, lines, tests), the run id, whether a lesson was added, whether `progress.md` / `index.md` were updated, any config proposal the retro wrote, any `unchecked:` docs from step 2a, plugin gaps reported or skipped. If `CLAUDE.md` says `releases: github-tagged` and this run completed a `prd.md` milestone (every "Must do" item of it now has a landed task), add one line with the proposed tag and the two commands from `CLAUDE.md` "Releases"; do not tag or push yourself.
 
@@ -129,4 +129,4 @@ Commit messages in this run follow `CLAUDE.md`: the `Co-Authored-By: Claude <nor
 - Never let a task own `prd.md`, `progress.md`, `index.md`, `CLAUDE.md` or `.claude/conventions.md`.
 - Never install anything into the repo. Accepted stack or library decisions become tasks. The only installs you run are the tooling commands the human accepted by name in R5, and those change the user's Claude Code setup, not the repo.
 - Never agree with an answer the evidence contradicts without saying so once, with the evidence.
-- Never work around something this plugin lacks. Write it as a `plugin_gap:` line in `plan.md` "Open questions" and let step 9 ask the human whether to report it.
+- Never work around something this plugin lacks. Append it as a `plugin_gap: orchestrator — <what> — <why>` line to `.claude/runs/active/gaps.md` and let step 9 ask the human whether to report it.

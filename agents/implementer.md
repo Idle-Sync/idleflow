@@ -51,5 +51,6 @@ tests: <added N, modified N, all passing: yes/no, command used; when tests_first
 deviations: <none | list>
 blocked_on: <none | file + reason>
 notes_for_reviewer: <anything non-obvious, max 5 lines>
-plugin_gap: <none | what this plugin lacked that you needed, and why>
 ```
+
+If this plugin lacked something you needed (an input, a step, a tool, a config knob), append one line to `<repo>/.claude/runs/active/gaps.md` (the repo path is in `.claude-run/repo`; the guard allows that path): `plugin_gap: implementer <task-id> — <what> — <why>`. Do not work around it silently.

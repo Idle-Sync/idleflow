@@ -77,11 +77,15 @@ bash "$RUN" set gate_trips '"2"'
 check "inc coerces a string counter"   '[ "$(bash "$RUN" inc gate_trips)" = "3" ]'
 bash "$RUN" set gate_trips 2.0
 check "inc 2.0 + 1 prints 3"           '[ "$(bash "$RUN" inc gate_trips)" = "3" ]'
-for v in '"abc"' '[]' '{}' 'true' '"Infinity"'; do
+for v in '"abc"' '[]' '{}' 'true' '"Infinity"' '"0x10"' '"1_000"'; do
   bash "$RUN" set gate_trips "$v"
   check "inc rejects $v"               '! bash "$RUN" inc gate_trips 2>/dev/null'
 done
 bash "$RUN" set gate_trips 0
+scratch="$d/.claude/runs"   # gitignored, so scratch files never become tracked
+cp .claude/runs/active/run.json "$scratch/run.bak"; bash "$RUN" set id '""'
+check "finish refuses an empty id"     '! bash "$RUN" finish x 2>/dev/null && [ -d .claude/runs/active ]'
+cp "$scratch/run.bak" .claude/runs/active/run.json
 check "run.json has no CRLF"           '! grep -q $'"'"'\r'"'"' .claude/runs/active/run.json'
 
 echo "--- worktree / ownership"
@@ -135,16 +139,29 @@ check "gate with no exclude list"      'IDLEFLOW_CONF=/nonexistent "$HERE/diff-g
 check "gate rejects a bad base"        '! "$HERE/diff-gate.sh" "$wt" deadbeef >/dev/null 2>&1'
 bash "$RUN" set tasks.T1.base_sha null
 check "gate falls back to run base on null" 'bash "$RUN" gate T1 | grep -q "\"verdict\":\"ok\""'
+bash "$RUN" set tasks.T1.base_sha '"deadbeef"'
+check "run.sh gate fails loudly on a bad base" '! bash "$RUN" gate T1 2>"$scratch/gate.err" && grep -q "bad base" "$scratch/gate.err"'
+bash "$RUN" set tasks.T1.base_sha "\"$(git rev-parse HEAD)\""
 
 echo "--- merge, then a second group gates against its own base"
+check "merge refuses an unapproved task" 'bash "$RUN" merge T1 >/dev/null 2>&1; [ $? -eq 4 ]'
 bash "$RUN" set tasks.T1.status '"approved"'
+mkdir -p "$wt/.pytest_cache" && echo v > "$wt/.pytest_cache/v"
 m="$(bash "$RUN" merge T1)"
 check "merge reports merged"           '[ "$m" = "merged T1" ]'
 check "merged file on main"            '[ -f src/code.py ]'
+check "merge leaves untracked caches out" '[ ! -e .pytest_cache ] && ! git ls-files | grep -q pytest_cache'
 check "merge keeps the human identity" '[ "$(git log -1 --format=%an)" = "Human" ]'
 check "merge of unknown task exits 4"  'bash "$RUN" merge NOPE >/dev/null 2>&1; [ $? -eq 4 ]'
+echo "docs/" >> .gitignore; mkdir -p docs; echo t > docs/tracked.md; git add -f docs/tracked.md; commit -m "tracked doc"
+echo t2 > docs/tracked.md; echo n > docs/new.md
+s2="$(bash "$RUN" snapshot 2>/dev/null)"
+check "snapshot updates tracked files under ignored docs/" 'echo "$s2" | grep -q committed && git show --stat HEAD | grep -q "docs/tracked.md"'
+check "snapshot does not force-add new files there"       '! git ls-files --error-unmatch docs/new.md >/dev/null 2>&1'
+rm -f docs/new.md; sed -i '/^docs\/$/d' .gitignore; git add .gitignore; commit -m "unignore docs"
 wt2="$(bash "$RUN" wt add T2 HEAD)"
 bash "$RUN" own T2 '["src/**"]'
+bash "$RUN" set tasks.T2.status '"approved"'
 ( cd "$wt2" && printf '1\n2\n3\n4\n5\n' > src/second.py )
 g2="$(bash "$RUN" gate T2)"
 check "T2 gate sees only T2 lines (5)" 'echo "$g2" | grep -q "\"total\":5,"'
@@ -174,6 +191,17 @@ case "$(idleflow_rt_name)" in
   *)       full="$(command -v python3 2>/dev/null || command -v python)";;
 esac
 check "full-path runtime works"        '[ "$(IDLEFLOW_RUNTIME="$full" idleflow_rt get ".claude/runs/$id/run.json" status)" = "done" ]'
+if command -v cygpath >/dev/null 2>&1; then
+  fullw="$(cygpath -w "$full")"
+  check "backslash runtime path works"  '[ "$(IDLEFLOW_RUNTIME="$fullw" idleflow_rt get ".claude/runs/$id/run.json" status)" = "done" ]'
+fi
+
+echo "--- snapshot refuses to run inside a merge"
+git checkout -q -b side && echo s > side.txt && git add side.txt && commit -m side && git checkout -q -
+echo m > side.txt && git add side.txt && commit -m main-side
+git merge -q side >/dev/null 2>&1 || true
+check "snapshot refuses during a merge" '[ -f .git/MERGE_HEAD ] && ! bash "$RUN" snapshot 2>/dev/null'
+git merge --abort 2>/dev/null || true
 
 echo "--- loc / conf"
 check "loc counts code lines only"     '[ "$(bash "$RUN" loc)" = "$(cat src/big.py src/code.py .gitignore | wc -l | tr -d " ")" ]'

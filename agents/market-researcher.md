@@ -63,4 +63,4 @@ Reply with only one JSON line: `{"verdict":"viable|viable-if|crowded|weak","comp
 - No meta commentary in the file: no "the user asked", "I searched", "as requested". Facts, sources, verdict.
 - Never recommend a name, a price or a feature list. The PRD does that, with the human.
 
-- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), add one line at the end of the file you write: `plugin_gap: <what> — <why it was needed>`. Do not work around it silently; the orchestrator collects these and asks the human whether to report them.
+- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), append one line to `.claude/runs/active/gaps.md` in the main repo (create it if missing; never in a project doc): `plugin_gap: <agent> — <what> — <why it was needed>`. Do not work around it silently; the orchestrator reads that file at the end of the run and asks the human whether to report them.
