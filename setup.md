@@ -21,7 +21,7 @@ Need: Claude Code present, git ≥ 2.20 (worktrees), and **one of** Python ≥ 3
 
 Also confirm the plugin files are intact:
 ```
-ls .claude-plugin/plugin.json commands/feature.md commands/fix.md agents/*.md hooks/hooks.json scripts/*.sh scripts/idleflow.py scripts/idleflow.js config/idleflow.conf templates/*.md
+ls .claude-plugin/plugin.json commands/*.md agents/*.md procedures/*.md hooks/hooks.json scripts/*.sh scripts/idleflow.py scripts/idleflow.js config/idleflow.conf templates/*.md
 chmod +x scripts/*.sh
 bash scripts/selftest.sh        # must end with PASS; it also prints which runtime was picked
 ```
@@ -57,7 +57,7 @@ cp -r scripts config templates commands agents procedures ~/.claude/idleflow/
 (`commands`, `agents` and `procedures` are copied under `~/.claude/idleflow/` too because the command files read each other and the procedure file by path.)
 Then the commands reference `${CLAUDE_PLUGIN_ROOT}`, which only exists for plugins. Replace it:
 ```
-sed -i 's#\${CLAUDE_PLUGIN_ROOT}#'"$HOME"'/.claude/idleflow#g' ~/.claude/commands/idleflow/*.md
+sed -i 's#\${CLAUDE_PLUGIN_ROOT}#'"$HOME"'/.claude/idleflow#g' ~/.claude/commands/idleflow/*.md ~/.claude/idleflow/commands/*.md ~/.claude/idleflow/procedures/*.md
 ```
 And merge the hook into `~/.claude/settings.json` (read it first; preserve existing hooks):
 ```json
@@ -99,7 +99,7 @@ If the write was *not* blocked: the hook isn't registered. Run `/hooks` inside C
 
 ## Step 5 — Per-repo first run
 
-In a real repo, nothing needs pre-creating; `/idleflow:feature` creates `.claude/runs/` (and gitignores it) and copies `templates/lessons.md` to `.claude/lessons.md` on first use. The human should commit `.claude/lessons.md` — it is the thing that makes the workflow improve.
+In a real repo, nothing needs pre-creating; `/idleflow:feature` creates `.claude/runs/` (and gitignores it), copies `templates/lessons.md` and `templates/conventions.md` into `.claude/`, and commits them itself (`run.sh snapshot`, with the human's git identity). Both files are what make the workflow improve; keep them committed.
 
 Recommend to the human, in one line each:
 - Run the orchestrator session on Opus (`claude --model opus`); it's the longest-lived context in the run and doesn't need Fable. Only the planner subagent uses Fable.

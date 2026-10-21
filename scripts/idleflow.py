@@ -37,19 +37,24 @@ def save(path, obj):
 
 
 def to_number(v):
-    """Counters may have been written as strings by hand; accept "3", reject "abc"."""
+    """Counters may have been written as strings by hand: accept 3, "3", "2.5";
+    reject lists, objects, "abc", "Infinity" (identical rules in idleflow.js)."""
     if v is None or v == "":
         return 0
-    if isinstance(v, bool):
-        return int(v)
-    if isinstance(v, (int, float)):
-        return v
+    if isinstance(v, bool) or not isinstance(v, (int, float, str)):
+        bad(v)
     try:
         f = float(v)
     except (TypeError, ValueError):
-        sys.stderr.write("idleflow: not a number: %r\n" % (v,))
-        sys.exit(1)
+        bad(v)
+    if f != f or f in (float("inf"), float("-inf")):
+        bad(v)
     return int(f) if f.is_integer() else f
+
+
+def bad(v):
+    sys.stderr.write("idleflow: not a number: %s\n" % json.dumps(v))
+    sys.exit(1)
 
 
 def walk(obj, key, create):
@@ -83,7 +88,8 @@ def cmd_set(path, key, val):
 def cmd_inc(path, key, n="1"):
     obj = load(path)
     cur, last = walk(obj, key, True)
-    cur[last] = to_number(cur.get(last)) + to_number(n)
+    total = to_number(cur.get(last)) + to_number(n)
+    cur[last] = int(total) if float(total).is_integer() else total
     save(path, obj)
     print(cur[last])
 
@@ -94,7 +100,7 @@ def cmd_finish(path, status, log):
     r["finished"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     save(path, r)
     with open(log, "a", encoding="utf-8", newline="\n") as f:
-        f.write(json.dumps(r, ensure_ascii=False) + "\n")
+        f.write(json.dumps(r, ensure_ascii=False, separators=(",", ":")) + "\n")
 
 
 def cmd_own(path, tid, wt, globs):
@@ -198,7 +204,9 @@ def glob_match(rel, globs):
 
 def cmd_guard():
     try:
-        payload = json.loads(sys.stdin.read())
+        # bytes, not text: under -I on Windows sys.stdin would decode as cp1252 and a
+        # non-ASCII worktree path would then match nothing, so the guard would fail open
+        payload = json.loads(sys.stdin.buffer.read().decode("utf-8", "replace"))
     except Exception:
         sys.exit(0)
     tool_input = payload.get("tool_input") or {}

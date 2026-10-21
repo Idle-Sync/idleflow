@@ -53,14 +53,18 @@ function cmdSet(p, key, val) {
   cur[last] = JSON.parse(val);
   save(p, obj);
 }
-// Counters may have been written as strings by hand; accept "3", reject "abc".
+// Counters may have been written as strings by hand: accept 3, "3", "2.5";
+// reject lists, objects, "abc", "Infinity" (identical rules in idleflow.py).
+function bad(v) {
+  process.stderr.write(`idleflow: not a number: ${JSON.stringify(v)}\n`);
+  process.exit(1);
+}
 function toNumber(v) {
   if (v === undefined || v === null || v === "") return 0;
+  if (typeof v === "boolean" || (typeof v !== "number" && typeof v !== "string")) bad(v);
+  if (typeof v === "string" && v.trim() === "") bad(v);
   const n = Number(v);
-  if (Number.isNaN(n)) {
-    process.stderr.write(`idleflow: not a number: ${JSON.stringify(v)}\n`);
-    process.exit(1);
-  }
+  if (!Number.isFinite(n)) bad(v);
   return n;
 }
 function cmdInc(p, key, n = "1") {

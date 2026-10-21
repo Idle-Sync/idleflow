@@ -103,6 +103,8 @@ If releases were chosen: confirm the repo name (default: the folder name) and ow
 
 ## 8. Hand off
 
+`grep -rh '^plugin_gap:' .claude/runs/active/ docs/research/ docs/market-research.md` plus any gap you hit yourself. If there are any, list them and ask once: **Report them to Idle-Sync/idleflow** (one issue per gap from the human's GitHub account, through `${CLAUDE_PLUGIN_ROOT}/commands/plugin-feedback.md`) / **Not now**. Never open an issue without that answer.
+
 Final message, nothing more:
 - one line: the verdict from market research and the PRD milestone count,
 - one line each: readability mode, attribution, releases, docs in git, tooling installed,

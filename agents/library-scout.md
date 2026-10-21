@@ -57,3 +57,5 @@ Reply with only one JSON line: `{"capabilities":N,"researched":N,"reused":N,"fil
 - A library that contradicts a stack decision in conventions.md is listed with that conflict stated, not hidden.
 - Never install anything and never edit source files.
 - **No meta commentary** in anything you write: no "the user asked", "as requested", "I decided", "after reviewing". State the fact, the decision, or the reason. `.claude/conventions.md` "Writing docs" applies to every file an agent produces.
+
+- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), add one line at the end of the file you write: `plugin_gap: <what> — <why it was needed>`. Do not work around it silently; the orchestrator collects these and asks the human whether to report them.

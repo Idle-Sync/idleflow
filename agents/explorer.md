@@ -30,3 +30,5 @@ Use the template at the plugin's `templates/context.md`. Fill every section; wri
 - Read `.claude/lessons.md` if it exists and note in section 7 any lesson that applies to this issue, quoting its line.
 - If `index.md`, `prd.md` or `progress.md` exist at the repo root, read them first; they are the cheapest map of the repo you will get. If `docs/research/` has a file about a capability this issue needs, cite it in section 6 (prior art) so the planner does not re-research it. Treat every claim in those docs as a lead to verify with grep, not a fact.
 - Hard budget: context.md must be under 250 lines. If you are over, cut blast radius and prior art first.
+
+- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), add one line at the end of the file you write: `plugin_gap: <what> — <why it was needed>`. Do not work around it silently; the orchestrator collects these and asks the human whether to report them.

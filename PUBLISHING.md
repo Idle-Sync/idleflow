@@ -34,9 +34,9 @@ Then run `/idleflow:fix` on a small bug in a real repo once. If it works locally
 ## 2. Push to GitHub
 
 ```
-git init && git add . && git commit -m "idleflow 0.1.0"
+git init && git add . && git commit -m "idleflow <version>"
 gh repo create Idle-Sync/idleflow --public --source . --push
-git tag v0.1.0 && git push --tags
+git tag v<version> && git push --tags   # the version in plugin.json
 ```
 
 A private repo works too; users then need read access to install.

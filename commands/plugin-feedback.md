@@ -6,6 +6,8 @@ allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion
 
 Feedback: $ARGUMENTS
 
+When the orchestrator calls this at the end of a run with a list of `plugin_gap:` lines the human agreed to report, treat each line as its own feedback of kind `workflow` (or `idea`), with the run id and the file the gap came from as evidence, and the human's single yes in that run as the confirmation for step 4; still show each draft before opening it.
+
 1. `gh auth status` must succeed. If `gh` is missing or logged out, say so, print the draft from step 3 so it can be pasted at https://github.com/Idle-Sync/idleflow/issues/new, and stop.
 2. Check for duplicates: `gh issue list --repo Idle-Sync/idleflow --search "<three key words>" --state all --limit 10`. If one matches, say which and offer to comment there instead (only if the human says yes).
 3. Gather evidence, read-only, from this repo if present: the plugin version (`cat "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json"`), `bash "${CLAUDE_PLUGIN_ROOT}/scripts/run.sh" conf` (config values and runtime), the last line of `.claude/runs/log.jsonl`, and for the most recent run directory under `.claude/runs/` its `run.json` size, retries, gate_trips and review_findings and the one-line `verdict:` of each `review/*.md`. Nothing from `plan.md`, `context.md` or the code: those may be private.

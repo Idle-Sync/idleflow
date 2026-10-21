@@ -13,7 +13,7 @@
 #   run.sh inc <key> [n]                  -> adds n (default 1) to a counter in run.json
 #   run.sh report <task-id>               -> copies the task's .claude-run/report.md into the run dir, prints its path
 #   run.sh gate <task-id> [limit]         -> runs diff-gate against the task's own base, writes tasks/<id>/gate.json, prints it
-#   run.sh merge <task-id>                -> merges the task branch into the current branch (no-ff); exit 3 on conflict
+#   run.sh merge <task-id>                -> merges the task branch into the current branch (no-ff); exit 3 on conflict, 4 otherwise
 #   run.sh snapshot                       -> commits the repo-level docs the orchestrator writes (conventions, CLAUDE.md, prd, ...)
 #   run.sh finish [status]                -> logs the run to .claude/runs/log.jsonl, renames active/ to <id>/
 #   run.sh loc                            -> prints hand-written code lines in the repo (DIFF_EXCLUDE applied)
@@ -22,6 +22,8 @@
 # The active run lives in .claude/runs/active/ (a real directory, no symlinks, so it
 # works on Windows). `finish` renames it to .claude/runs/<id>/. JSON work is done by
 # scripts/idleflow.py or idleflow.js through rt.sh, whichever runtime is installed.
+# Commits made here use the human's git identity; the "idleflow" identity is a fallback
+# for machines with none configured.
 
 set -euo pipefail
 
@@ -36,10 +38,16 @@ REPO="$(git rev-parse --show-toplevel)"
 RUNS="$REPO/.claude/runs"
 ACTIVE="$RUNS/active"
 SUFFIX="${WORKTREE_SUFFIX:-__wt}"
-IDENTITY=(-c user.name=idleflow -c user.email=idleflow@local)
+G=(git -C "$REPO")
+
+IDENTITY=()
+if ! git config user.email >/dev/null 2>&1; then IDENTITY=(-c user.name=idleflow -c user.email=idleflow@local); fi
+gcommit() { "${G[@]}" ${IDENTITY[@]+"${IDENTITY[@]}"} commit -q "$@"; }
 
 # Paths handed to agents or written to JSON are native (D:/x on Windows, unchanged elsewhere).
 native_path() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else echo "$1"; fi; }
+# A bash string as a JSON string literal (backslash and double quote escaped).
+json_str() { printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')"; }
 
 active_id() {
   [ -f "$ACTIVE/run.json" ] || { echo "no active run (run.sh new <slug> first)" >&2; exit 1; }
@@ -57,12 +65,13 @@ build_excl() {
 # Move a leftover active/ aside under its own id so a new run can start.
 park_active() {
   [ -d "$ACTIVE" ] || return 0
-  local old
-  old="$(idleflow_rt get "$ACTIVE/run.json" id 2>/dev/null || echo "abandoned-$(date +%Y%m%d-%H%M%S)")"
+  local old=""
+  [ -f "$ACTIVE/run.json" ] && old="$(idleflow_rt get "$ACTIVE/run.json" id 2>/dev/null || true)"
+  [ -n "$old" ] || old="abandoned-$(date +%Y%m%d-%H%M%S)"
   if [ -f "$ACTIVE/run.json" ]; then
     idleflow_rt set "$ACTIVE/run.json" status '"abandoned"' || true
   fi
-  rm -rf "$RUNS/$old"
+  rm -rf "${RUNS:?}/$old"
   mv "$ACTIVE" "$RUNS/$old"
   echo "parked unfinished run as .claude/runs/$old" >&2
 }
@@ -71,9 +80,10 @@ park_active() {
 copy_report() {
   local tid="$1" src dst
   src="$(wt_path "$tid")/.claude-run/report.md"; dst="$ACTIVE/tasks/$tid/report.md"
+  [ -f "$src" ] || { echo "no report at $src (the implementer did not write .claude-run/report.md)" >&2; return 1; }
   mkdir -p "$ACTIVE/tasks/$tid"
-  [ -f "$src" ] && cp "$src" "$dst"
-  echo "$(native_path "$dst")"
+  cp "$src" "$dst"
+  native_path "$dst"
 }
 
 cmd="${1:-}"; shift || true
@@ -86,15 +96,17 @@ case "$cmd" in
     park_active
     mkdir -p "$ACTIVE"/{tasks,debate,review}
     # Both work on an unborn branch (fresh `git init`, no commits yet): base falls back to HEAD, sha to "".
-    base="$(git symbolic-ref --short -q HEAD || echo HEAD)"
-    base_sha="$(git rev-parse -q --verify HEAD 2>/dev/null || true)"
+    base="$("${G[@]}" symbolic-ref --short -q HEAD || echo HEAD)"
+    base_sha="$("${G[@]}" rev-parse -q --verify HEAD 2>/dev/null || true)"
     cat > "$ACTIVE/run.json" <<JSON
-{"id":"$id","slug":"$safe","base":"$base","base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"gate_trips":0,"review_findings":0}
+{"id":"$id","slug":"$safe","base":$(json_str "$base"),"base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"gate_trips":0,"review_findings":0}
 JSON
-    echo '{"repo":"'"$(native_path "$REPO")"'","tasks":{}}' > "$ACTIVE/ownership.json"
+    echo "{\"repo\":$(json_str "$(native_path "$REPO")"),\"tasks\":{}}" > "$ACTIVE/ownership.json"
     grep -qxF '.claude/runs/' "$REPO/.gitignore" 2>/dev/null || echo '.claude/runs/' >> "$REPO/.gitignore"
     # worktree marker dir: excluded locally (shared by all worktrees), never committed or merged
-    excl="$(git rev-parse --git-common-dir)/info/exclude"; mkdir -p "$(dirname "$excl")"
+    excl="$("${G[@]}" rev-parse --git-common-dir)/info/exclude"
+    case "$excl" in /*|?:*) ;; *) excl="$REPO/$excl";; esac
+    mkdir -p "$(dirname "$excl")"
     grep -qxF '.claude-run/' "$excl" 2>/dev/null || echo '.claude-run/' >> "$excl"
     echo "$id"
     ;;
@@ -105,27 +117,30 @@ JSON
         id="$(active_id)"
         tid="${1:?task-id}"; base="${2:-$(idleflow_rt get "$ACTIVE/run.json" base)}"
         p="$(wt_path "$tid")"; br="idleflow/$id/$tid"
-        git rev-parse -q --verify "$base^{commit}" >/dev/null || { echo "base '$base' has no commits yet; commit first (run.sh snapshot)" >&2; exit 1; }
+        "${G[@]}" rev-parse -q --verify "$base^{commit}" >/dev/null || { echo "base '$base' has no commits yet; commit first (run.sh snapshot)" >&2; exit 1; }
         # a leftover from a crashed run must not make `add` fail
-        git worktree prune
-        if [ -d "$p" ]; then git worktree remove --force "$p" 2>/dev/null || true; case "$p" in *"$SUFFIX"/*) rm -rf "$p";; esac; fi
+        "${G[@]}" worktree prune
+        if [ -d "$p" ]; then
+          "${G[@]}" worktree remove --force "$p" 2>/dev/null || true
+          case "$p" in *"$SUFFIX"/*) rm -rf "$p";; esac
+        fi
         mkdir -p "$(dirname "$p")"
-        git worktree add -B "$br" "$p" "$base" >/dev/null
+        "${G[@]}" worktree add -B "$br" "$p" "$base" >/dev/null
         mkdir -p "$p/.claude-run" "$ACTIVE/tasks/$tid"
         echo "$tid" > "$p/.claude-run/task-id"
         native_path "$REPO" > "$p/.claude-run/repo"   # lets the guard hook find the ownership map from inside the worktree
         # the task's own base: groups merged earlier move the branch, so gate/review must diff from here, not from the run start
-        idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.base_sha" "\"$(git rev-parse "$base")\""
-        idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.worktree" "\"$(native_path "$p")\""
+        idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.base_sha" "\"$("${G[@]}" rev-parse "$base")\""
+        idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.worktree" "$(json_str "$(native_path "$p")")"
         native_path "$p"
         ;;
       rm)
         tid="${1:?task-id}"; p="$(wt_path "$tid")"
-        git worktree remove --force "$p" 2>/dev/null || true
-        git worktree prune
+        "${G[@]}" worktree remove --force "$p" 2>/dev/null || true
+        "${G[@]}" worktree prune
         ;;
       list)
-        git worktree list | grep "idleflow/" || true
+        "${G[@]}" worktree list | grep '\[idleflow/' || true
         ;;
       *) echo "unknown wt subcommand" >&2; exit 1;;
     esac
@@ -152,22 +167,27 @@ JSON
     ;;
   gate)
     tid="${1:?task-id}"; active_id >/dev/null
-    base="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$tid.base_sha" 2>/dev/null || idleflow_rt get "$ACTIVE/run.json" base_sha)"
+    base="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$tid.base_sha" 2>/dev/null || true)"
+    if [ -z "$base" ] || [ "$base" = "null" ]; then base="$(idleflow_rt get "$ACTIVE/run.json" base_sha)"; fi
+    [ -n "$base" ] && [ "$base" != "null" ] || { echo "gate $tid: no base sha recorded (was the worktree created with run.sh wt add?)" >&2; exit 1; }
     out="$("$HERE/diff-gate.sh" "$(wt_path "$tid")" "$base" ${2:+"$2"})"
     mkdir -p "$ACTIVE/tasks/$tid"
     echo "$out" > "$ACTIVE/tasks/$tid/gate.json"
-    copy_report "$tid" >/dev/null
+    copy_report "$tid" >/dev/null 2>&1 || true
     echo "$out"
     ;;
   merge)
     tid="${1:?task-id}"; id="$(active_id)"
-    br="idleflow/$id/$tid"
+    br="idleflow/$id/$tid"; p="$(wt_path "$tid")"
     # commit anything the implementer left uncommitted in the worktree
-    ( cd "$(wt_path "$tid")" && git add -A && git "${IDENTITY[@]}" commit -qm "$tid: finish task" || true )
-    if git -C "$REPO" "${IDENTITY[@]}" merge --no-ff -q -m "idleflow: merge $tid ($id)" "$br"; then
+    if [ -d "$p" ]; then
+      git -C "$p" add -A
+      git -C "$p" diff --cached --quiet || git -C "$p" ${IDENTITY[@]+"${IDENTITY[@]}"} commit -qm "$tid: finish task"
+    fi
+    if "${G[@]}" ${IDENTITY[@]+"${IDENTITY[@]}"} merge --no-ff -q -m "idleflow: merge $tid ($id)" "$br"; then
       echo "merged $tid"
-    elif [ -f "$(git -C "$REPO" rev-parse --git-dir)/MERGE_HEAD" ]; then
-      git -C "$REPO" merge --abort || true
+    elif [ -f "$("${G[@]}" rev-parse --git-dir)/MERGE_HEAD" ] || [ -f "$REPO/.git/MERGE_HEAD" ]; then
+      "${G[@]}" merge --abort || true
       echo "CONFLICT merging $tid — resolve by re-running the owning task against the new base, or merge by hand" >&2
       exit 3
     else
@@ -177,29 +197,33 @@ JSON
     ;;
   snapshot)
     # The orchestrator creates repo-level docs in the main checkout before any worktree exists.
-    # Commit them so worktrees (branched from HEAD) see them and nothing is left dangling.
-    cd "$REPO"
+    # Commit them so worktrees (branched from HEAD) see them. Only these paths are committed,
+    # never other staged work; ignored paths (a gitignored docs/) are skipped, never forced.
+    paths=()
     for f in .claude/conventions.md .claude/lessons.md CLAUDE.md prd.md progress.md index.md README.md .gitignore .gitattributes docs; do
-      [ -e "$f" ] && git add -A -- "$f"
+      [ -e "$REPO/$f" ] || continue
+      "${G[@]}" check-ignore -q -- "$f" && continue
+      paths+=("$f")
     done
-    if git diff --cached --quiet 2>/dev/null; then
+    [ "${#paths[@]}" -gt 0 ] && "${G[@]}" add -A -- "${paths[@]}"
+    if [ "${#paths[@]}" -eq 0 ] || "${G[@]}" diff --cached --quiet -- "${paths[@]}"; then
       echo "snapshot: nothing to commit"
     else
-      git "${IDENTITY[@]}" commit -qm "docs: project conventions and run inputs"
-      echo "snapshot: committed $(git rev-parse --short HEAD)"
+      gcommit -m "docs: project conventions and run inputs" -- "${paths[@]}"
+      echo "snapshot: committed $("${G[@]}" rev-parse --short HEAD)"
     fi
     ;;
   finish)
     status="${1:-done}"; id="$(active_id)"
     idleflow_rt finish "$ACTIVE/run.json" "$status" "$RUNS/log.jsonl"
-    rm -rf "$RUNS/$id"
+    rm -rf "${RUNS:?}/$id"
     mv "$ACTIVE" "$RUNS/$id"
     echo "run $id finished: $status"
     ;;
   loc)
     # Hand-written code lines in the repo: tracked files minus DIFF_EXCLUDE. Docs don't count.
     build_excl
-    n="$(git -C "$REPO" ls-files -z -- . ${EXCL[@]+"${EXCL[@]}"} | xargs -0 -r cat 2>/dev/null | wc -l | tr -d ' ')"
+    n="$("${G[@]}" ls-files -z -- . ${EXCL[@]+"${EXCL[@]}"} | xargs -0 -r cat 2>/dev/null | wc -l | tr -d ' ')"
     echo "${n:-0}"
     ;;
   conf)

@@ -26,7 +26,8 @@ The scan uses short names. Expand them like this, and research every member of a
 - `pyproject+uv`, `pyproject+poetry` → PEP 621 `pyproject.toml` plus that lockfile tool.
 - `venv` → project-local virtual environments (`python -m venv`, `uv venv`).
 - `docker-compose-dev`, `devcontainer` → Docker Compose for dev/test; Dev Containers.
-- `pnpm`, `ruff`, `biome`, `eslint-prettier`, `pre-commit`, `justfile`, `github-actions-ci` → the tools of those names.
+- `pnpm`, `justfile`, `github-actions-ci` → the tools of those names.
+- `quality-<language>` → every tool the advisor's table lists for that language (formatter, linter, type checker, test runner, hook manager); for each, the official install and configuration command for a new project.
 - `code-map` → **all** of: Graphify (knowledge graph of a codebase for Claude Code agents), Serena MCP (language-server-backed symbol navigation), Sourcegraph (code search and navigation at scale), universal-ctags, and a maintained repo map file. For each, find what it indexes, how it is installed or connected to Claude Code, its scaling limits, and who is known to use it.
 
 If a candidate turns out to be unmaintained, renamed, or superseded, say so and name the successor with its sources.
@@ -53,3 +54,5 @@ Budget: at most 4 searches and 4 fetches per candidate; at most 40 tool calls to
 - **No meta commentary** in anything you write: no "the user asked", "as requested", "I decided", "after reviewing". State the fact, the decision, or the reason. `.claude/conventions.md` "Writing docs" applies to every file an agent produces.
 
 Reply with only: `research written: <N> candidates, <M> sources`.
+
+- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), add one line at the end of the file you write: `plugin_gap: <what> — <why it was needed>`. Do not work around it silently; the orchestrator collects these and asks the human whether to report them.

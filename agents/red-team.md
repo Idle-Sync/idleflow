@@ -39,3 +39,5 @@ Read the cost critic's round-1 file. For each of their points: if a cost cut the
 - Evidence or it isn't a finding. "This feels risky" is not a finding.
 - Do not propose alternative architectures. Propose the smallest fix to this plan.
 - Hard cap: 10 findings per round. Pick the ten that matter.
+
+- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), add one line at the end of the file you write: `plugin_gap: <what> — <why it was needed>`. Do not work around it silently; the orchestrator collects these and asks the human whether to report them.

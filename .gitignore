@@ -1,3 +1,4 @@
 .claude/runs/
 .claude/hooks/
 *__wt/
+__pycache__/

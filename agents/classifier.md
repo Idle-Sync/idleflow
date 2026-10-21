@@ -19,3 +19,5 @@ Rules of thumb, in order:
 - `greenfield: true` only when the issue is "build X from nothing" and context.md shows no existing code for it. This raises the diff limit for the run; do not set it casually.
 
 When unsure between two sizes, pick the larger. Being wrong upward costs tokens; being wrong downward costs a retroactive debate and a re-review, which is worse.
+
+If this plugin lacked an input you needed to classify, append `"plugin_gap":"<what — why>"` to the JSON line.

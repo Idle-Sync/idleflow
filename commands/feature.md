@@ -38,11 +38,11 @@ Spawn `idleflow:classifier` with the context.md path and the `SIZE_*` values. Pa
 
 If `greenfield` is true, the diff limit for this run is `DIFF_LIMIT * 3`; pass that limit as the second argument to every later `gate` call and to the auditor. Implementers per group: `SIZE_M_IMPLEMENTERS` for size M, `MAX_IMPLEMENTERS` for L, 1 for S.
 
-Then run, in order, the sections of `procedures/repo-setup.md` whose conditions hold: **R2** (project docs), **R3** (stack), **R4** (libraries), **R5** (tooling), and always **R6** (snapshot). Size S skips R3–R5.
+Then, in this order: **R2** (project docs) from `procedures/repo-setup.md`; step **2a** below; **R3** (stack), **R4** (libraries), **R5** (tooling) when their conditions hold (size S skips all three); and always **R6** (snapshot) last.
 
 ### 2a. Ground the docs (Sonnet) — when `docs: yes` and not greenfield
 
-Spawn `idleflow:doc-keeper` with the repo root and the absolute paths of `progress.md`, `index.md`, `prd.md`, `CLAUDE.md`, `README.md`, `docs/`, `.claude/conventions.md`. It checks every claim in the docs against the code, fixes stale ones, and commits `docs: ground stale claims`. Nothing else starts until it replies. Repeat its one-line reply to the human verbatim; carry any `unchecked:` items into the final message. Run this before R6 so the snapshot and the grounding land as separate commits.
+Spawn `idleflow:doc-keeper` with the repo root and the absolute paths of `progress.md`, `index.md`, `prd.md`, `CLAUDE.md`, `README.md`, `docs/`, `.claude/conventions.md`. It checks every claim in the docs against the code, fixes stale ones, and commits `docs: ground stale claims`. Nothing else starts until it replies. Repeat its one-line reply to the human verbatim; carry any `unchecked:` items into the final message.
 
 ## 3. Plan (Fable)
 
@@ -77,7 +77,7 @@ For each group in order; within a group, all tasks in parallel, at most the impl
    `wt add` records the task's own base sha in `run.json` (`bash "$RUN" get tasks.<task-id>.base_sha`); that sha, not the run's, is what the gate, the auditor and the reviewers diff against.
 2. Spawn one implementer per task in a single message so they run concurrently: `idleflow:implementer` for `model: sonnet`, `idleflow:implementer-hard` for `model: opus`. Prompt each with only: its task id, its worktree path, its own section of plan.md (paste just that section; it is the one exception to the no-paste rule, because the implementer must not read other tasks), the absolute paths of `context.md` and `.claude/conventions.md`. Nothing else; the report format is in the agent's own definition.
 3. Wait for all of them. For each, `bash "$RUN" report <task-id>` copies its report to `.claude/runs/active/tasks/<task-id>/report.md`; read `status`, `deviations`, `blocked_on` from there.
-   - `blocked` → if the needed file belongs to another task in this group, finish and merge the group, then re-run the blocked task in group N+1 with the extra glob added by `bash "$RUN" own` **and** in the task's `owns:` list in plan.md (reviewers check both). If the file belongs to no task, add it the same way and re-spawn once. Count it as a retry.
+   - `blocked` → if the needed file belongs to another task in this group, finish and merge the group, then re-run the blocked task in group N+1 with the extra glob added by `bash "$RUN" own` **and** in the task's `owns:` list in plan.md (reviewers read `ownership.json`; the plan is for humans). If the file belongs to no task, add it the same way and re-spawn once. Count it as a retry.
    - `partial` with deviations → a plan defect: `bash "$RUN" inc retries`, send the deviation to the planner for a one-task revision, re-spawn. One attempt, then stop and ask the human.
    - `done` → continue.
 
@@ -88,22 +88,22 @@ For each done task: `bash "$RUN" gate <task-id> [limit]` → JSON (pass the gree
 - `ok` → review.
 - `audit` or `split` → `bash "$RUN" inc gate_trips`; spawn `idleflow:diff-auditor` with the task's plan section, the gate JSON, the worktree path and the task's base sha. Then:
   - `accept` → review.
-  - `reject` → send the auditor's reason to the implementer as a retry (counts toward `MAX_RETRIES`), re-gate.
+  - `reject` → `bash "$RUN" set tasks.<id>.status '"building"'`, send the auditor's reason to the implementer as a retry (counts toward `MAX_RETRIES`), re-gate.
   - `split` → `bash "$RUN" wt rm <task-id>`; send the auditor's sub-tasks and globs to `idleflow:planner` for a one-task revision that replaces the task with a new group; re-read the plan; register ownership; build that group. You never edit the task list yourself.
 
 **Retroactive upgrade:** if size was S and any gate `total` exceeds `SIZE_S_OVERRUN`, set size to M, run step 4 on the plan now, and if the revision changes the task's acceptance criteria, re-run that task once.
 
 ## 7. Review (Opus + Sonnet, per task, in parallel)
 
-Size S: `idleflow:review-correct` only. M and L: `idleflow:review-correct` and `idleflow:review-conform` for every task in one message. Each gets: the worktree path, the task's base sha, the task's plan section (paste), the report path under `tasks/<id>/`, the output path under `review/`, and the `ownership.json` path (the authority on owned globs). The conformance reviewer also gets the `context.md` and `.claude/conventions.md` paths.
+Size S: `idleflow:review-correct` only. M and L: `idleflow:review-correct` and `idleflow:review-conform` for every task in one message. Each gets: the worktree path, the task's base sha, the task's plan section (paste), the report path under `tasks/<id>/`, the output path under `review/`, and the `ownership.json` path (the authority on owned globs). The conformance reviewer also gets the `context.md`, `.claude/conventions.md` and `.claude/lessons.md` paths and the value of `co_author_claude` from `CLAUDE.md` (`no` if there is no such file). Spawn the conformance reviewer first and the correctness reviewer once it has replied: test runs leave caches that would otherwise show up as scope creep.
 
 For each task:
 - both approve → `bash "$RUN" set tasks.<id>.status '"approved"'`.
-- any reject → `bash "$RUN" inc review_findings <count>`. If `retries < MAX_RETRIES`: `bash "$RUN" inc retries`, re-spawn the task's implementer (`idleflow:implementer-hard` for the retry regardless of original model; quality first) with its original prompt plus the paths of the rejecting review files, then re-gate and re-review that task only. Else stop: tell the human which task, which findings (titles only) and the review file paths; remove worktrees (`bash "$RUN" wt list` → `wt rm` each), then `bash "$RUN" finish needs-human`. Merge nothing.
+- any reject → `bash "$RUN" inc review_findings <count>` (the n from each reply). If the only rejecting finding is a commit-message-only `meta_commentary`, it is not a retry: tell the implementer to reword that commit in the worktree, then re-run the conformance reviewer only. Otherwise, if `retries < MAX_RETRIES`: `bash "$RUN" inc retries`, `bash "$RUN" set tasks.<id>.status '"building"'`, re-spawn the task's implementer (`idleflow:implementer-hard` for the retry regardless of original model; quality first) with its original prompt plus the paths of the rejecting review files, then re-gate and re-review that task only. Else stop: tell the human which task, which findings (titles only) and the review file paths; remove worktrees (`bash "$RUN" wt list` → `wt rm` each), then `bash "$RUN" finish needs-human`. Merge nothing.
 
 ## 8. Merge and verify
 
-In plan merge order: `bash "$RUN" merge <task-id>`. Exit 3 (`CONFLICT`) means the ownership map was wrong; do not resolve by hand. Re-run the later task against the new base (`wt rm`, `wt add <id> HEAD`, re-spawn with the same prompt), re-gate, re-review, merge. One attempt; then stop and ask the human as in step 7. Exit 4 is a different failure (dirty checkout, unknown branch): show the message and stop.
+In plan merge order: `bash "$RUN" merge <task-id>`. Exit 3 (`CONFLICT`) means the ownership map was wrong; do not resolve by hand. Re-run the later task against the new base (`wt rm`, `wt add <id> HEAD`, `set tasks.<id>.status '"building"'`, re-spawn with the same prompt), re-gate, re-review, merge. One attempt; then stop and ask the human as in step 7. Exit 4 is a different failure (dirty checkout, unknown branch): show the message and stop.
 
 After the last merge, run the plan's "Verification after merge" command. If it fails, show the human the head of the failing output, remove the worktrees, and finish with `needs-human`. Never spawn agents to fix a red suite; that is a new run.
 
@@ -111,7 +111,9 @@ After the last merge, run the plan's "Verification after merge" command. If it f
 
 Spawn `idleflow:retro` with the run directory path and the `docs:` value. When `docs: yes` it also writes the session note and updates `progress.md` and `index.md`, and commits them. Then remove worktrees: `bash "$RUN" wt list` → `bash "$RUN" wt rm <id>` each. Then `bash "$RUN" finish done`.
 
-Final message to the human, and nothing more: one line per task (id, title, lines, tests), the run id, whether a lesson was added, whether `progress.md` / `index.md` were updated, any config proposal the retro wrote, any `unchecked:` docs from step 2a. If `CLAUDE.md` says `releases: github-tagged` and this run completed a `prd.md` milestone (every "Must do" item of it now has a landed task), add one line with the proposed tag and the two commands from `CLAUDE.md` "Releases"; do not tag or push yourself.
+**Plugin gaps.** `grep -rh '^plugin_gap:' .claude/runs/active/` (reports, reviews, plan, debate, stack, libraries, tooling files) plus any gap you hit yourself. If there are any, list them and ask once with AskUserQuestion: **Report them to Idle-Sync/idleflow** (opens one issue per gap from the human's GitHub account, through `${CLAUDE_PLUGIN_ROOT}/commands/plugin-feedback.md` with the gap line as the feedback and the run id as evidence) / **Not now**. Never open an issue without that answer.
+
+Final message to the human, and nothing more: one line per task (id, title, lines, tests), the run id, whether a lesson was added, whether `progress.md` / `index.md` were updated, any config proposal the retro wrote, any `unchecked:` docs from step 2a, plugin gaps reported or skipped. If `CLAUDE.md` says `releases: github-tagged` and this run completed a `prd.md` milestone (every "Must do" item of it now has a landed task), add one line with the proposed tag and the two commands from `CLAUDE.md` "Releases"; do not tag or push yourself.
 
 Commit messages in this run follow `CLAUDE.md`: the `Co-Authored-By: Claude <noreply@anthropic.com>` trailer only when `co_author_claude: yes`; never a "Generated with Claude Code" footer; no meta commentary in any message or file.
 
@@ -127,3 +129,4 @@ Commit messages in this run follow `CLAUDE.md`: the `Co-Authored-By: Claude <nor
 - Never let a task own `prd.md`, `progress.md`, `index.md`, `CLAUDE.md` or `.claude/conventions.md`.
 - Never install anything into the repo. Accepted stack or library decisions become tasks. The only installs you run are the tooling commands the human accepted by name in R5, and those change the user's Claude Code setup, not the repo.
 - Never agree with an answer the evidence contradicts without saying so once, with the evidence.
+- Never work around something this plugin lacks. Write it as a `plugin_gap:` line in `plan.md` "Open questions" and let step 9 ask the human whether to report it.

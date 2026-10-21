@@ -37,3 +37,5 @@ Read the red team's round-1 file. For each blocking or major finding: if their `
 - Every cut names what it keeps. A cut with no `keeps` line is a deletion, not a critique.
 - Do not argue about naming, style, or formatting. Those cost nothing.
 - Hard cap: 8 cuts per round.
+
+- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), add one line at the end of the file you write: `plugin_gap: <what> — <why it was needed>`. Do not work around it silently; the orchestrator collects these and asks the human whether to report them.

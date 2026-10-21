@@ -26,3 +26,5 @@ split_plan: <only if split: 2-3 bullet sub-tasks with file globs, each estimated
 Check the `excluded_total` in the gate JSON: if it is large, the exclusion list may be missing a pattern — say so in your reason so the retro can add it to `config/idleflow.conf`.
 
 Two heuristics: a diff whose `top` list is dominated by one file is usually a rewrite (reject or split); one spread evenly across many files is usually a sweep (accept if the plan listed them).
+
+- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), add one line at the end of the file you write: `plugin_gap: <what> — <why it was needed>`. Do not work around it silently; the orchestrator collects these and asks the human whether to report them.

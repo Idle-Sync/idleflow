@@ -60,7 +60,8 @@ Skills, plugins and workflows chosen for this project are listed in `docs/resear
 and under "Tooling" in `.claude/conventions.md`. A recurring job with no tool for it is a
 request, not a reason to hand-write one: `/idleflow:skills-feedback "<the job>"` opens an
 issue on the IdleSync skills catalogue; `/idleflow:plugin-feedback "<what went wrong>"` reports
-a problem with idleflow itself.
+a problem with idleflow itself. Agents that hit a gap in idleflow during a run write a `plugin_gap:`
+line and the run asks, once, whether to report it; nothing is filed without a yes.
 
 ## How code is written here
 

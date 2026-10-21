@@ -1,10 +1,10 @@
 # Repo setup procedure
 
-Shared by `commands/feature.md` and `commands/init.md`. Each section states when it applies; the caller runs the ones that apply, in order R1 → R5, then returns to its own steps. `RUN` is `"${CLAUDE_PLUGIN_ROOT}/scripts/run.sh"` (always quoted; the path may contain spaces). Agent names are the ones the plugin exposes: `idleflow:<name>`.
+Shared by `commands/feature.md` and `commands/init.md`. Each section states when it applies; the caller runs the ones that apply, in order R1 → R6, then returns to its own steps. `RUN` is `"${CLAUDE_PLUGIN_ROOT}/scripts/run.sh"` (always quoted; the path may contain spaces). Agent names are the ones the plugin exposes: `idleflow:<name>`.
 
 Pushback applies throughout: when the human's answer conflicts with something you can cite (a research file, the code, the tests, a documented platform limit), say so once before acting, with the evidence and a better option with its cost; then do what they decide and record the decision and its reason. Nothing without evidence.
 
-## R1. Readability mode — when `mode:` in `.claude/conventions.md` is `unset`
+## R1. Readability mode — when `.claude/conventions.md` is missing or its `mode:` is `unset`
 
 Ensure `.claude/conventions.md` exists (copy `templates/conventions.md` if not). Ask once with AskUserQuestion, three options in this order, with these descriptions:
 
@@ -14,11 +14,11 @@ Ensure `.claude/conventions.md` exists (copy `templates/conventions.md` if not).
 
 Write the answer into the `mode:` line. If the human is not present, write `balanced` and say so. `/idleflow:style` changes it later.
 
-## R2. Project docs — when `docs:` in `.claude/conventions.md` is `unset`
+## R2. Project docs
 
-Set `docs: yes` when the run is greenfield, or when `prd.md` or `progress.md` exists at the repo root, or when `CLAUDE.md` contains `<!-- idleflow start -->`. Otherwise set `docs: no` and skip the rest of R2.
+When `docs:` in `.claude/conventions.md` is `unset`: set it to `yes` when the run is greenfield, or when `prd.md` or `progress.md` exists at the repo root, or when `CLAUDE.md` contains `<!-- idleflow start -->`; otherwise set `docs: no`. When `docs: no`, skip the rest of R2.
 
-When `yes`:
+When `docs: yes` (a caller may name only some of these sub-steps):
 
 1. Copy any of `templates/prd.md`, `templates/progress.md`, `templates/index.md` whose target does not exist at the repo root. Create `docs/research/` and `docs/sessions/`; copy `templates/session.md` to `docs/sessions/TEMPLATE.md` if missing.
 2. `CLAUDE.md`: if absent, copy `templates/CLAUDE.md`. If present without the `<!-- idleflow start -->` marker, append the template's block. Never overwrite a human's content. Fill the "Commands" lines from `context.md` §5 when known; leave `co_author_claude:` and `releases:` as they are unless R2 is running from `/idleflow:init`, which fills them.
@@ -26,7 +26,7 @@ When `yes`:
 
 Who writes these later: the planner fills `prd.md` on a greenfield run; the retro writes the session note and updates `progress.md` and `index.md` after every run; the doc-keeper grounds all of them before every run. No task may own them.
 
-## R3. Stack conventions — when greenfield, or size M/L with nothing under "Stack decisions"
+## R3. Stack conventions — when nothing is under "Stack decisions" yet, on a greenfield or size M/L run
 
 1. `LOC=$(bash "$RUN" loc)`. Spawn `idleflow:stack-advisor` in mode `scan` with: repo root, `greenfield`, the conventions path, `LARGE_REPO_LOC` from `bash "$RUN" conf`, `LOC`, and the project description path (`context.md`, or `brainstorm.md` from init). It writes `.claude/runs/active/stack-scan.md` and replies with a JSON line. If `gaps` is 0, tell the human `Stack: already current.` and continue to R4.
 2. Spawn `idleflow:stack-researcher` with the scan path and output path `.claude/runs/active/stack-research.md`. It checks several internet sources per candidate and cites every claim. Wait.
@@ -34,6 +34,8 @@ Who writes these later: the planner fills `prd.md` on a greenfield run; the retr
 4. Read `stack.md`. Ask once with AskUserQuestion, `multiSelect: true`, one option per proposal: label = title, description = `proposal` + one pro + one con + `needs_install`. Defaults first. If the human is not present, take the defaults and say so.
 5. Append one line per accepted proposal under "Stack decisions": `- [<ID>] <title>: <proposal>  (why: <one pro>; evidence: <one URL>)`. Declined: `- [<ID>] declined: <title>`.
 6. Copy `stack-research.md` to `docs/research/stack-<YYYY-MM-DD>.md` when `docs: yes`.
+
+On a greenfield run the advisor must include a **Quality tooling** proposal per language (formatter, linter, type checker, test runner, pre-commit hook); its agent file carries the per-language table.
 
 Tell the human: `Stack: <N> accepted, <M> declined.` An accepted proposal that changes the repo (a `pyproject.toml`, a `Dockerfile`, a code-map tool) becomes a task in the plan; nothing is installed into the repo here.
 

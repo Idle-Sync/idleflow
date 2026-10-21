@@ -25,7 +25,10 @@ source "$HERE/rt.sh"
 LIMIT="${3:-${DIFF_LIMIT:-1500}}"
 SLACK="${4:-${DIFF_SLACK:-300}}"
 
+[ -d "$WT" ] || { echo "{\"error\":\"no worktree at $WT\"}"; exit 1; }
 cd "$WT"
+# A wrong base must not pass as "0 lines changed, ok".
+git rev-parse -q --verify "$BASE^{commit}" >/dev/null 2>&1 || { echo "{\"error\":\"bad base $BASE\"}"; exit 1; }
 
 # Build pathspec exclusions
 EXCL=()

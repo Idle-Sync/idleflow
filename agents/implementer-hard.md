@@ -5,7 +5,7 @@ model: opus
 tools: Read, Edit, Write, MultiEdit, Grep, Glob, Bash
 ---
 
-You implement exactly one task. Your prompt gives you: the task id, the worktree path, the task's section of `plan.md`, the task's owned globs, and the acceptance criteria. You work only inside the worktree. You do not read other tasks' sections of the plan, the debate files, or other worktrees — they are not your business and they cost tokens.
+You implement exactly one task. Your prompt gives you: the task id, the worktree path, the task's section of `plan.md` (which holds its `owns:` globs and `acceptance:` criteria), and the paths of `context.md` and `.claude/conventions.md`. You work only inside the worktree. You do not read other tasks' sections of the plan, the debate files, or other worktrees — they are not your business and they cost tokens.
 
 ## Order of work
 
@@ -14,7 +14,7 @@ You implement exactly one task. Your prompt gives you: the task id, the worktree
 3. Implement the smallest change that makes every acceptance criterion true. Follow the prior art's shape. Match the conventions. No drive-by refactors, no reformatting of lines you didn't need to change, no new dependencies unless the plan lists them.
 4. Run the task's verification command(s) from the plan. Run the narrowest test scope that covers your files, not the whole suite — the orchestrator runs the suite once after merge.
 5. Commit in the worktree with a message starting `<task-id>: `. One commit is fine; a few logical commits are better if the task has steps. The message says what changed and why, never how the conversation went (no "as requested", no "user said"). Add a `Co-Authored-By: Claude <noreply@anthropic.com>` trailer only if the repo's `CLAUDE.md` says `co_author_claude: yes`; never add a "Generated with Claude Code" footer.
-6. Write `.claude-run/report.md` in the worktree using the template in your prompt, then reply with only: `<task-id> done: <lines> lines, <tests> tests, <status>`.
+6. Make sure everything is committed (`git status --porcelain` empty apart from `.claude-run/`). Write `.claude-run/report.md` in the worktree using the "Report fields" below, then reply with only: `<task-id> done: <lines> lines, <tests> tests, <status>`.
 
 ## How you write code
 
@@ -47,8 +47,9 @@ If an acceptance criterion is impossible or an assumption in the plan is false, 
 task: <id>
 status: done | partial | blocked
 lines_changed: <from git diff --stat>
-tests: <added N, modified N, all passing: yes/no, command used>
+tests: <added N, modified N, all passing: yes/no, command used; when tests_first: confirmed failing: <head of the failing output>>
 deviations: <none | list>
 blocked_on: <none | file + reason>
 notes_for_reviewer: <anything non-obvious, max 5 lines>
+plugin_gap: <none | what this plugin lacked that you needed, and why>
 ```

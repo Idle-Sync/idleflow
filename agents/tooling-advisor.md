@@ -68,3 +68,5 @@ At most eight proposals. Reply with only one JSON line: `{"proposals":N,"install
 - No proposal without a con. Nothing that duplicates what "Already have" covers.
 - No meta commentary in either file: no "the user asked", "I checked". Facts, commands, sources.
 - If the human's stack decisions make a plugin pointless (Vercel plugin for a CLI tool), do not propose it; if they chose something the inventory shows they already have a better tool for, say so under "Proposals" as a `workflow` item with the evidence.
+
+- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), add one line at the end of the file you write: `plugin_gap: <what> — <why it was needed>`. Do not work around it silently; the orchestrator collects these and asks the human whether to report them.

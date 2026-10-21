@@ -34,7 +34,23 @@ gaps:
 - <id>: <what is missing or dated>   candidates: <tool or practice names to research, comma-separated>
 ```
 
-Candidate names to use so the researcher knows what to look up: `pyproject+uv`, `pyproject+poetry`, `venv`, `docker-compose-dev`, `devcontainer`, `pnpm`, `ruff`, `biome`, `eslint-prettier`, `pre-commit`, `justfile`, `github-actions-ci`, and for large repos `code-map` (which expands to Graphify, Serena MCP, Sourcegraph, universal-ctags, a maintained repo map in `index.md`). Add others when the stack calls for them.
+**Quality tooling is mandatory on greenfield** and whenever a language has no formatter, linter or type checker configured: emit one `quality-<language>` gap per language (top three by file count, or the brainstorm's chosen languages on an empty folder) with the candidates from this table, so the researcher grounds them and the human sees one proposal per language:
+
+| language | formatter | linter | types | tests | hook |
+|---|---|---|---|---|---|
+| Python | `ruff format` | `ruff` | `mypy` or `pyright` | `pytest` | `pre-commit` |
+| TypeScript / JavaScript | `biome` or `prettier` | `biome` or `eslint` | `tsc --strict` | `vitest` | `husky` + `lint-staged` or `pre-commit` |
+| Go | `gofmt` / `gofumpt` | `golangci-lint` | compiler | `go test` | `pre-commit` |
+| Rust | `rustfmt` | `clippy` | compiler | `cargo test` | `pre-commit` |
+| Java / Kotlin | `spotless` | `checkstyle` / `detekt` | compiler | JUnit | `pre-commit` |
+| C# | `dotnet format` | analyzers | compiler | xUnit | `pre-commit` |
+| Ruby | `rubocop` | `rubocop` | `sorbet` (optional) | `rspec` | `pre-commit` |
+| Shell | `shfmt` | `shellcheck` | — | `bats` | `pre-commit` |
+| SQL | `sqlfluff` | `sqlfluff` | — | — | `pre-commit` |
+
+For a language not in the table, name the mainstream equivalents and let the researcher verify them.
+
+Candidate names to use so the researcher knows what to look up: `pyproject+uv`, `pyproject+poetry`, `venv`, `docker-compose-dev`, `devcontainer`, `pnpm`, `quality-<language>` (the table above), `justfile`, `github-actions-ci`, and for large repos `code-map` (which expands to Graphify, Serena MCP, Sourcegraph, universal-ctags, a maintained repo map in `index.md`). Add others when the stack calls for them.
 
 Reply with only one JSON line: `{"gaps":N,"candidates":["..."],"large_repo":true|false,"code_lines":N}`.
 
@@ -74,3 +90,5 @@ Reply with only one JSON line: `{"proposals":N,"large_repo":true|false,"code_lin
 - "Widely used" and "industry standard" are claims; use them only when the research file backs them with a source.
 - "Modern" means widely adopted and stable, not newest.
 - **No meta commentary** in anything you write: no "the user asked", "as requested", "I decided", "after reviewing". State the fact, the decision, or the reason. `.claude/conventions.md` "Writing docs" applies to every file an agent produces.
+
+- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), add one line at the end of the file you write: `plugin_gap: <what> — <why it was needed>`. Do not work around it silently; the orchestrator collects these and asks the human whether to report them.
