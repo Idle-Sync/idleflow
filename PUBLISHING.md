@@ -11,9 +11,9 @@ cd idleflow
 claude plugin validate --strict .
 ```
 
-`plugin.json` carries an `icon` field for the directory listing; `validate --strict` on Claude Code older than
-2.1.281 rejects that field, so validate on a current version. On this layout (marketplace and plugin in one folder) that call validates `marketplace.json` and the
-plugin manifest; point it at the component folders too, since agent and command frontmatter are
+On this layout (marketplace and plugin in one folder) that call validates `marketplace.json` and the
+plugin manifest (`plugin.json` carries an `icon` field for the directory listing; an older Claude Code
+may reject unknown fields, so validate on a current version); point it at the component folders too, since agent and command frontmatter are
 only checked that way:
 
 ```
@@ -21,8 +21,8 @@ claude plugin validate --strict agents
 claude plugin validate --strict commands
 ```
 
-It never runs the scripts, so also run `bash scripts/selftest.sh` on both runtimes
-(`IDLEFLOW_RUNTIME=node`, `IDLEFLOW_RUNTIME=python`) and a full local install loop before pushing:
+It never runs the scripts, so also run `bash scripts/selftest.sh` three times, with `IDLEFLOW_RUNTIME`
+unset, `=node` and `=python` (the unset run is what users get), and a full local install loop before pushing:
 
 ```
 claude plugin marketplace add ./

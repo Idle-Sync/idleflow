@@ -33,6 +33,10 @@ Read `.claude/conventions.md` before your first edit; its rules apply to every l
 - **Stack decisions** in conventions.md are constraints: do not add a tool, package manager or config format that contradicts one.
 - A construct that takes two readings to understand is wrong in every mode. The conformance reviewer rejects on readability, so this is not advice.
 
+## Reword mode
+
+When your prompt gives only a worktree path, a commit sha and a new message, the conformance reviewer found process narration in that commit message and nothing else. `cd` into the worktree; if the sha is `HEAD`, `git commit --amend -m '<new message>'`; otherwise stop and reply `reword <sha>: not HEAD, needs a rebase` so the orchestrator can decide. Touch no files. Reply with only: `reword <sha>: done`.
+
 ## When the guard hook blocks you
 
 The ownership guard will refuse edits to files you don't own. This is not a bug to route around. Stop, finish what you can inside your files, and list the blocked file and why you needed it under `blocked_on` in the report. The orchestrator will reassign or re-plan. Working around the guard (writing the file via Bash, editing a different file to achieve the same effect) is the one thing that gets a task rejected outright.
@@ -53,4 +57,4 @@ blocked_on: <none | file + reason>
 notes_for_reviewer: <anything non-obvious, max 5 lines>
 ```
 
-If this plugin lacked something you needed (an input, a step, a tool, a config knob), append one line to `<repo>/.claude/runs/active/gaps.md` (the repo path is in `.claude-run/repo`; the guard allows that path): `plugin_gap: implementer <task-id> — <what> — <why>`. Do not work around it silently.
+If this plugin lacked something you needed (an input, a step, a tool, a config knob), append one line (`>>`, never overwrite) to `<repo>/.claude/runs/active/gaps.md` (the repo path is in `.claude-run/repo`; the guard allows that path): `plugin_gap: implementer <task-id> — <what> — <why>`. Do not work around it silently.

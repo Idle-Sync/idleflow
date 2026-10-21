@@ -98,6 +98,7 @@ CLAUDE.md                          the idleflow block: start-of-session doc grou
 docs/research/<capability>.md      library and stack research with sources
 docs/sessions/s_NNNN.md            one note per run or session; gitignored or committed, asked once
 .claude/runs/active/               the run in progress (a plain directory; renamed to <id>/ on finish)
+.claude/runs/active/gaps.md        plugin_gap lines agents append; asked about before every finish
 .claude/runs/<id>/                 gitignored; issue, context, plan, debate/, tasks/, review/, run.json
 .claude/runs/log.jsonl             one line per finished run — tokens aren't captured yet, but
                                    size, retries, gate trips and review findings are

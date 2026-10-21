@@ -56,7 +56,7 @@ After the rounds, write a ten-line summary at the top of `brainstorm.md` (what, 
 
 ## 2. Market research (Sonnet)
 
-Spawn `idleflow:market-researcher` with the brainstorm path and output path `docs/market-research.md` (create `docs/`). Wait. Tell the human the verdict line and the top three complaints verbatim from its JSON. Then ask: **Continue as planned** / **Adjust the scope** (free text; append the change to brainstorm.md under "Adjusted after research") / **Stop here** (`bash "$RUN" finish stopped`, leave `docs/market-research.md` and `brainstorm.md` in place, end).
+Spawn `idleflow:market-researcher` with the brainstorm path and output path `docs/market-research.md` (create `docs/`). Wait. Tell the human the verdict line and the top three complaints verbatim from its JSON. Then ask: **Continue as planned** / **Adjust the scope** (free text; append the change to brainstorm.md under "Adjusted after research") / **Stop here** (run the **Plugin gaps** question from step 7, then `bash "$RUN" finish stopped`, leave `docs/market-research.md` and `brainstorm.md` in place, end).
 
 ## 3. Repo rules
 
@@ -99,7 +99,7 @@ git commit -m "init: <project name>"      # add the Co-Authored-By trailer only 
 
 If releases were chosen: confirm the repo name (default: the folder name) and owner with one AskUserQuestion (options: `<your login>/<name>`, `<each org gh lists>/<name>`), then `gh repo create <owner>/<name> --<public|private> --source . --push`. If `gh` is missing or not logged in, say so, print the exact command for later, and continue. Do not tag anything now; the first tag comes when milestone 1 completes (`CLAUDE.md` "Releases" says how).
 
-**Plugin gaps** (before `finish`). Read `.claude/runs/active/gaps.md` if it exists, plus any gap you hit yourself. If there are lines, list them and ask once: **Report them to Idle-Sync/idleflow** (one issue per line from the human's GitHub account: read `${CLAUDE_PLUGIN_ROOT}/commands/plugin-feedback.md` and follow its batch mode) / **Not now**. Never open an issue without that answer.
+**Plugin gaps** (before `finish`). Read `.claude/runs/active/gaps.md` if it exists, plus any gap you hit yourself. If there are lines, list them and ask once: **Report them to Idle-Sync/idleflow** / **Not now**. On yes, read `${CLAUDE_PLUGIN_ROOT}/commands/plugin-feedback.md` and follow its batch mode with the lines and the run id; it opens the issues from the human's GitHub account and asks nothing further. Never open an issue without that answer.
 
 `bash "$RUN" finish done`.
 

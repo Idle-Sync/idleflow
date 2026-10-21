@@ -260,7 +260,10 @@ function building(runDir) {
 }
 // Paths the orchestrator may write in the main checkout mid-build.
 function orchestratorFile(rel) {
-  return rel.startsWith(".claude/") || rel.startsWith("docs/") || rel === ".gitignore" || (!rel.includes("/") && rel.endsWith(".md"));
+  return (
+    rel.startsWith(".claude/runs/") || rel === ".claude/conventions.md" || rel === ".claude/lessons.md" ||
+    rel.startsWith("docs/") || rel === ".gitignore" || (!rel.includes("/") && rel.endsWith(".md"))
+  );
 }
 
 const table = { get: cmdGet, set: cmdSet, inc: cmdInc, finish: cmdFinish, own: cmdOwn, gate: cmdGate, guard: cmdGuard };

@@ -27,7 +27,7 @@ The scan uses short names. Expand them like this, and research every member of a
 - `venv` → project-local virtual environments (`python -m venv`, `uv venv`).
 - `docker-compose-dev`, `devcontainer` → Docker Compose for dev/test; Dev Containers.
 - `pnpm`, `justfile`, `github-actions-ci` → the tools of those names.
-- `quality-<language> (tool, tool, …)` → every tool named in the parentheses in the scan (formatter, linter, type checker, test runner, hook manager); for each, the official install and configuration command for a new project.
+- `quality-<language> (tool; tool; a/b; …)` → every tool named in the parentheses in the scan (formatter, linter, type checker, test runner, hook manager); `a/b` means research both; for each, the official install and configuration command for a new project.
 - `code-map` → **all** of: Graphify (knowledge graph of a codebase for Claude Code agents), Serena MCP (language-server-backed symbol navigation), Sourcegraph (code search and navigation at scale), universal-ctags, and a maintained repo map file. For each, find what it indexes, how it is installed or connected to Claude Code, its scaling limits, and who is known to use it.
 
 If a candidate turns out to be unmaintained, renamed, or superseded, say so and name the successor with its sources.
@@ -55,4 +55,4 @@ Budget: at most 4 searches and 4 fetches per candidate; at most 40 tool calls to
 
 Reply with only: `research written: <N> candidates, <M> sources`.
 
-- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), append one line to `.claude/runs/active/gaps.md` in the main repo (create it if missing; never in a project doc): `plugin_gap: <agent> — <what> — <why it was needed>`. Do not work around it silently; the orchestrator reads that file at the end of the run and asks the human whether to report them.
+- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), append one line (`printf '%s\n' ... >> gaps.md`, never overwrite: other agents append in parallel) to the run's `gaps.md`, which sits next to the `ownership.json` / `run.json` of the active run in the main repo (`<repo>/.claude/runs/active/gaps.md`; never a project doc, never inside a worktree): `plugin_gap: <agent> — <what> — <why it was needed>`. Do not work around it silently; the orchestrator reads that file before every `finish` and asks the human whether to report them.

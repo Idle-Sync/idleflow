@@ -35,4 +35,4 @@ Not lessons: one-off bugs, things already in lessons.md (check for near-duplicat
 
 Hard limit: one lesson per run. If you found two, keep the one with the larger blast radius.
 
-- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), append one line to `.claude/runs/active/gaps.md` in the main repo (create it if missing; never in a project doc): `plugin_gap: <agent> — <what> — <why it was needed>`. Do not work around it silently; the orchestrator reads that file at the end of the run and asks the human whether to report them.
+- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), append one line (`printf '%s\n' ... >> gaps.md`, never overwrite: other agents append in parallel) to the run's `gaps.md`, which sits next to the `ownership.json` / `run.json` of the active run in the main repo (`<repo>/.claude/runs/active/gaps.md`; never a project doc, never inside a worktree): `plugin_gap: <agent> — <what> — <why it was needed>`. Do not work around it silently; the orchestrator reads that file before every `finish` and asks the human whether to report them.

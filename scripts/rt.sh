@@ -15,9 +15,9 @@ _IDLEFLOW_RT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 _idleflow_py_ok() { "$1" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)' </dev/null >/dev/null 2>&1; }
 
 idleflow_rt() {
-  local py
+  local py rt="${IDLEFLOW_RUNTIME:-}"   # usually unset, and every caller runs under set -u
   # a Windows path with backslashes still has to be recognised as node
-  case "${IDLEFLOW_RUNTIME//\\//}" in
+  case "${rt//\\//}" in
     "") ;;
     node|*/node|*/node.exe|node.exe) "${IDLEFLOW_RUNTIME}" "$_IDLEFLOW_RT_DIR/idleflow.js" "$@"; return ;;
     *) "${IDLEFLOW_RUNTIME}" -I "$_IDLEFLOW_RT_DIR/idleflow.py" "$@"; return ;;
@@ -36,8 +36,8 @@ idleflow_rt() {
 
 # Prints which runtime idleflow_rt would use. Used by `run.sh conf` and selftest.
 idleflow_rt_name() {
-  local py
-  case "${IDLEFLOW_RUNTIME//\\//}" in
+  local py rt="${IDLEFLOW_RUNTIME:-}"
+  case "${rt//\\//}" in
     "") ;;
     node|*/node|*/node.exe|node.exe) echo "${IDLEFLOW_RUNTIME} ($("${IDLEFLOW_RUNTIME}" --version 2>/dev/null))"; return ;;
     *) echo "${IDLEFLOW_RUNTIME} ($("${IDLEFLOW_RUNTIME}" --version 2>&1 | head -1))"; return ;;

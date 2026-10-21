@@ -53,7 +53,7 @@ active_id() {
   [ -f "$ACTIVE/run.json" ] || { echo "no active run (run.sh new <slug> first)" >&2; exit 1; }
   local id
   id="$(idleflow_rt get "$ACTIVE/run.json" id)"
-  [ -n "$id" ] || { echo "active run.json has no id; fix or delete .claude/runs/active" >&2; exit 1; }
+  [ -n "$id" ] && [ "$id" != "null" ] || { echo "active run.json has no id; fix or delete .claude/runs/active" >&2; exit 1; }
   echo "$id"
 }
 
@@ -105,7 +105,11 @@ case "$cmd" in
 {"id":"$id","slug":"$safe","base":$(json_str "$base"),"base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"gate_trips":0,"review_findings":0}
 JSON
     echo "{\"repo\":$(json_str "$(native_path "$REPO")"),\"tasks\":{}}" > "$ACTIVE/ownership.json"
-    grep -q '^\.claude/runs/\r\?$' "$REPO/.gitignore" 2>/dev/null || echo '.claude/runs/' >> "$REPO/.gitignore"
+    if ! grep -q '^\.claude/runs/\r\?$' "$REPO/.gitignore" 2>/dev/null; then
+      # a .gitignore without a final newline would otherwise glue our line onto its last entry
+      [ ! -s "$REPO/.gitignore" ] || [ -z "$(tail -c1 "$REPO/.gitignore")" ] || echo >> "$REPO/.gitignore"
+      echo '.claude/runs/' >> "$REPO/.gitignore"
+    fi
     # worktree marker dir: excluded locally (shared by all worktrees), never committed or merged
     excl="$("${G[@]}" rev-parse --git-common-dir)/info/exclude"
     case "$excl" in /*|?:*) ;; *) excl="$REPO/$excl";; esac
@@ -206,14 +210,13 @@ JSON
     # The orchestrator creates repo-level docs in the main checkout before any worktree exists.
     # Commit them so worktrees (branched from HEAD) see them. Only these paths are committed,
     # never other staged work; ignored paths (a gitignored docs/) are skipped, never forced.
-    [ -f "$("${G[@]}" rev-parse --git-dir)/MERGE_HEAD" ] && { echo "snapshot: a merge is in progress; finish or abort it first" >&2; exit 1; }
+    [ -f "$("${G[@]}" rev-parse --absolute-git-dir)/MERGE_HEAD" ] && { echo "snapshot: a merge is in progress; finish or abort it first" >&2; exit 1; }
     paths=()
     for f in .claude/conventions.md .claude/lessons.md CLAUDE.md prd.md progress.md index.md README.md .gitignore .gitattributes docs; do
       [ -e "$REPO/$f" ] || continue
+      # the human chose what is ignored (docs_in_git in R2); an ignored path is simply skipped
       if "${G[@]}" check-ignore -q --no-index -- "$f"; then
-        # an ignored path: update what is already tracked under it, never force-add new files
-        if [ -n "$("${G[@]}" ls-files -- "$f")" ]; then "${G[@]}" add -u -- "$f"; paths+=("$f")
-        else echo "snapshot: $f is gitignored, not committed" >&2; fi
+        echo "snapshot: $f is gitignored, not committed" >&2
         continue
       fi
       "${G[@]}" add -A -- "$f"; paths+=("$f")

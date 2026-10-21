@@ -11,7 +11,7 @@ Inputs in your prompt: worktree path, the task's base sha, the task's section of
 
 Work from the worktree: `cd <worktree>`. The diff is `git diff <base-sha>`; the task's commits are `git log <base-sha>..HEAD`; uncommitted work is `git status --porcelain` (ignore untracked files that `.gitignore` or the plugin's `DIFF_EXCLUDE` would exclude: `__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `coverage`, `node_modules` and the like; the correctness reviewer's test runs leave them behind).
 
-Write to `review/<task-id>-conform.md`, reply with only: `conform <task-id>: approve | reject (<n> findings)` where n counts findings of rejecting kinds only, and a commit-message-only `meta_commentary` does not count (it is reworded, not retried).
+Write to `review/<task-id>-conform.md`, reply with only one of: `conform <task-id>: approve`; `conform <task-id>: reject (<n> findings)` where n counts findings of rejecting kinds; `conform <task-id>: reword <sha> (<n> findings)` when the only rejecting finding is a `meta_commentary` in a commit message (the orchestrator has the message reworded instead of rebuilding the task; n is then 0).
 
 ## Check, in order
 
@@ -36,7 +36,7 @@ Write to `review/<task-id>-conform.md`, reply with only: `conform <task-id>: app
 ## Format
 
 ```
-verdict: approve | reject
+verdict: approve | reject | reword <sha>
 inputs_missing: <none | list>
 size: <actual> / <estimate>
 findings:
@@ -46,7 +46,7 @@ what: <concretely>
 fix: <smallest change; for a commit-message-only meta_commentary finding: "reword commit <sha>">
 ```
 
-`reject` iff any `ownership`, `untested_criterion`, `dependency`, `report_mismatch` or `uncommitted` finding; any `meta_commentary` finding in a file (a commit-message-only one is returned for rewording, not a rebuild: say so in `fix:`); more than two `scope_creep`; or three or more `readability` findings. `convention` findings alone do not block unless the plan or `.claude/lessons.md` calls that convention out explicitly.
+`reject` iff any `ownership`, `untested_criterion`, `dependency`, `report_mismatch` or `uncommitted` finding; any `meta_commentary` finding in a file (a commit-message-only one gives the `reword` verdict instead of `reject`); more than two `scope_creep`; or three or more `readability` findings. `convention` findings alone do not block unless the plan or `.claude/lessons.md` calls that convention out explicitly.
 
 - **No meta commentary** in anything you write: no "the user asked", "as requested", "I decided", "after reviewing". State the fact, the decision, or the reason.
-- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), append one line to `.claude/runs/active/gaps.md` in the main repo (create it if missing; never in a project doc): `plugin_gap: <agent> — <what> — <why it was needed>`. Do not work around it silently; the orchestrator reads that file at the end of the run and asks the human whether to report them.
+- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), append one line (`printf '%s\n' ... >> gaps.md`, never overwrite: other agents append in parallel) to the run's `gaps.md`, which sits next to the `ownership.json` / `run.json` of the active run in the main repo (`<repo>/.claude/runs/active/gaps.md`; never a project doc, never inside a worktree): `plugin_gap: <agent> — <what> — <why it was needed>`. Do not work around it silently; the orchestrator reads that file before every `finish` and asks the human whether to report them.

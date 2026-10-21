@@ -152,12 +152,12 @@ check "merge reports merged"           '[ "$m" = "merged T1" ]'
 check "merged file on main"            '[ -f src/code.py ]'
 check "merge leaves untracked caches out" '[ ! -e .pytest_cache ] && ! git ls-files | grep -q pytest_cache'
 check "merge keeps the human identity" '[ "$(git log -1 --format=%an)" = "Human" ]'
-check "merge of unknown task exits 4"  'bash "$RUN" merge NOPE >/dev/null 2>&1; [ $? -eq 4 ]'
-echo "docs/" >> .gitignore; mkdir -p docs; echo t > docs/tracked.md; git add -f docs/tracked.md; commit -m "tracked doc"
-echo t2 > docs/tracked.md; echo n > docs/new.md
-s2="$(bash "$RUN" snapshot 2>/dev/null)"
-check "snapshot updates tracked files under ignored docs/" 'echo "$s2" | grep -q committed && git show --stat HEAD | grep -q "docs/tracked.md"'
-check "snapshot does not force-add new files there"       '! git ls-files --error-unmatch docs/new.md >/dev/null 2>&1'
+bash "$RUN" set tasks.NOPE.status '"approved"'
+check "merge of unknown branch exits 4" 'bash "$RUN" merge NOPE >/dev/null 2>&1; [ $? -eq 4 ]'
+check "guard blocks .claude/settings.json while building" 'bash "$RUN" set tasks.T2.status "\"building\""; r=$(guard_rc "$dn/.claude/settings.json" "$dn"); bash "$RUN" set tasks.T2.status "\"approved\""; [ "$r" = "2" ]'
+check "guard allows gaps.md while building"              'bash "$RUN" set tasks.T2.status "\"building\""; r=$(guard_rc "$dn/.claude/runs/active/gaps.md" "$dn"); bash "$RUN" set tasks.T2.status "\"approved\""; [ "$r" = "0" ]'
+echo "docs/" >> .gitignore; git add .gitignore; commit -m "ignore docs"; mkdir -p docs; echo n > docs/new.md
+check "snapshot skips an ignored docs/ and says so" 'bash "$RUN" snapshot 2>&1 >/dev/null | grep -q "docs is gitignored" && ! git ls-files --error-unmatch docs/new.md >/dev/null 2>&1'
 rm -f docs/new.md; sed -i '/^docs\/$/d' .gitignore; git add .gitignore; commit -m "unignore docs"
 wt2="$(bash "$RUN" wt add T2 HEAD)"
 bash "$RUN" own T2 '["src/**"]'

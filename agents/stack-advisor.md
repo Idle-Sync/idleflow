@@ -31,10 +31,10 @@ machine: docker 27.1 | uv no | pnpm 9.1 | just no | ...
 already_fine:
 - <thing> — <one line>
 gaps:
-- <id>: <what is missing or dated>   candidates: <tool or practice names to research, comma-separated>
+- <id>: <what is missing or dated>   candidates: <tool or practice names to research, separated by `;`; alternatives inside one candidate separated by `/`>
 ```
 
-**Quality tooling is mandatory on greenfield** and, on any run where this scan happens, for every language that has no formatter, linter or type checker configured: emit one `quality-<language>` gap per language (top three by file count, or the brainstorm's chosen languages on an empty folder), writing the tool names from this table into the scan's `candidates:` so the researcher, which never sees this file, knows what to look up (for example `candidates: quality-python (ruff format, ruff, mypy|pyright, pytest, pre-commit)`):
+**Quality tooling is mandatory on greenfield** and, on any run where this scan happens, for every language that has no formatter, linter or type checker configured: emit one `quality-<language>` gap per language (top three by file count, or the brainstorm's chosen languages on an empty folder), writing the tool names from this table into the scan's `candidates:` so the researcher, which never sees this file, knows what to look up (for example `candidates: quality-python (ruff format; ruff; mypy/pyright; pytest; pre-commit)`):
 
 | language | formatter | linter | types | tests | hook |
 |---|---|---|---|---|---|
@@ -91,4 +91,4 @@ Reply with only one JSON line: `{"proposals":N,"large_repo":true|false,"code_lin
 - "Modern" means widely adopted and stable, not newest.
 - **No meta commentary** in anything you write: no "the user asked", "as requested", "I decided", "after reviewing". State the fact, the decision, or the reason. `.claude/conventions.md` "Writing docs" applies to every file an agent produces.
 
-- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), append one line to `.claude/runs/active/gaps.md` in the main repo (create it if missing; never in a project doc): `plugin_gap: <agent> — <what> — <why it was needed>`. Do not work around it silently; the orchestrator reads that file at the end of the run and asks the human whether to report them.
+- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), append one line (`printf '%s\n' ... >> gaps.md`, never overwrite: other agents append in parallel) to the run's `gaps.md`, which sits next to the `ownership.json` / `run.json` of the active run in the main repo (`<repo>/.claude/runs/active/gaps.md`; never a project doc, never inside a worktree): `plugin_gap: <agent> — <what> — <why it was needed>`. Do not work around it silently; the orchestrator reads that file before every `finish` and asks the human whether to report them.

@@ -276,8 +276,9 @@ def building(run_dir):
 def orchestrator_file(rel):
     """Paths the orchestrator may write in the main checkout mid-build."""
     return (
-        rel.startswith(".claude/") or rel.startswith("docs/")
-        or rel == ".gitignore" or ("/" not in rel and rel.endswith(".md"))
+        rel.startswith(".claude/runs/") or rel in (".claude/conventions.md", ".claude/lessons.md")
+        or rel.startswith("docs/") or rel == ".gitignore"
+        or ("/" not in rel and rel.endswith(".md"))
     )
 
 
