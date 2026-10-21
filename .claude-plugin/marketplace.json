@@ -1,0 +1,18 @@
+{
+  "name": "idlesync",
+  "owner": {
+    "name": "Sayantan Ghosh",
+    "url": "https://idlesync.in"
+  },
+  "metadata": {
+    "description": "IdleSync plugins for Claude Code"
+  },
+  "plugins": [
+    {
+      "name": "idleflow",
+      "source": "./",
+      "description": "Plan-debate-build-review workflow for issues and features.",
+      "version": "0.1.0"
+    }
+  ]
+}

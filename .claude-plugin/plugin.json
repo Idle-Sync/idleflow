@@ -1,0 +1,15 @@
+{
+  "name": "idleflow",
+  "version": "0.1.0",
+  "description": "Plan-debate-build-review workflow for issues and features. Fable plans, two asymmetric Opus critics attack the plan, Sonnet/Opus implementers build in file-partitioned worktrees, two reviewers gate the diff, a retro writes one lesson per run.",
+  "author": {
+    "name": "Sayantan Ghosh",
+    "url": "https://idlesync.in"
+  },
+  "homepage": "https://github.com/Idle-Sync/idleflow",
+  "repository": "https://github.com/Idle-Sync/idleflow",
+  "license": "MIT",
+  "keywords": ["workflow", "orchestration", "worktree", "review", "planning"],
+  "commands": "./commands",
+  "hooks": "./hooks/hooks.json"
+}
