@@ -65,9 +65,11 @@ Ask in one AskUserQuestion call (four questions):
 1. **Readability mode**: the three options and pros/cons from R1, Balanced first and marked Recommended.
 2. **Co-author Claude on commits?** **No (Recommended)**: commits carry only the human's identity, no `Co-Authored-By: Claude` trailer, no "Generated with Claude Code" footers anywhere; cons: no record in git history of which commits an agent wrote. **Yes**: every commit an agent makes ends with `Co-Authored-By: Claude <noreply@anthropic.com>`; cons: every commit shows it.
 3. **Versioned, tagged releases on GitHub?** **Yes, public repo**: semantic versions, a `vX.Y.Z` tag and a GitHub release with notes when a PRD milestone completes; cons: the code is public from the first push. **Yes, private repo**: same, visible to collaborators only. **Not now**: local git only; a repo can be added later.
-4. **Keep docs/ in git?** **Yes (Recommended)**: research, market research and session notes are shared with everyone who clones. **No, gitignore it**: notes stay on this machine; cons: the next person starts blind.
+4. **Keep docs/ in git?** **Yes (Recommended)**: research, market research and session notes are shared with everyone who clones. **No, keep it local**: notes stay on this machine; cons: the next person starts blind.
 
-Write `mode:`, `docs: yes` and `docs_in_git:` into `.claude/conventions.md` (on "No", add `docs/` to `.gitignore`). Keep `co_author_claude:` and `releases:` for step 6. R1 and the `docs_in_git` question of R2 are now answered; do not ask them again.
+Then, in a second call, R1's **Ignore file** question with its two options.
+
+Write `mode:`, `docs: yes`, `docs_in_git:` and `ignore_in:` into `.claude/conventions.md`, then `bash "$RUN" ignore .claude/runs/` and, on "No, keep it local", `bash "$RUN" ignore docs/`. Keep `co_author_claude:` and `releases:` for step 6. R1 and the `docs_in_git` question of R2 are now answered; do not ask them again.
 
 ## 4. Stack, libraries, tooling
 
@@ -85,7 +87,7 @@ Show the human the PRD's "Must do (v1)", "Milestones" and "Two-year shape" secti
 2. `index.md`: list what exists now (`prd.md`, `progress.md`, `CLAUDE.md`, `.claude/`, `docs/`), nothing imagined.
 3. `progress.md`: first entry: `## <date> — project initialised (run <ID>)` with: brainstorm done, market research verdict, N stack decisions, N library decisions, N tooling items, PRD approved, next: milestone 1 from `prd.md`.
 4. `docs/sessions/s_0001.md` from the template: what this session decided, the files it created, next = milestone 1.
-5. `.gitignore`: ensure `.claude/runs/` and, if chosen, `docs/`; add the stack's usual entries (`.venv/`, `node_modules/`, `dist/`, `.env`) only for stacks that were accepted.
+5. `.gitignore`: add the stack's usual entries (`.venv/`, `node_modules/`, `dist/`, `.env`) only for stacks that were accepted; every clone needs them, so they go here whatever `ignore_in:` says. idleflow's own entries were placed in step 3.
 6. `README.md` if absent: the project name, the one-sentence "what", the one-line "who", and `See prd.md`. Nothing else; it grows with the code.
 
 ## 7. First commit and, if chosen, the GitHub repo
@@ -95,7 +97,7 @@ git add -A
 git commit -m "init: <project name>"      # add the Co-Authored-By trailer only if co_author_claude is yes
 ```
 
-`.claude/runs/` is gitignored, so `brainstorm.md` and the run files stay local; `docs/` is committed unless the human chose otherwise.
+`.claude/runs/` is ignored (in the file `ignore_in:` names), so `brainstorm.md` and the run files stay local; `docs/` is committed unless the human chose otherwise.
 
 If releases were chosen: confirm the repo name (default: the folder name) and owner with one AskUserQuestion (options: `<your login>/<name>`, `<each org gh lists>/<name>`), then `gh repo create <owner>/<name> --<public|private> --source . --push`. If `gh` is missing or not logged in, say so, print the exact command for later, and continue. Do not tag anything now; the first tag comes when milestone 1 completes (`CLAUDE.md` "Releases" says how).
 

@@ -4,15 +4,24 @@ Shared by `commands/feature.md` and `commands/init.md`. Each section states when
 
 Pushback applies throughout: when the human's answer conflicts with something you can cite (a research file, the code, the tests, a documented platform limit), say so once before acting, with the evidence and a better option with its cost; then do what they decide and record the decision and its reason. Nothing without evidence.
 
-## R1. Readability mode — when `.claude/conventions.md` is missing or its `mode:` is `unset`
+## R1. Readability mode and ignore file — when `.claude/conventions.md` is missing, or its `mode:` or `ignore_in:` is `unset` or absent
 
-Ensure `.claude/conventions.md` exists (copy `templates/conventions.md` if not). Ask once with AskUserQuestion, three options in this order, with these descriptions:
+Ensure `.claude/conventions.md` exists (copy `templates/conventions.md` if not; if it has no `ignore_in:` line, add the template's "Ignore rules" section). Ask the unanswered questions in one AskUserQuestion call.
+
+**Readability mode.** Three options in this order, with these descriptions:
 
 - **Balanced (Recommended)** — an idiom only when it reads as one plain sentence; otherwise explicit. Pros: short where short is clear, explicit where it is not. Cons: the line is a judgement call, so the reviewer will sometimes disagree with the implementer.
 - **Explicit** — loops, named intermediate values, one step per line; no comprehensions, chaining or one-liners. Pros: anyone can follow it, easy to step through in a debugger. Cons: more lines per feature; experienced readers will find it long.
 - **Idiomatic** — the language's native idioms wherever they fit (comprehensions, built-ins, chaining). Pros: shorter, what fluent readers expect. Cons: denser; a nested idiom hides what happens, and newcomers slow down.
 
 Write the answer into the `mode:` line. If the human is not present, write `balanced` and say so. `/idleflow:style` changes it later.
+
+**Ignore file.** Where idleflow writes its own ignore rules (`.claude/runs/`, a local `docs/`):
+
+- **Local only: .git/info/exclude (Recommended)** — the rules live in this clone; nothing about idleflow appears in the committed `.gitignore`. Cons: another clone starts without them, and its first run adds them there.
+- **Shared: .gitignore** — the rules are committed and apply to every clone. Cons: everyone who reads the repo sees idleflow's paths.
+
+Write `exclude` or `gitignore` into the `ignore_in:` line, then run `bash "$RUN" ignore .claude/runs/` so the entry is in the chosen file (`run.sh new` put it in `.git/info/exclude` before the question was asked; that copy is harmless). An entry already in a committed `.gitignore` stays until the human removes it. If the human is not present, write `exclude` and say so.
 
 ## R2. Project docs
 
@@ -22,7 +31,7 @@ When `docs: yes` (a caller may name only some of these sub-steps):
 
 1. Copy any of `templates/prd.md`, `templates/progress.md`, `templates/index.md` whose target does not exist at the repo root. Create `docs/research/` and `docs/sessions/`; copy `templates/session.md` to `docs/sessions/TEMPLATE.md` if missing.
 2. `CLAUDE.md`: if absent, copy `templates/CLAUDE.md`. If present without the `<!-- idleflow start -->` marker, append the template's block. Never overwrite a human's content. Fill the "Commands" lines from `context.md` §5 when known; leave `co_author_claude:` and `releases:` as they are unless R2 is running from `/idleflow:init`, which fills them.
-3. If `docs_in_git:` is `unset`, ask once: **Keep docs/ in the repo (Recommended)** — research, market research and session notes are shared with everyone who clones; cons: more files in review. **Gitignore docs/** — notes stay on this machine; cons: the next person starts without the research or the session history. Write the answer. On `no`, add `docs/` to `.gitignore`. If the human is not present, choose `yes` and say so.
+3. If `docs_in_git:` is `unset`, ask once: **Keep docs/ in the repo (Recommended)** — research, market research and session notes are shared with everyone who clones; cons: more files in review. **Keep docs/ local** — notes stay on this machine; cons: the next person starts without the research or the session history. Write the answer. On `no`, run `bash "$RUN" ignore docs/` (it writes to the file `ignore_in:` names). If the human is not present, choose `yes` and say so.
 
 Who writes these later: the planner fills `prd.md` on a greenfield run; the retro writes the session note and updates `progress.md` and `index.md` after every run; the doc-keeper grounds all of them before every run. No task may own them.
 
@@ -59,4 +68,4 @@ Tell the human: `Tooling: <N> installed, <M> declined, <K> skills to request.`
 
 ## R6. Snapshot — always, after R1–R5 and before any worktree is created
 
-`bash "$RUN" snapshot` commits `.claude/conventions.md`, `.claude/lessons.md`, `CLAUDE.md`, `prd.md`, `progress.md`, `index.md`, `README.md`, `.gitignore`, `.gitattributes` and `docs/` if any changed. Worktrees branch from HEAD, so without this step implementers would not see the conventions they are told to read. A path the repo gitignores is skipped with one stderr line and never committed: a `docs/` the human chose to keep local in R2 stays local, no exceptions. If the skipped path is `.claude/conventions.md` or `.claude/lessons.md` (someone ignored `.claude/`), tell the human in one line, because the implementers then cannot read them.
+`bash "$RUN" snapshot` commits `.claude/conventions.md`, `.claude/lessons.md`, `CLAUDE.md`, `prd.md`, `progress.md`, `index.md`, `README.md`, `.gitignore`, `.gitattributes` and `docs/` if any changed. Worktrees branch from HEAD, so without this step implementers would not see the conventions they are told to read. A path the repo ignores (`.gitignore` or `.git/info/exclude`) is skipped with one stderr line and never committed: a `docs/` the human chose to keep local in R2 stays local, no exceptions. If the skipped path is `.claude/conventions.md` or `.claude/lessons.md` (someone ignored `.claude/`), tell the human in one line, because the implementers then cannot read them.

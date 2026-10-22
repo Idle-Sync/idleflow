@@ -39,6 +39,7 @@ Around the pipeline, five things that keep a repo honest:
 | Metrics | `.claude/runs/log.jsonl` only (no OTEL yet) | `scripts/run.sh finish` |
 | Priority | quality > tokens > time | retry on Opus; `opus` allowed per task; critics on Opus |
 | Readability mode | asked once per repo; `balanced` when nobody answers | `.claude/conventions.md`, `commands/style.md` |
+| Ignore rules | idleflow's own paths go to `.git/info/exclude` or `.gitignore`, asked once; exclude until answered | `ignore_in:` in conventions.md, `run.sh ignore` |
 | Stack / library research | greenfield or a new dependency; ≥3 sources per candidate, URL on every claim | `agents/stack-advisor.md`, `agents/stack-researcher.md`, `agents/library-scout.md` |
 | Large repo | ≥ 100 000 hand-written code lines → code-map proposal | `LARGE_REPO_LOC`, `run.sh loc` |
 | Attribution, releases, meta commentary | asked by `/idleflow:init`, recorded in `CLAUDE.md` | `templates/CLAUDE.md`, `agents/review-conform.md` §7 |
@@ -96,10 +97,10 @@ IDLEFLOW_RUNTIME=python bash scripts/selftest.sh
 prd.md  progress.md  index.md      repo root, when docs are on; humans and the retro both edit them
 CLAUDE.md                          the idleflow block: start-of-session doc grounding, end-of-session notes
 docs/research/<capability>.md      library and stack research with sources
-docs/sessions/s_NNNN.md            one note per run or session; gitignored or committed, asked once
+docs/sessions/s_NNNN.md            one note per run or session; ignored or committed, asked once
 .claude/runs/active/               the run in progress (a plain directory; renamed to <id>/ on finish)
 .claude/runs/active/gaps.md        plugin_gap lines agents append; asked about before every finish
-.claude/runs/<id>/                 gitignored; issue, context, plan, debate/, tasks/, review/, run.json
+.claude/runs/<id>/                 ignored (.git/info/exclude or .gitignore, asked once); issue, context, plan, debate/, tasks/, review/, run.json
 .claude/runs/log.jsonl             one line per finished run — tokens aren't captured yet, but
                                    size, retries, gate trips and review findings are
 .claude/runs/config-proposals.md   retro's suggested threshold changes; apply by hand

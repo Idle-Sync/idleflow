@@ -12,9 +12,10 @@
 # excludes, empty DIFF_EXCLUDE, bad base, per-task base after an earlier merge),
 # get / set / inc (parity cases), merge (conflict → 3, unknown branch → 4), wt rm after
 # finish, finish, a runtime given as a full path, a second `new` that parks a
-# leftover run, and prompt contracts (the stack scan, researcher and R3 agree on
-# research units, budget and reply counts; setup steps follow the classifier's risk
-# and dependency fields). Exit 0 and a final "PASS" line mean everything worked.
+# leftover run, ignore (info/exclude until conventions say gitignore, no duplicates),
+# and prompt contracts (the stack scan, researcher and R3 agree on research units,
+# budget and reply counts; setup steps follow the classifier's risk and dependency
+# fields; ignore rules go through run.sh ignore). Exit 0 and a final "PASS" line mean everything worked.
 
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -49,6 +50,8 @@ check "slug with quotes is valid JSON"    '[ "$(bash "$RUN" get slug)" = "fix-qu
 check "base_sha empty before first commit" '[ "$(bash "$RUN" get base_sha)" = "" ]'
 check "wt add refuses without a commit"   '! bash "$RUN" wt add T0 2>/dev/null'
 check "gate refuses without a base"       '! bash "$RUN" gate T0 2>/dev/null'
+check "new ignores runs/ locally until asked" 'grep -qxF ".claude/runs/" .git/info/exclude && [ ! -e .gitignore ]'
+check "ignore defaults to info/exclude"   'bash "$RUN" ignore "scratch-a/" >/dev/null && bash "$RUN" ignore "scratch-a/" >/dev/null && [ "$(grep -cxF "scratch-a/" .git/info/exclude)" = "1" ] && [ ! -e .gitignore ]'
 printf '# proj\n' > README.md; mkdir -p .claude docs/research; printf 'mode: balanced\n' > .claude/conventions.md; printf 'r\n' > docs/research/x.md
 printf 'docs/\n' > .gitignore
 printf 'unrelated\n' > unrelated.txt; git add unrelated.txt
@@ -61,6 +64,7 @@ check "snapshot is a no-op when clean"    '[ "$(bash "$RUN" snapshot)" = "snapsh
 git reset -q unrelated.txt; rm -f unrelated.txt; printf '.claude/runs/\n' > .gitignore; git add .gitignore; commit -m gitignore
 bash "$RUN" finish setup >/dev/null
 
+printf 'ignore_in: gitignore\n' >> .claude/conventions.md
 mkdir -p src && echo 'a' > src/a.txt && git add . && commit -m base
 
 printf 'node_modules/' > .gitignore   # no trailing newline on purpose
@@ -69,7 +73,8 @@ id="$(bash "$RUN" new "self test" 2>/dev/null)"
 check ".gitignore newline repaired"    '[ "$(wc -l < .gitignore | tr -d " ")" = "2" ] && grep -qx "node_modules/" .gitignore'
 check "new prints an id"               '[ -n "$id" ]'
 check "active/run.json exists"         '[ -f .claude/runs/active/run.json ]'
-check ".gitignore has runs/"           'grep -qx ".claude/runs/" .gitignore'
+check ".gitignore has runs/ when ignore_in: gitignore" 'grep -qx ".claude/runs/" .gitignore'
+check "ignore follows ignore_in: gitignore" 'bash "$RUN" ignore "scratch-b/" >/dev/null && bash "$RUN" ignore "scratch-b/" >/dev/null && [ "$(grep -cxF "scratch-b/" .gitignore)" = "1" ] && ! grep -qxF "scratch-b/" .git/info/exclude'
 bash "$RUN" set size '"M"'
 check "get/set size"                   '[ "$(bash "$RUN" get size)" = "M" ]'
 bash "$RUN" set tasks.T1.status '"building"'
@@ -164,8 +169,11 @@ bash "$RUN" set tasks.NOPE.status '"approved"'
 check "merge of unknown branch exits 4" 'bash "$RUN" merge NOPE >/dev/null 2>&1; [ $? -eq 4 ]'
 check "guard blocks .claude/settings.json while building" 'bash "$RUN" set tasks.T2.status "\"building\""; r=$(guard_rc "$dn/.claude/settings.json" "$dn"); bash "$RUN" set tasks.T2.status "\"approved\""; [ "$r" = "2" ]'
 check "guard allows gaps.md while building"              'bash "$RUN" set tasks.T2.status "\"building\""; r=$(guard_rc "$dn/.claude/runs/active/gaps.md" "$dn"); bash "$RUN" set tasks.T2.status "\"approved\""; [ "$r" = "0" ]'
+printf 'docs/\n' >> .git/info/exclude; mkdir -p docs; echo n > docs/new.md
+check "snapshot skips a docs/ ignored only in info/exclude" 'bash "$RUN" snapshot >/dev/null 2>&1; ! git ls-files --error-unmatch docs/new.md >/dev/null 2>&1'
+rm -f docs/new.md; grep -vxF 'docs/' .git/info/exclude > "$scratch/exclude"; cp "$scratch/exclude" .git/info/exclude
 echo "docs/" >> .gitignore; git add .gitignore; commit -m "ignore docs"; mkdir -p docs; echo n > docs/new.md
-check "snapshot skips an ignored docs/ and says so" 'bash "$RUN" snapshot 2>&1 >/dev/null | grep -q "docs is gitignored" && ! git ls-files --error-unmatch docs/new.md >/dev/null 2>&1'
+check "snapshot skips an ignored docs/ and says so" 'bash "$RUN" snapshot 2>&1 >/dev/null | grep -q "docs is ignored" && ! git ls-files --error-unmatch docs/new.md >/dev/null 2>&1'
 rm -f docs/new.md; sed -i '/^docs\/$/d' .gitignore; git add .gitignore; commit -m "unignore docs"
 wt2="$(bash "$RUN" wt add T2 HEAD)"
 bash "$RUN" own T2 '["src/**"]'
@@ -225,10 +233,13 @@ check "scan reply names research_units" 'grep -q "\"research_units\"" "$advisor"
 classifier="$HERE/../agents/classifier.md"
 feature="$HERE/../commands/feature.md"
 fix="$HERE/../commands/fix.md"
+init="$HERE/../commands/init.md"
+conventions="$HERE/../templates/conventions.md"
 check "classifier reports risk and new dependency" 'grep -q "\"risk\"" "$classifier" && grep -q "\"new_dependency\"" "$classifier"'
 check "setup research follows new_dependency, not size" '! grep -q "size M/L" "$setup" && grep -q "new_dependency" "$setup" && grep -q "new_dependency" "$feature"'
 check "debate runs on size L or high risk" 'grep -q "^## 4\. Debate.*risk" "$feature"'
 check "fix sizing ignores module count"   '! grep -q "more than one module" "$fix"'
+check "ignore rules go through run.sh ignore" 'grep -q "^ignore_in: unset" "$conventions" && grep -q "\"\$RUN\" ignore" "$setup" && grep -q "\"\$RUN\" ignore" "$init"'
 check "R3 chunks and concatenates"      'grep -q "stack-research-<n>.md" "$setup" && grep -q "\`cat\` them in order into \`.claude/runs/active/stack-research.md\` before step 3" "$setup"'
 
 echo

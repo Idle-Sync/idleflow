@@ -14,6 +14,7 @@
 #   run.sh report <task-id>               -> copies the task's .claude-run/report.md into the run dir, prints its path
 #   run.sh gate <task-id> [limit]         -> runs diff-gate against the task's own base, writes tasks/<id>/gate.json, prints it
 #   run.sh merge <task-id>                -> merges the task branch into the current branch (no-ff); exit 3 on conflict, 4 otherwise
+#   run.sh ignore <pattern>               -> adds the pattern to the ignore file `ignore_in:` names, prints that file
 #   run.sh snapshot                       -> commits the repo-level docs the orchestrator writes (conventions, CLAUDE.md, prd, ...)
 #   run.sh finish [status]                -> logs the run to .claude/runs/log.jsonl, renames active/ to <id>/
 #   run.sh loc                            -> prints hand-written code lines in the repo (DIFF_EXCLUDE applied)
@@ -58,6 +59,32 @@ active_id() {
 }
 
 wt_path() { echo "${REPO}${SUFFIX}/$1"; }
+
+exclude_file() {
+  local f
+  f="$("${G[@]}" rev-parse --git-common-dir)/info/exclude"
+  case "$f" in /*|?:*) ;; *) f="$REPO/$f";; esac
+  echo "$f"
+}
+
+# idleflow's own ignore rules stay clone-local until the human picks `ignore_in: gitignore`,
+# so nothing about the tooling reaches a committed file unasked.
+ignore_file() {
+  if grep -q '^ignore_in: *gitignore' "$REPO/.claude/conventions.md" 2>/dev/null; then
+    echo "$REPO/.gitignore"
+  else
+    exclude_file
+  fi
+}
+
+add_ignore() { # add_ignore <file> <pattern>
+  local f="$1" pat="$2"
+  [ -f "$f" ] && tr -d '\r' < "$f" | grep -qxF -- "$pat" && return 0
+  mkdir -p "$(dirname "$f")"
+  # a file without a final newline would otherwise glue our line onto its last entry
+  [ ! -s "$f" ] || [ -z "$(tail -c1 "$f")" ] || echo >> "$f"
+  echo "$pat" >> "$f"
+}
 
 # Build the DIFF_EXCLUDE pathspec list into EXCL[].
 build_excl() {
@@ -105,16 +132,9 @@ case "$cmd" in
 {"id":"$id","slug":"$safe","base":$(json_str "$base"),"base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"gate_trips":0,"review_findings":0}
 JSON
     echo "{\"repo\":$(json_str "$(native_path "$REPO")"),\"tasks\":{}}" > "$ACTIVE/ownership.json"
-    if ! grep -q '^\.claude/runs/\r\?$' "$REPO/.gitignore" 2>/dev/null; then
-      # a .gitignore without a final newline would otherwise glue our line onto its last entry
-      [ ! -s "$REPO/.gitignore" ] || [ -z "$(tail -c1 "$REPO/.gitignore")" ] || echo >> "$REPO/.gitignore"
-      echo '.claude/runs/' >> "$REPO/.gitignore"
-    fi
+    add_ignore "$(ignore_file)" '.claude/runs/'
     # worktree marker dir: excluded locally (shared by all worktrees), never committed or merged
-    excl="$("${G[@]}" rev-parse --git-common-dir)/info/exclude"
-    case "$excl" in /*|?:*) ;; *) excl="$REPO/$excl";; esac
-    mkdir -p "$(dirname "$excl")"
-    grep -qxF '.claude-run/' "$excl" 2>/dev/null || echo '.claude-run/' >> "$excl"
+    add_ignore "$(exclude_file)" '.claude-run/'
     echo "$id"
     ;;
   wt)
@@ -206,17 +226,23 @@ JSON
       exit 4
     fi
     ;;
+  ignore)
+    pat="${1:?pattern}"
+    f="$(ignore_file)"
+    add_ignore "$f" "$pat"
+    native_path "$f"
+    ;;
   snapshot)
     # The orchestrator creates repo-level docs in the main checkout before any worktree exists.
     # Commit them so worktrees (branched from HEAD) see them. Only these paths are committed,
-    # never other staged work; ignored paths (a gitignored docs/) are skipped, never forced.
+    # never other staged work; ignored paths (a docs/ kept local) are skipped, never forced.
     [ -f "$("${G[@]}" rev-parse --absolute-git-dir)/MERGE_HEAD" ] && { echo "snapshot: a merge is in progress; finish or abort it first" >&2; exit 1; }
     paths=()
     for f in .claude/conventions.md .claude/lessons.md CLAUDE.md prd.md progress.md index.md README.md .gitignore .gitattributes docs; do
       [ -e "$REPO/$f" ] || continue
       # the human chose what is ignored (docs_in_git in R2); an ignored path is simply skipped
       if "${G[@]}" check-ignore -q --no-index -- "$f"; then
-        echo "snapshot: $f is gitignored, not committed" >&2
+        echo "snapshot: $f is ignored, not committed" >&2
         continue
       fi
       "${G[@]}" add -A -- "$f"; paths+=("$f")
@@ -248,5 +274,5 @@ JSON
     echo "RUNTIME=$(idleflow_rt_name)"
     ;;
   *)
-    sed -n '2,21p' "$0"; exit 1;;
+    sed -n '2,22p' "$0"; exit 1;;
 esac

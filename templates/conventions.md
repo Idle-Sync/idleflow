@@ -58,8 +58,19 @@ runs or when those files already exist. `no` leaves them out.
 
 docs_in_git: unset
 
-`yes` commits `docs/` so everyone shares the research and session notes. `no` adds `docs/` to
-`.gitignore` so they stay local to this machine. Asked once, the first time docs are turned on.
+`yes` commits `docs/` so everyone shares the research and session notes. `no` keeps `docs/` out
+of git through the file `ignore_in:` names, so they stay local to this machine. Asked once, the
+first time docs are turned on.
+
+## Ignore rules
+
+ignore_in: unset
+
+Where idleflow writes its own ignore rules (`.claude/runs/`, a local `docs/`). `exclude` uses
+`.git/info/exclude`: local to this clone, so nothing about idleflow appears in a committed file.
+`gitignore` uses `.gitignore`: shared with every clone and visible to everyone who reads the repo.
+Until it is answered, rules go to `.git/info/exclude`. A stack's own entries (`node_modules/`,
+`.venv/`, `dist/`, `.env`) always go in `.gitignore`, because every clone needs them.
 
 ## Pushback
 

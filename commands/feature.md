@@ -26,7 +26,7 @@ Pushback, everywhere in this run: when the human's answer conflicts with the cod
 bash "$RUN" conf                     # note every value; you pass them to agents
 ID=$(bash "$RUN" new "<short-slug-from-issue>")
 ```
-Ensure `.claude/lessons.md` exists (copy `templates/lessons.md` if not). Run **R1** (readability mode) from `procedures/repo-setup.md` if it applies. Tell the human: `Run <ID> started (mode: <mode>). Exploring.`
+Ensure `.claude/lessons.md` exists (copy `templates/lessons.md` if not). Run **R1** (readability mode and ignore file) from `procedures/repo-setup.md` if it applies. Tell the human: `Run <ID> started (mode: <mode>). Exploring.`
 
 ## 1. Explore (Sonnet)
 
