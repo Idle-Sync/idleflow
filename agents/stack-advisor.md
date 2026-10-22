@@ -52,7 +52,9 @@ For a language not in the table, name the mainstream equivalents and let the res
 
 Candidate names to use so the researcher knows what to look up: `pyproject+uv`, `pyproject+poetry`, `venv`, `docker-compose-dev`, `devcontainer`, `pnpm`, `quality-<language>` (the table above), `justfile`, `github-actions-ci`, and for large repos `code-map` (which expands to Graphify, Serena MCP, Sourcegraph, universal-ctags, a maintained repo map in `index.md`). Add others when the stack calls for them.
 
-Reply with only one JSON line: `{"gaps":N,"candidates":["..."],"large_repo":true|false,"code_lines":N}`.
+`research_units` in the reply is the flat list of everything the researcher looks up, each name once: every plain candidate name as is; each `quality-<language> (...)` replaced by the tools in its parentheses, with `a/b` giving both `a` and `b`; `code-map` replaced by its five members above. A tool that several languages name, such as `pre-commit`, appears once.
+
+Reply with only one JSON line: `{"gaps":N,"research_units":["..."],"large_repo":true|false,"code_lines":N}`.
 
 ## Mode `propose`
 
