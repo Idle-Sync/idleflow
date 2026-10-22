@@ -13,7 +13,8 @@
 # get / set / inc (parity cases), merge (conflict → 3, unknown branch → 4), wt rm after
 # finish, finish, a runtime given as a full path, a second `new` that parks a
 # leftover run, and prompt contracts (the stack scan, researcher and R3 agree on
-# research units, budget and reply counts). Exit 0 and a final "PASS" line mean everything worked.
+# research units, budget and reply counts; setup steps follow the classifier's risk
+# and dependency fields). Exit 0 and a final "PASS" line mean everything worked.
 
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -221,6 +222,13 @@ setup="$HERE/../procedures/repo-setup.md"
 check "researcher has no total budget"  '! grep -q "tool calls total" "$researcher" && grep -q "official documentation for every unit before" "$researcher"'
 check "researcher reply counts unverified" 'grep -q "<K> unverified" "$researcher"'
 check "scan reply names research_units" 'grep -q "\"research_units\"" "$advisor" && ! grep -q "\"candidates\"" "$advisor" && grep -q "research_units" "$setup"'
+classifier="$HERE/../agents/classifier.md"
+feature="$HERE/../commands/feature.md"
+fix="$HERE/../commands/fix.md"
+check "classifier reports risk and new dependency" 'grep -q "\"risk\"" "$classifier" && grep -q "\"new_dependency\"" "$classifier"'
+check "setup research follows new_dependency, not size" '! grep -q "size M/L" "$setup" && grep -q "new_dependency" "$setup" && grep -q "new_dependency" "$feature"'
+check "debate runs on size L or high risk" 'grep -q "^## 4\. Debate.*risk" "$feature"'
+check "fix sizing ignores module count"   '! grep -q "more than one module" "$fix"'
 check "R3 chunks and concatenates"      'grep -q "stack-research-<n>.md" "$setup" && grep -q "\`cat\` them in order into \`.claude/runs/active/stack-research.md\` before step 3" "$setup"'
 
 echo

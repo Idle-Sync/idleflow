@@ -34,11 +34,13 @@ Spawn `idleflow:explorer` with: the issue path, the output path `.claude/runs/ac
 
 ## 2. Classify (Haiku), then set the repo up
 
-Spawn `idleflow:classifier` with the context.md path and the `SIZE_*` values. Parse its JSON line. `bash "$RUN" set size '"<S|M|L>"'` and `bash "$RUN" set greenfield <true|false>`. If the line has a `plugin_gap`, append (`>>`) `plugin_gap: classifier — <text>` to `.claude/runs/active/gaps.md`.
+Spawn `idleflow:classifier` with the context.md path and the `SIZE_*` values. Parse its JSON line. `bash "$RUN" set size '"<S|M|L>"'`, `bash "$RUN" set greenfield <true|false>`, `bash "$RUN" set risk '"<low|high>"'` and `bash "$RUN" set new_dependency <true|false>`. If the line has a `plugin_gap`, append (`>>`) `plugin_gap: classifier — <text>` to `.claude/runs/active/gaps.md`.
 
 If `greenfield` is true, the diff limit for this run is `DIFF_LIMIT * 3`; pass that limit as the second argument to every later `gate` call and to the auditor. Implementers per group: `SIZE_M_IMPLEMENTERS` for size M, `MAX_IMPLEMENTERS` for L, 1 for S.
 
-Then, in this order: **R2** (project docs) from `procedures/repo-setup.md`; step **2a** below; **R3** (stack), **R4** (libraries), **R5** (tooling) when their conditions hold (size S skips all three); and always **R6** (snapshot) last.
+Each later step follows the field that matters to it, not the size alone: the debate (step 4) runs for size L or `risk: high`; stack and library research (R3, R4) run on greenfield or `new_dependency: true`; tooling (R5) runs on greenfield or size L; implementers and reviewers follow the size. Tell the human in one line what that means for this run, for example `Size S, risk low, no new dependency: no debate, no setup research, one reviewer.` If the human corrects a field, set it and record the correction in plan.md "Open questions" once the plan exists.
+
+Then, in this order: **R2** (project docs) from `procedures/repo-setup.md`; step **2a** below; **R3** (stack), **R4** (libraries), **R5** (tooling) when their conditions hold; and always **R6** (snapshot) last.
 
 ### 2a. Ground the docs (Sonnet) — when `docs: yes` and not greenfield
 
@@ -46,7 +48,7 @@ Spawn `idleflow:doc-keeper` with the repo root and the absolute paths of `progre
 
 ## 3. Plan (Fable)
 
-Spawn `idleflow:planner` with: context.md path, lessons.md path, conventions path, plan template path, output path `.claude/runs/active/plan.md`, the size, `greenfield`, the implementer cap for this size, the diff limit for this run, and when `docs: yes` the paths of `prd.md`, `progress.md`, `index.md` plus `templates/prd.md`. Wait.
+Spawn `idleflow:planner` with: context.md path, lessons.md path, conventions path, plan template path, output path `.claude/runs/active/plan.md`, the size, `greenfield`, the implementer cap for this size, the diff limit for this run, whether R3 and R4 ran (when they did not, a plan that adds a dependency anyway lists it under "Open questions" for the human), and when `docs: yes` the paths of `prd.md`, `progress.md`, `index.md` plus `templates/prd.md`. Wait.
 
 Read `plan.md` once now; keep the task list, groups, owned globs, models and merge order in working memory and do not re-read the plan unless it is revised.
 
@@ -54,7 +56,9 @@ If "Open questions for the human" is non-empty, ask them now with AskUserQuestio
 
 Reject a plan that puts `prd.md`, `progress.md`, `index.md`, `CLAUDE.md` or `.claude/conventions.md` in any task's `owns:`; send it back to the planner once with that single instruction.
 
-## 4. Debate (Opus × 2) — skip for size S
+## 4. Debate (Opus × 2) — only for size L or risk high
+
+Otherwise skip to the "Plan locked" line at the end of this step.
 
 Round 1, both in parallel: `idleflow:red-team` → `debate/round-1-red.md` and `idleflow:cost-critic` → `debate/round-1-cost.md`, each with the plan.md and context.md paths.
 
@@ -91,7 +95,7 @@ For each done task: `bash "$RUN" gate <task-id> [limit]` → JSON (pass the gree
   - `reject` → `bash "$RUN" set tasks.<id>.status '"building"'`, send the auditor's reason to the implementer as a retry (counts toward `MAX_RETRIES`), re-gate.
   - `split` → `bash "$RUN" set tasks.<id>.status '"split"'`, `bash "$RUN" wt rm <task-id>`; send the auditor's sub-tasks and globs to `idleflow:planner` for a one-task revision that replaces the task with a new group; re-read the plan; register ownership; build that group. You never edit the task list yourself.
 
-**Retroactive upgrade:** if size was S and any gate `total` exceeds `SIZE_S_OVERRUN`, set size to M, run step 4 on the plan now, and if the revision changes the task's acceptance criteria, re-run that task once.
+**Retroactive upgrade:** if size was S and any gate `total` exceeds `SIZE_S_OVERRUN`, set size to M so step 7 runs the conformance reviewer as well. The debate does not run after the fact; it follows `risk`, which a bigger diff does not change.
 
 ## 7. Review (Opus + Sonnet, per task, in parallel)
 

@@ -8,7 +8,7 @@ Run the full procedure in `${CLAUDE_PLUGIN_ROOT}/commands/feature.md` (read it n
 
 1. **Explorer prompt** adds: "This is a bug. In §1 state the reproduction (a command or test that currently fails, or how to make one). In §2 lead with the file where the wrong behaviour happens, not where the symptom appears. In §4 note whether a test already covers the broken path — if not, the plan must add a regression test before the fix."
 
-2. **Classifier prompt** adds: "Bug fixes default to S unless the root cause is in more than one module or there is no test for the broken path and writing one requires fixtures that don't exist yet (then M)."
+2. **Classifier prompt** adds: "This is a bug fix. Size it from the expected hand-written lines and files of the fix plus its regression test; a fix that touches several modules is not bigger for that reason. Most fixes are `risk: low` and `new_dependency: false`; set either only for a reason in your rules."
 
 3. **Plan must include a regression test.** When you read plan.md after step 3, check that at least one acceptance criterion is a test that fails on the current code and passes after the fix. If it isn't there, send the plan back to the planner once with that single instruction before proceeding.
 

@@ -1,6 +1,6 @@
 ---
 name: stack-advisor
-description: Two modes. `scan` inventories how a repo is set up (packaging, environments, containers, lint, CI, code size) and what tools the machine has, and names the gaps. `propose` turns the scan plus idleflow:stack-researcher's findings into at most six proposals with pros and cons for the human to accept or decline. Sonnet. Runs on greenfield runs and the first non-trivial run in a repo.
+description: Two modes. `scan` inventories how a repo is set up (packaging, environments, containers, lint, CI, code size) and what tools the machine has, and names the gaps. `propose` turns the scan plus idleflow:stack-researcher's findings into at most six proposals with pros and cons for the human to accept or decline. Sonnet. Runs on greenfield runs and when the classifier reports a new dependency.
 model: sonnet
 tools: Read, Grep, Glob, Bash, Write
 ---

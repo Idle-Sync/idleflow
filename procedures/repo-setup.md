@@ -26,7 +26,7 @@ When `docs: yes` (a caller may name only some of these sub-steps):
 
 Who writes these later: the planner fills `prd.md` on a greenfield run; the retro writes the session note and updates `progress.md` and `index.md` after every run; the doc-keeper grounds all of them before every run. No task may own them.
 
-## R3. Stack conventions — when nothing is under "Stack decisions" yet, on a greenfield or size M/L run
+## R3. Stack conventions — when nothing is under "Stack decisions" yet, on a greenfield run or when the classifier reports `new_dependency: true`
 
 1. `LOC=$(bash "$RUN" loc)`. Spawn `idleflow:stack-advisor` in mode `scan` with: repo root, `greenfield`, the conventions path, `LARGE_REPO_LOC` from `bash "$RUN" conf`, `LOC`, and the project description path (`context.md`, or `brainstorm.md` from init). It writes `.claude/runs/active/stack-scan.md` and replies with a JSON line. If `gaps` is 0, tell the human `Stack: already current.` and continue to R4.
 2. Split the scan reply's `research_units` into chunks of at most 5, in order. With one chunk, spawn `idleflow:stack-researcher` with the chunk, the scan path and output path `.claude/runs/active/stack-research.md`, and wait. With more than one, spawn it once per chunk with that chunk, the scan path and output path `.claude/runs/active/stack-research-<n>.md` (`<n>` counts from 1), wait for each, then `cat` them in order into `.claude/runs/active/stack-research.md` before step 3. It checks several internet sources per unit and cites every claim. Add up the units and unverified counts of the replies and tell the human `Stack research: <N> units, <K> unverified`.
@@ -39,7 +39,7 @@ On a greenfield run the advisor must include a **Quality tooling** proposal per 
 
 Tell the human: `Stack: <N> accepted, <M> declined.` An accepted proposal that changes the repo (a `pyproject.toml`, a `Dockerfile`, a code-map tool) becomes a task in the plan; nothing is installed into the repo here.
 
-## R4. Libraries before code — when greenfield, or size M/L
+## R4. Libraries before code — when greenfield, or when the classifier reports `new_dependency: true`
 
 Spawn `idleflow:library-scout` with: the issue path (or `brainstorm.md`), `context.md` path (or `brainstorm.md`), the conventions path, `docs/research/` (create it; research lives there even when `docs: no`), and output path `.claude/runs/active/libraries.md`. It names the generic capabilities the change needs, checks what the repo already depends on, researches established libraries across several sources with a URL on every claim, and writes one `docs/research/<capability>.md` per capability. Wait.
 
@@ -47,7 +47,7 @@ Read `libraries.md`. If every capability is `reused` or there are none, tell the
 
 Tell the human: `Libraries: <N> chosen, <M> hand-written, <K> reused.`
 
-## R5. Tooling — when nothing is under "Tooling" yet and the run is greenfield or size M/L
+## R5. Tooling — when nothing is under "Tooling" yet and the run is greenfield or size L
 
 Spawn `idleflow:tooling-advisor` with the project description path, the conventions path, and output paths `.claude/runs/active/tooling.md` and `docs/research/tooling.md`. It inventories installed plugins and skills, checks the Idle-Sync/skills catalogue against what is installed, and proposes the skills, marketplace plugins and workflows this project will use often, plus the skills that do not exist yet. Wait.
 

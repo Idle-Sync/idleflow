@@ -3,8 +3,8 @@
 A Claude Code plugin that turns "fix this" or "build this" into a bounded pipeline:
 
 ```
-issue ─► explore (Sonnet) ─► classify S/M/L (Haiku) ─► plan (Fable)
-      ─► debate: red team ⇄ cost critic, 2 rounds (Opus×2) ─► plan revised (Fable)
+issue ─► explore (Sonnet) ─► classify size, risk, new dependency (Haiku) ─► plan (Fable)
+      ─► debate, size L or high risk: red team ⇄ cost critic, 2 rounds (Opus×2) ─► plan revised (Fable)
       ─► build: ≤4 implementers, one git worktree each, file-ownership enforced by hook (Sonnet / Opus)
       ─► diff gate: >1500 hand-written lines ⇒ auditor decides split / accept / reject (Sonnet)
       ─► review: correctness (Opus) + conformance (Sonnet), per task
@@ -18,7 +18,7 @@ Around the pipeline, five things that keep a repo honest:
 - **Not a yes machine.** When a request or an answer conflicts with the code, the tests, a research file or a source an agent can cite, it says so once, with the evidence and a better option, then does what the human decides and records why. Pushback without evidence is left out; agreement without checking is rejected in review.
 
 - **Code style is a contract, not advice.** `.claude/conventions.md` (committed) holds the KISS rules — simplest correct thing, plain names a newcomer can read, one idea per function, failures handled where they happen — and a **readability mode** (`explicit` / `idiomatic` / `balanced`) that decides whether a list comprehension or a loop is the right shape. The first run asks once, with pros and cons; `/idleflow:style` changes it later. Implementers write to it and the conformance reviewer rejects on it.
-- **Research before code.** On greenfield and M/L runs, a **stack advisor** scans the repo and the machine (pyproject vs requirements.txt, venv, Docker present, lockfiles, linters, CI), a **researcher** checks several internet sources per candidate with a URL on every claim, and the human accepts or declines each proposal. A **library scout** does the same for the capabilities the change needs (canvas animation → p5.js / three.js, not hand-rolled canvas code), writing `docs/research/<capability>.md`. Repos at or above `LARGE_REPO_LOC` hand-written code lines get a proposal for a code map (Graphify, Serena MCP, Sourcegraph, ctags).
+- **Research before code.** On greenfield runs and changes that add a dependency, a **stack advisor** scans the repo and the machine (pyproject vs requirements.txt, venv, Docker present, lockfiles, linters, CI), a **researcher** checks several internet sources per candidate with a URL on every claim, and the human accepts or declines each proposal. A **library scout** does the same for the capabilities the change needs (canvas animation → p5.js / three.js, not hand-rolled canvas code), writing `docs/research/<capability>.md`. Repos at or above `LARGE_REPO_LOC` hand-written code lines get a proposal for a code map (Graphify, Serena MCP, Sourcegraph, ctags).
 - **No meta commentary, ever.** The generated `CLAUDE.md` and `.claude/conventions.md` ban process narration ("the user asked", "as requested", "I'll now") from every doc, commit, PR, comment and note in the repo, and record whether commits carry a `Co-Authored-By: Claude` trailer (`co_author_claude: yes|no`; footers never). The conformance reviewer rejects on both.
 - **The right tooling, not hand-rolled.** A tooling advisor inventories installed plugins and skills, checks the [Idle-Sync/skills](https://github.com/Idle-Sync/skills) catalogue against what is installed, and proposes the skills, marketplace plugins and workflows the project will use often; accepted items are installed, missing ones become `/idleflow:skills-feedback` requests. `/idleflow:plugin-feedback` reports idleflow's own bugs with the run's evidence attached.
 - **It reports its own gaps.** Any agent that finds the plugin lacks an input, step, tool or config knob it needed appends a `plugin_gap:` line to `.claude/runs/active/gaps.md` instead of working around it. At the end of a run the orchestrator lists them and asks once whether to open them as issues on Idle-Sync/idleflow from the human's GitHub account; nothing is filed without that yes. On greenfield runs the stack advisor always proposes quality tooling per language (ruff, mypy or pyright, pytest and pre-commit for Python; biome or eslint plus prettier, strict tsc and vitest for TypeScript; gofmt and golangci-lint for Go; rustfmt and clippy for Rust, and so on), grounded by the researcher like every other proposal.
@@ -30,7 +30,7 @@ Around the pipeline, five things that keep a repo honest:
 |---|---|---|
 | Plan context | Sonnet explores, Fable plans from `context.md` | `agents/explorer.md`, `agents/planner.md` |
 | Debate | asymmetric roles, hard cap 2 rounds, planner adjudicates | `agents/red-team.md`, `agents/cost-critic.md`, `DEBATE_ROUNDS` |
-| Sizing | Haiku classifies; S skips debate; overrun bumps to M retroactively | `agents/classifier.md`, `SIZE_*` in conf |
+| Sizing | Haiku reports size, risk and new dependency; size sets implementers and reviewers, risk (or size L) the debate, a new dependency the stack and library research; an S overrun adds the conformance reviewer | `agents/classifier.md`, `SIZE_*` in conf |
 | Fan-out | ≤4 implementers, partitioned by file globs, Sonnet default / Opus when plan says | `MAX_IMPLEMENTERS`, `model:` per task in plan |
 | Diff gate | 1500 code lines per task (+300 slack); `.md`, `.txt`, lockfiles, generated excluded | `DIFF_LIMIT`, `DIFF_SLACK`, `DIFF_EXCLUDE` |
 | Retry | one, on Opus, then stop and ask | `MAX_RETRIES`, step 7 of `commands/feature.md` |
@@ -39,7 +39,7 @@ Around the pipeline, five things that keep a repo honest:
 | Metrics | `.claude/runs/log.jsonl` only (no OTEL yet) | `scripts/run.sh finish` |
 | Priority | quality > tokens > time | retry on Opus; `opus` allowed per task; critics on Opus |
 | Readability mode | asked once per repo; `balanced` when nobody answers | `.claude/conventions.md`, `commands/style.md` |
-| Stack / library research | greenfield or M/L; ≥3 sources per candidate, URL on every claim | `agents/stack-advisor.md`, `agents/stack-researcher.md`, `agents/library-scout.md` |
+| Stack / library research | greenfield or a new dependency; ≥3 sources per candidate, URL on every claim | `agents/stack-advisor.md`, `agents/stack-researcher.md`, `agents/library-scout.md` |
 | Large repo | ≥ 100 000 hand-written code lines → code-map proposal | `LARGE_REPO_LOC`, `run.sh loc` |
 | Attribution, releases, meta commentary | asked by `/idleflow:init`, recorded in `CLAUDE.md` | `templates/CLAUDE.md`, `agents/review-conform.md` §7 |
 | Market research | `/idleflow:init` only; verdict viable / viable-if / crowded / weak | `agents/market-researcher.md` |
