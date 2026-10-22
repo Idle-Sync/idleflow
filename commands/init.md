@@ -62,7 +62,7 @@ Spawn `idleflow:market-researcher` with the brainstorm path and output path `doc
 
 Ask in one AskUserQuestion call (four questions):
 
-1. **Readability mode**: the three options and pros/cons from R1, Balanced first and marked Recommended.
+1. **Readability mode**: the three options and pros/cons from R1, Balanced first and marked Recommended (the folder has no code, so R1's **Match this repo** is not offered).
 2. **Co-author Claude on commits?** **No (Recommended)**: commits carry only the human's identity, no `Co-Authored-By: Claude` trailer, no "Generated with Claude Code" footers anywhere; cons: no record in git history of which commits an agent wrote. **Yes**: every commit an agent makes ends with `Co-Authored-By: Claude <noreply@anthropic.com>`; cons: every commit shows it.
 3. **Versioned, tagged releases on GitHub?** **Yes, public repo**: semantic versions, a `vX.Y.Z` tag and a GitHub release with notes when a PRD milestone completes; cons: the code is public from the first push. **Yes, private repo**: same, visible to collaborators only. **Not now**: local git only; a repo can be added later.
 4. **Keep docs/ in git?** **Yes (Recommended)**: research, market research and session notes are shared with everyone who clones. **No, keep it local**: notes stay on this machine; cons: the next person starts blind.

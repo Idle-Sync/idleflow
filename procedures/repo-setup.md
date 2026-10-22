@@ -8,13 +8,17 @@ Pushback applies throughout: when the human's answer conflicts with something yo
 
 Ensure `.claude/conventions.md` exists (copy `templates/conventions.md` if not; if it has no `ignore_in:` line, add the template's "Ignore rules" section). Ask the unanswered questions in one AskUserQuestion call.
 
-**Readability mode.** Three options in this order, with these descriptions:
+**Readability mode.** When the repo already has code (`bash "$RUN" loc` is above 0), offer this first:
 
-- **Balanced (Recommended)** — an idiom only when it reads as one plain sentence; otherwise explicit. Pros: short where short is clear, explicit where it is not. Cons: the line is a judgement call, so the reviewer will sometimes disagree with the implementer.
+- **Match this repo (Recommended)** — write code the way the surrounding code is already written: implementers copy the naming, comment style and density, guard shape, call style and test structure of the files next to the change. Pros: changes read like the rest of the codebase. Cons: carries the repo's habits forward, the bad ones too. Show the style being chosen in the option's `preview`: 8–15 lines quoted exactly from one representative source file (the largest non-test, non-generated file in `git ls-files` of the main language), its `path:line` on the first line.
+
+Then these three in this order; on a repo with no code yet Balanced is first and marked Recommended:
+
+- **Balanced** — an idiom only when it reads as one plain sentence; otherwise explicit. Pros: short where short is clear, explicit where it is not. Cons: the line is a judgement call, so the reviewer will sometimes disagree with the implementer.
 - **Explicit** — loops, named intermediate values, one step per line; no comprehensions, chaining or one-liners. Pros: anyone can follow it, easy to step through in a debugger. Cons: more lines per feature; experienced readers will find it long.
 - **Idiomatic** — the language's native idioms wherever they fit (comprehensions, built-ins, chaining). Pros: shorter, what fluent readers expect. Cons: denser; a nested idiom hides what happens, and newcomers slow down.
 
-Write the answer into the `mode:` line. If the human is not present, write `balanced` and say so. `/idleflow:style` changes it later.
+Write the answer into the `mode:` line (`repo`, `balanced`, `explicit` or `idiomatic`). If the human is not present, write `repo` when the repo has code and `balanced` otherwise, and say so. `/idleflow:style` changes it later.
 
 **Ignore file.** Where idleflow writes its own ignore rules (`.claude/runs/`, a local `docs/`):
 

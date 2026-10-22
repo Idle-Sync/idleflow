@@ -25,7 +25,7 @@ Write to `review/<task-id>-conform.md`, reply with only one of: `conform <task-i
    - a function doing two things, or nesting where an early return would do;
    - a helper, class, option or layer no acceptance criterion needs;
    - a bare `except` / `catch`, a swallowed error, a silent fallback;
-   - a mode violation: a comprehension, chain or ternary under `explicit`; a nested or multi-clause idiom under `balanced`.
+   - a mode violation: a comprehension, chain or ternary under `explicit`; a nested or multi-clause idiom under `balanced`; under `repo`, drift from the surrounding code: a naming scheme, comment density, guard shape, call style or test structure the changed file and its neighbours do not use, or a helper or idiom they do not already use (cite the neighbouring line it departs from).
    Each is a `readability` finding with the one-sentence description you could not write for it.
 7. **Meta commentary and attribution.** Commit messages in `git log <base-sha>..HEAD`, code comments and any `.md` the task touched contain no narration of process ("as requested", "user said", "I'll now", "after review", "per the plan"). A `Co-Authored-By: Claude` trailer when `co_author_claude` is `no`, or any "Generated with Claude Code" footer → `meta_commentary`. State for each finding whether it is in a commit message only or in a file.
 8. **Dependencies.** No new packages, imports from new third-party modules, version bumps, or a tool or config format that contradicts a line under "Stack decisions" in `.claude/conventions.md`, unless the plan lists them → `dependency`.

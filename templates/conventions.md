@@ -36,13 +36,14 @@ idleflow run. Commit this file. Edit it by hand whenever a decision changes, or 
 
 mode: unset
 
-Set to one of these by `/idleflow:feature` on the first run (it asks), or by `/idleflow:style`.
+Set to one of these by the first `/idleflow:feature` or `/idleflow:init` run (it asks), or by `/idleflow:style`.
 
 | mode | what the implementer does | best for |
 |---|---|---|
 | `explicit` | Loops, named intermediate values, one step per line. No comprehensions, chained calls, ternaries or one-liners that do two things. | Teams with mixed experience, teaching codebases, anything a non-programmer reviews. |
 | `idiomatic` | The language's native idioms wherever they fit: comprehensions, built-ins, chaining, pattern matching. | Experienced teams who read the language fluently and want less code. |
-| `balanced` | An idiom only when it reads as one plain sentence (single clause, no nesting, fits on one line); otherwise explicit. | Most projects. The default when nobody is there to answer. |
+| `balanced` | An idiom only when it reads as one plain sentence (single clause, no nesting, fits on one line); otherwise explicit. | New projects. The default for an empty repo when nobody is there to answer. |
+| `repo` | Write code the way the surrounding code is already written. Before writing, read the file being changed and its nearest neighbours (same directory or layer, and their tests) and match their naming, comment style and density, guard and early-return shape, call style and test structure. No pattern, helper or idiom those files do not already use; a new file copies the closest existing file of its kind. Where the neighbours and the code-style rules above disagree on shape, the neighbours win; failure handling still follows the rules. | Existing codebases with an established style. Offered first on any repo that already has code, and its default when nobody is there to answer. |
 
 Whatever the mode: a construct that takes two readings to understand is wrong in every mode.
 

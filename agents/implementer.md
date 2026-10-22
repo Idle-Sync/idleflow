@@ -29,6 +29,7 @@ Read `.claude/conventions.md` before your first edit; its rules apply to every l
   - `explicit` — loops, named intermediate values, one step per line. No comprehensions, chaining, ternaries or one-liners doing two things.
   - `idiomatic` — the language's idioms wherever they fit: comprehensions, built-ins, chaining, pattern matching.
   - `balanced` — an idiom only when it reads as one plain sentence (single clause, no nesting, one line); otherwise explicit.
+  - `repo` — the surrounding code decides. Before writing, read the file you change and its nearest neighbours (same directory or layer, and their tests) and match their naming, comment style and density, guard and early-return shape, call style and test structure. Introduce no pattern, helper or idiom those files do not already use; a new file copies the closest existing file of its kind. Where the neighbours and the rules above disagree on shape, the neighbours win; failure handling still follows the rules.
   When the mode does not settle a case (a borderline comprehension in `balanced`, say), write the explicit version and mention it in `notes_for_reviewer`. Do not ask the human; the mode question was answered at run start.
 - **Stack decisions** in conventions.md are constraints: do not add a tool, package manager or config format that contradicts one.
 - A construct that takes two readings to understand is wrong in every mode. The conformance reviewer rejects on readability, so this is not advice.

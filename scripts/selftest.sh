@@ -15,7 +15,8 @@
 # leftover run, ignore (info/exclude until conventions say gitignore, no duplicates),
 # and prompt contracts (the stack scan, researcher and R3 agree on research units,
 # budget and reply counts; setup steps follow the classifier's risk and dependency
-# fields; ignore rules go through run.sh ignore). Exit 0 and a final "PASS" line mean everything worked.
+# fields; ignore rules go through run.sh ignore; the `repo` readability mode is
+# offered and enforced). Exit 0 and a final "PASS" line mean everything worked.
 
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -240,6 +241,7 @@ check "setup research follows new_dependency, not size" '! grep -q "size M/L" "$
 check "debate runs on size L or high risk" 'grep -q "^## 4\. Debate.*risk" "$feature"'
 check "fix sizing ignores module count"   '! grep -q "more than one module" "$fix"'
 check "ignore rules go through run.sh ignore" 'grep -q "^ignore_in: unset" "$conventions" && grep -q "\"\$RUN\" ignore" "$setup" && grep -q "\"\$RUN\" ignore" "$init"'
+check "repo readability mode is offered and enforced" 'grep -q "^| \`repo\` |" "$conventions" && grep -q "Match this repo" "$setup" && grep -q "Match this repo" "$HERE/../commands/style.md" && grep -q "\`repo\`" "$HERE/../agents/implementer.md" && grep -q "\`repo\`" "$HERE/../agents/implementer-hard.md" && grep -q "\`repo\`" "$HERE/../agents/review-conform.md"'
 check "R3 chunks and concatenates"      'grep -q "stack-research-<n>.md" "$setup" && grep -q "\`cat\` them in order into \`.claude/runs/active/stack-research.md\` before step 3" "$setup"'
 
 echo
