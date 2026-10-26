@@ -1,9 +1,8 @@
 <!-- idleflow start -->
 # Working rules for Claude Code in this repo
 
-Written by idleflow on the first run; humans own it afterwards. Keep this block; edit it when
-a rule changes. Everything here applies to every Claude Code session in this repo, not only
-to `/idleflow:*` runs.
+Humans own this block: keep it, and edit it when a rule changes. Everything here applies to
+every Claude Code session in this repo, not only to `/idleflow:*` runs.
 
 ## Start of every session
 
