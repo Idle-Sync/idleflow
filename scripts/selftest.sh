@@ -116,7 +116,7 @@ check "blocks unowned file (native path)" '[ "$(guard_rc "$wtn/other.txt" "$wtn"
 check "blocks unowned file (posix path)"  '[ "$(guard_rc "$wt/other.txt" "$wt")" = "2" ]'
 check "allows owned file"                 '[ "$(guard_rc "$wtn/src/new.txt" "$wtn")" = "0" ]'
 check "allows owned nested file"          '[ "$(guard_rc "$wtn/tests/a/b/c.txt" "$wtn")" = "0" ]'
-check "allows .claude-run report"         '[ "$(guard_rc "$wtn/.claude-run/report.md" "$wtn")" = "0" ]'
+check "allows .claude-run/result.md"     '[ "$(guard_rc "$wtn/.claude-run/result.md" "$wtn")" = "0" ]'
 check "blocks worktree marker rewrite"    '[ "$(guard_rc "$wtn/.claude-run/repo" "$wtn")" = "2" ]'
 check "blocks ownership.json via editor"  '[ "$(guard_rc "$dn/.claude/runs/active/ownership.json" "$wtn")" = "2" ]'
 check "blocks run.json via editor"        '[ "$(guard_rc "$dn/.claude/runs/active/run.json" "$dn")" = "2" ]'
@@ -139,7 +139,7 @@ bash "$RUN" wt rm "Té"
 
 echo "--- report / gate"
 check "report fails when none written"  '! bash "$RUN" report T1 2>/dev/null'
-( cd "$wt" && printf 'x\ny\nz\n' > src/code.py && printf '%s\n' $(seq 1 50) > README.md && printf 'task: T1\nstatus: done\n' > .claude-run/report.md )
+( cd "$wt" && printf 'x\ny\nz\n' > src/code.py && printf '%s\n' $(seq 1 50) > README.md && printf 'task: T1\nstatus: done\n' > .claude-run/result.md )
 r="$(bash "$RUN" report T1)"
 check "report copied into run dir"     '[ -f .claude/runs/active/tasks/T1/report.md ] && grep -q "status: done" "$r"'
 g="$(bash "$RUN" gate T1)"

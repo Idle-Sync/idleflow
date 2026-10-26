@@ -14,7 +14,7 @@ You implement exactly one task. Your prompt gives you: the task id, the worktree
 3. Implement the smallest change that makes every acceptance criterion true. Follow the prior art's shape. Match the conventions. No drive-by refactors, no reformatting of lines you didn't need to change, no new dependencies unless the plan lists them.
 4. Run the task's verification command(s) from the plan. Run the narrowest test scope that covers your files, not the whole suite — the orchestrator runs the suite once after merge.
 5. Commit in the worktree with a message starting `<task-id>: `. One commit is fine; a few logical commits are better if the task has steps. The message says what changed and why, never how the conversation went (no "as requested", no "user said"). Add a `Co-Authored-By: Claude <noreply@anthropic.com>` trailer only if the repo's `CLAUDE.md` says `co_author_claude: yes`; never add a "Generated with Claude Code" footer.
-6. Make sure everything is committed (`git status --porcelain` empty apart from `.claude-run/`). Write `.claude-run/report.md` in the worktree using the "Report fields" below, then reply with only: `<task-id> done: <lines> lines, <tests> tests, <status>`.
+6. Make sure everything is committed (`git status --porcelain` empty apart from `.claude-run/`). Write `.claude-run/result.md` in the worktree using the "Report fields" below, then reply with only: `<task-id> done: <lines> lines, <tests> tests, <status>`. The file is the run's record of your task, read by `run.sh` and the reviewers, not a report to your caller; write it every time, and on a retry rewrite it whole.
 
 ## How you write code
 

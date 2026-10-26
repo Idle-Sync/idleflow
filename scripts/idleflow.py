@@ -234,8 +234,8 @@ def cmd_guard():
     if "/.claude/runs/" in path and name in ("ownership.json", "run.json", "gate.json"):
         sys.stderr.write("[idleflow] BLOCKED: %s is run state; use scripts/run.sh (set, own, inc) instead.\n" % name)
         sys.exit(2)
-    if "/.claude-run/" in path and name != "report.md":
-        sys.stderr.write("[idleflow] BLOCKED: %s is a worktree marker; only .claude-run/report.md may be written.\n" % name)
+    if "/.claude-run/" in path and name != "result.md":
+        sys.stderr.write("[idleflow] BLOCKED: %s is a worktree marker; only .claude-run/result.md may be written.\n" % name)
         sys.exit(2)
 
     for tid, t in (omap.get("tasks") or {}).items():
@@ -245,7 +245,7 @@ def cmd_guard():
         if path == wt or path.startswith(wt + "/"):
             rel = path[len(wt) + 1:] if path != wt else ""
             owns = t.get("owns") or []
-            implicit = [".claude-run/report.md"]
+            implicit = [".claude-run/result.md"]
             if glob_match(rel, list(owns) + implicit):
                 sys.exit(0)
             sys.stderr.write(

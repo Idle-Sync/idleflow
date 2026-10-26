@@ -11,7 +11,7 @@
 #   run.sh get <key>                      -> prints a value from run.json (dotted keys ok)
 #   run.sh set <key> <json>               -> sets a value in run.json (dotted keys ok)
 #   run.sh inc <key> [n]                  -> adds n (default 1) to a counter in run.json
-#   run.sh report <task-id>               -> copies the task's .claude-run/report.md into the run dir, prints its path
+#   run.sh report <task-id>               -> copies the task's .claude-run/result.md into the run dir as report.md, prints its path
 #   run.sh gate <task-id> [limit]         -> runs diff-gate against the task's own base, writes tasks/<id>/gate.json, prints it
 #   run.sh merge <task-id>                -> merges the task branch into the current branch (no-ff); exit 3 on conflict, 4 otherwise
 #   run.sh ignore <pattern>               -> adds the pattern to the ignore file `ignore_in:` names, prints that file
@@ -107,10 +107,13 @@ park_active() {
 }
 
 # Copy a task's report out of its worktree (the worktree is deleted at the end of the run).
+# The worktree file is not called report.md: Claude Code's Write tool refuses subagents any
+# file named report*.md (also summary, findings, analysis).
+report_src() { echo "$(wt_path "$1")/.claude-run/result.md"; }
 copy_report() {
   local tid="$1" src dst
-  src="$(wt_path "$tid")/.claude-run/report.md"; dst="$ACTIVE/tasks/$tid/report.md"
-  [ -f "$src" ] || { echo "no report at $src (the implementer did not write .claude-run/report.md)" >&2; return 1; }
+  src="$(report_src "$tid")"; dst="$ACTIVE/tasks/$tid/report.md"
+  [ -f "$src" ] || { echo "no report at $src (the implementer did not write .claude-run/result.md)" >&2; return 1; }
   mkdir -p "$ACTIVE/tasks/$tid"
   cp "$src" "$dst"
   native_path "$dst"
