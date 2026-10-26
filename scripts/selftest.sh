@@ -142,7 +142,12 @@ check "report fails when none written"  '! bash "$RUN" report T1 2>/dev/null'
 ( cd "$wt" && printf 'x\ny\nz\n' > src/code.py && printf '%s\n' $(seq 1 50) > README.md && printf 'task: T1\nstatus: done\n' > .claude-run/result.md )
 r="$(bash "$RUN" report T1)"
 check "report copied into run dir"     '[ -f .claude/runs/active/tasks/T1/report.md ] && grep -q "status: done" "$r"'
+touch -t 200001010000 "$wt/.claude-run/result.md"; echo "edited: yes" >> "$r"
 g="$(bash "$RUN" gate T1)"
+check "gate keeps a newer run copy"    'grep -q "edited: yes" "$r"'
+printf 'task: T1\nstatus: partial\n' > "$wt/.claude-run/result.md"; touch -t 203001010000 "$wt/.claude-run/result.md"
+bash "$RUN" gate T1 >/dev/null
+check "gate refreshes after a rewrite" 'grep -q "status: partial" "$r" && ! grep -q "edited: yes" "$r"'
 check "gate verdict ok"                'echo "$g" | grep -q "\"verdict\":\"ok\""'
 check "gate counts code lines (3)"     'echo "$g" | grep -q "\"total\":3,"'
 check "gate excludes .md (50+1)"       'echo "$g" | grep -q "\"excluded_total\":51"'

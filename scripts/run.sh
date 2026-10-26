@@ -12,7 +12,8 @@
 #   run.sh set <key> <json>               -> sets a value in run.json (dotted keys ok)
 #   run.sh inc <key> [n]                  -> adds n (default 1) to a counter in run.json
 #   run.sh report <task-id>               -> copies the task's .claude-run/result.md into the run dir as report.md, prints its path
-#   run.sh gate <task-id> [limit]         -> runs diff-gate against the task's own base, writes tasks/<id>/gate.json, prints it
+#   run.sh gate <task-id> [limit]         -> runs diff-gate against the task's own base, writes tasks/<id>/gate.json, prints it;
+#                                            refreshes the run's report.md when the worktree copy is newer
 #   run.sh merge <task-id>                -> merges the task branch into the current branch (no-ff); exit 3 on conflict, 4 otherwise
 #   run.sh ignore <pattern>               -> adds the pattern to the ignore file `ignore_in:` names, prints that file
 #   run.sh snapshot                       -> commits the repo-level docs the orchestrator writes (conventions, CLAUDE.md, prd, ...)
@@ -203,7 +204,8 @@ JSON
     out="$(bash "$HERE/diff-gate.sh" "$(wt_path "$tid")" "$base" ${2:+"$2"})" || { echo "gate $tid failed: $out" >&2; exit 1; }
     mkdir -p "$ACTIVE/tasks/$tid"
     echo "$out" > "$ACTIVE/tasks/$tid/gate.json"
-    copy_report "$tid" >/dev/null 2>&1 || true
+    # only a retry that rewrote the worktree report refreshes the run copy; a newer run copy is kept
+    if [ "$(report_src "$tid")" -nt "$ACTIVE/tasks/$tid/report.md" ]; then copy_report "$tid" >/dev/null; fi
     echo "$out"
     ;;
   merge)
