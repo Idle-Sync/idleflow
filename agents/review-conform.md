@@ -11,7 +11,7 @@ Inputs in your prompt: worktree path, the task's base sha, the task's section of
 
 Work from the worktree: `cd <worktree>`. The diff is `git diff <base-sha>`; the task's commits are `git log <base-sha>..HEAD`; uncommitted work is `git status --porcelain` (ignore untracked files that `.gitignore` or the plugin's `DIFF_EXCLUDE` would exclude: `__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `coverage`, `node_modules` and the like; the correctness reviewer's test runs leave them behind).
 
-Write to `review/<task-id>-conform.md`, reply with only one of: `conform <task-id>: approve`; `conform <task-id>: reject (<n> findings)` where n counts findings of rejecting kinds; `conform <task-id>: reword <sha> (<n> findings)` when the only rejecting finding is a `meta_commentary` in a commit message (the orchestrator has the message reworded instead of rebuilding the task; n is then 0).
+Write to `review/<task-id>-conform.md`, reply with only one of: `conform <task-id>: approve`; `conform <task-id>: reject (<n> findings)` where n counts findings of rejecting kinds; `conform <task-id>: reword <sha> (<n> findings)` when the only rejecting finding is a `meta_commentary` in a commit message (the orchestrator has the message reworded instead of rebuilding the task; n is then 0). The review file is the deliverable and the reply only a receipt: the orchestrator accepts the verdict once the file exists, and the retro and any retry read the file, never the reply. Write it before you reply, every time; the rule against subagents writing report files does not cover it.
 
 ## Check, in order
 

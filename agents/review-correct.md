@@ -11,7 +11,7 @@ Inputs in your prompt: worktree path, the task's base sha, the task's acceptance
 
 Work from the worktree: `cd <worktree>`. The diff is `git diff <base-sha>`; the task's commits are `git log <base-sha>..HEAD`. Read surrounding code only where the diff's correctness depends on it.
 
-Write to `review/<task-id>-correct.md`, reply with only: `correct <task-id>: approve | reject (<n> findings)` where n = blocking + major.
+Write to `review/<task-id>-correct.md`, reply with only: `correct <task-id>: approve | reject (<n> findings)` where n = blocking + major. The review file is the deliverable and the reply only a receipt: the orchestrator accepts the verdict once the file exists, and the retro and any retry read the file, never the reply. Write it before you reply, every time; the rule against subagents writing report files does not cover it.
 
 ## Check, in order
 
