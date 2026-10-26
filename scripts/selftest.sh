@@ -8,8 +8,9 @@
 # Exercises: new (on a repo with no commits, with a slug that needs JSON escaping),
 # snapshot (unborn branch, gitignored docs/, unrelated staged work left alone, human
 # identity kept), wt add, own, guard (blocked + allowed, POSIX and native paths, a
-# non-ASCII worktree, main checkout during build), report, gate (ok / audit / split,
-# excludes, empty DIFF_EXCLUDE, bad base, per-task base after an earlier merge),
+# non-ASCII worktree, main checkout during build, paths through a symlink), report,
+# gate (ok / audit / split, excludes, empty DIFF_EXCLUDE, bad base, per-task base after
+# an earlier merge),
 # get / set / inc (parity cases), merge (conflict → 3, unknown branch → 4), wt rm after
 # finish, finish, a runtime given as a full path, a second `new` that parks a
 # leftover run, ignore (info/exclude until conventions say gitignore, no duplicates),
@@ -40,7 +41,7 @@ commit() { git -c user.name=t -c user.email=t@t commit -q "$@"; }
 
 echo "runtime: $(idleflow_rt_name)"
 d="$(mktemp -d)"; d="$(cd "$d" && pwd)"
-cleanup() { cd / ; rm -rf "$d" "${d}__wt" 2>/dev/null || true; }
+cleanup() { cd / ; rm -rf "$d" "${d}__wt" "$d.link" "${d}__wt.link" 2>/dev/null || true; }
 trap cleanup EXIT
 
 echo "--- new on a repo with no commits (what /idleflow:init does)"
@@ -122,6 +123,11 @@ check "blocks ownership.json via editor"  '[ "$(guard_rc "$dn/.claude/runs/activ
 check "blocks run.json via editor"        '[ "$(guard_rc "$dn/.claude/runs/active/run.json" "$dn")" = "2" ]'
 check "blocks run state in parked runs"   '[ "$(guard_rc "$dn/.claude/runs/$id0/run.json" "$dn")" = "2" ]'
 check "blocks main checkout code while building" '[ "$(guard_rc "$dn/src/a.txt" "$dn")" = "2" ]'
+# the same checkout reached through a symlinked path must not slip past the guard
+ln -s "$d" "$d.link"; ln -s "${d}__wt" "${d}__wt.link"
+check "blocks main checkout via a symlink"  '[ "$(guard_rc "$d.link/src/a.txt" "$d.link")" = "2" ]'
+check "blocks unowned file via a symlink"   '[ "$(guard_rc "${d}__wt.link/T1/other.txt" "${d}__wt.link/T1")" = "2" ]'
+check "allows owned file via a symlink"     '[ "$(guard_rc "${d}__wt.link/T1/src/new.txt" "${d}__wt.link/T1")" = "0" ]'
 check "allows main checkout plan.md while building" '[ "$(guard_rc "$dn/.claude/runs/active/plan.md" "$dn")" = "0" ]'
 check "allows root progress.md while building"      '[ "$(guard_rc "$dn/progress.md" "$dn")" = "0" ]'
 check "allows docs/ while building"                 '[ "$(guard_rc "$dn/docs/research/x.md" "$dn")" = "0" ]'

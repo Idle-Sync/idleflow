@@ -155,15 +155,16 @@ def cmd_gate(limit, slack, all_file, code_file):
 # --- guard ------------------------------------------------------------------
 
 def norm(p):
-    """Absolute, forward-slash path. On Windows also maps MSYS/Cygwin forms
-    (/d/x, /cygdrive/d/x) to D:/x and lower-cases for comparison."""
+    """Absolute, forward-slash path with symlinks resolved, so a path through a link
+    (macOS /var is /private/var) compares equal to the one git reports. On Windows also
+    maps MSYS/Cygwin forms (/d/x, /cygdrive/d/x) to D:/x and lower-cases for comparison."""
     if not p:
         return ""
     if WIN:
         m = re.match(r"^/cygdrive/([A-Za-z])(/.*)?$", p) or re.match(r"^/([A-Za-z])(/.*)?$", p)
         if m:
             p = m.group(1).upper() + ":" + (m.group(2) or "/")
-    p = os.path.abspath(p).replace("\\", "/")
+    p = os.path.realpath(p).replace("\\", "/")
     return p.lower() if WIN else p
 
 

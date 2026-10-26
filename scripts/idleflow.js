@@ -129,13 +129,30 @@ function cmdGate(limit, slack, allFile, codeFile) {
 
 // Absolute, forward-slash path. On Windows also maps MSYS/Cygwin forms
 // (/d/x, /cygdrive/d/x) to D:/x and lower-cases for comparison.
+// Absolute, forward-slash path with symlinks resolved, so a path through a link (macOS /var
+// is /private/var) compares equal to the one git reports. A file about to be created does
+// not exist yet, so the nearest existing parent is resolved and the rest kept as given.
+function realPath(p) {
+  const tail = [];
+  let cur = p;
+  for (;;) {
+    try {
+      return path.join(fs.realpathSync(cur), ...tail);
+    } catch {
+      const parent = path.dirname(cur);
+      if (parent === cur) return p;
+      tail.unshift(path.basename(cur));
+      cur = parent;
+    }
+  }
+}
 function norm(p) {
   if (!p) return "";
   if (WIN) {
     const m = /^\/cygdrive\/([A-Za-z])(\/.*)?$/.exec(p) || /^\/([A-Za-z])(\/.*)?$/.exec(p);
     if (m) p = m[1].toUpperCase() + ":" + (m[2] || "/");
   }
-  p = path.resolve(p).replace(/\\/g, "/");
+  p = realPath(path.resolve(p)).replace(/\\/g, "/");
   return WIN ? p.toLowerCase() : p;
 }
 function isFile(p) {
