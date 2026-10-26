@@ -1,6 +1,6 @@
 {
   "name": "idleflow",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Plan-debate-build-review workflow for issues and features. Fable plans, two asymmetric Opus critics attack the plan, Sonnet/Opus implementers build in file-partitioned worktrees, two reviewers gate the diff, a retro writes one lesson per run.",
   "author": {
     "name": "Sayantan Ghosh",
