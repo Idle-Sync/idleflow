@@ -33,7 +33,7 @@ Around the pipeline, five things that keep a repo honest:
 | Sizing | Haiku reports size, risk and new dependency; size sets implementers and reviewers, risk (or size L) the debate, a new dependency the stack and library research; an S overrun adds the conformance reviewer | `agents/classifier.md`, `SIZE_*` in conf |
 | Fan-out | ≤4 implementers, partitioned by file globs, Sonnet default / Opus when plan says | `MAX_IMPLEMENTERS`, `model:` per task in plan |
 | Diff gate | 1500 code lines per task (+300 slack); `.md`, `.txt`, lockfiles, generated excluded | `DIFF_LIMIT`, `DIFF_SLACK`, `DIFF_EXCLUDE` |
-| Retry | one, on Opus, then stop and ask | `MAX_RETRIES`, step 7 of `commands/feature.md` |
+| Retry | one per task, on Opus, then stop and ask | `MAX_RETRIES`, steps 5 and 7 of `commands/feature.md` |
 | Tests | `tests_first: true` forced wherever entry points have no tests | planner §3, conformance reviewer §4 |
 | Lessons | per repo, `.claude/lessons.md`, ≤1 per run | `agents/retro.md` |
 | Metrics | `.claude/runs/log.jsonl` only (no OTEL yet) | `scripts/run.sh finish` |
