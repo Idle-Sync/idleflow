@@ -1,5 +1,5 @@
 ---
-description: End a working session with a handoff. Writes a session note whose "Next" lists, in order, what the next session does first (unpushed commits, CI, deploy and release steps, restarts, open deviations, uncommitted work), summarises the whole session (runs and the work around them), updates progress.md, and commits the notes. Refuses while a run is active or worktrees exist. Use when the human says they are stopping ("done for today", "wrap up", "end the session", "that's it for now", "hand off"); when Claude starts it on its own, it asks the human first and runs only on a yes. Usage: /idleflow:endsession [anything the next session must know]
+description: End a working session with a handoff and an honest report. Writes a session note whose "Next" lists, in order, what the next session does first (unpushed commits, CI, deploy and release steps, restarts, open deviations, uncommitted work), summarises the whole session (runs and the work around them), updates progress.md, and commits the notes, then reports what happened, what broke (Claude's own mistakes first, with evidence), what went right and what waits on the human. Refuses while a run is active or worktrees exist. Use when the human says they are stopping ("done for today", "wrap up", "end the session", "that's it for now", "hand off"); when Claude starts it on its own, it asks the human first and runs only on a yes. Usage: /idleflow:endsession [anything the next session must know]
 argument-hint: [anything the next session must know]
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion
 ---
@@ -53,6 +53,14 @@ When `docs: yes`:
 
 No meta commentary in the note or the commit: state what happened and what is next.
 
-## 4. Reply
+## 4. Report
 
-One line: `Handoff: <note path> (<committed <sha> | local>)`, then the numbered "Next" list from the note, and nothing more.
+Print the session report, then stop. It writes nothing new; every number and claim in it comes from a record you read this turn (the session's commits, the runs' `run.json`, task reports, review files, gate and repo-gate logs, the time log, what the session added to the lessons file) or from the conversation itself. A claim with no source is left out.
+
+1. **Handoff**: `Handoff: <note path> (<committed <sha> | local>)`.
+2. **What happened**: each run and each piece of work outside runs, one line: what it does, estimate against actual where the time log has both, review rounds and what each found.
+3. **What broke**: everything that went wrong, Claude's own mistakes first (a wrong claim, a rule broken, a check skipped, rework, a wasted run), then retries, gate trips, review rejections, blocked tasks and failed gates. Each with its evidence (commit, `file:line`, review file, log) and what was done about it. Nothing is softened or left out because it was fixed.
+4. **What went right**: what worked and the evidence for it (a task under estimate, a clean review, a check that caught a real bug).
+5. **Lessons**: each lesson the session recorded, one line; then any lesson the session showed that nothing records yet, marked `not recorded`.
+6. **Waiting on the human**: open decisions and questions, each with a recommendation.
+7. **Next**: the first three items of the handoff, in order.
