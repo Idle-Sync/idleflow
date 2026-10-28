@@ -11,7 +11,7 @@
 # non-ASCII worktree, main checkout during build, paths through a symlink), report,
 # gate (ok / audit / split, excludes, empty DIFF_EXCLUDE, bad base, per-task base after
 # an earlier merge),
-# get / set / inc (parity cases), merge (conflict → 3, unknown branch → 4), wt rm after
+# get / set / inc (parity cases), the plugin version check, merge (conflict → 3, unknown branch → 4), wt rm after
 # finish, finish, a runtime given as a full path, a second `new` that parks a
 # leftover run, ignore (info/exclude until conventions say gitignore, no duplicates),
 # and prompt contracts (the stack scan, researcher and R3 agree on research units,
@@ -77,6 +77,11 @@ check "new prints an id"               '[ -n "$id" ]'
 check "active/run.json exists"         '[ -f .claude/runs/active/run.json ]'
 check ".gitignore has runs/ when ignore_in: gitignore" 'grep -qx ".claude/runs/" .gitignore'
 check "ignore follows ignore_in: gitignore" 'bash "$RUN" ignore "scratch-b/" >/dev/null && bash "$RUN" ignore "scratch-b/" >/dev/null && [ "$(grep -cxF "scratch-b/" .gitignore)" = "1" ] && ! grep -qxF "scratch-b/" .git/info/exclude'
+check "new records the plugin version"  '[ "$(bash "$RUN" get plugin_version)" = "$(idleflow_rt get "$HERE/../.claude-plugin/plugin.json" version)" ]'
+check "same version, no warning"       '[ -z "$(bash "$RUN" get id 2>&1 >/dev/null)" ]'
+v="$(bash "$RUN" get plugin_version)"; bash "$RUN" set plugin_version '"0.0.0"' 2>/dev/null
+check "other version warns on stderr"  'bash "$RUN" get id 2>&1 >/dev/null | grep -q "started on idleflow 0.0.0"'
+bash "$RUN" set plugin_version "\"$v\"" 2>/dev/null
 bash "$RUN" set size '"M"'
 check "get/set size"                   '[ "$(bash "$RUN" get size)" = "M" ]'
 bash "$RUN" set tasks.T1.status '"building"'
@@ -234,7 +239,9 @@ git merge --abort 2>/dev/null || true
 
 echo "--- loc / conf"
 check "loc counts code lines only"     '[ "$(bash "$RUN" loc)" = "$(cat src/big.py src/code.py .gitignore | wc -l | tr -d " ")" ]'
-check "conf prints runtime"            'bash "$RUN" conf | grep -q "^RUNTIME="'
+c="$(bash "$RUN" conf)"
+check "conf prints runtime"            'echo "$c" | grep -q "^RUNTIME="'
+check "conf prints plugin version"     'echo "$c" | grep -q "^PLUGIN_VERSION=[0-9]"'
 
 echo "--- prompt contracts"
 researcher="$HERE/../agents/stack-researcher.md"

@@ -51,11 +51,18 @@ native_path() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; els
 # A bash string as a JSON string literal (backslash and double quote escaped).
 json_str() { printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')"; }
 
+plugin_version() { idleflow_rt get "$HERE/../.claude-plugin/plugin.json" version 2>/dev/null || echo unknown; }
+
 active_id() {
   [ -f "$ACTIVE/run.json" ] || { echo "no active run (run.sh new <slug> first)" >&2; exit 1; }
-  local id
+  local id started_on
   id="$(idleflow_rt get "$ACTIVE/run.json" id)"
   [ -n "$id" ] && [ "$id" != "null" ] || { echo "active run.json has no id; fix or delete .claude/runs/active" >&2; exit 1; }
+  # a plugin reload mid-run hands later agents a new version while this run keeps its old scripts
+  started_on="$(idleflow_rt get "$ACTIVE/run.json" plugin_version 2>/dev/null || echo unknown)"
+  if [ "$started_on" != unknown ] && [ "$started_on" != "$(plugin_version)" ]; then
+    echo "WARNING: run $id started on idleflow $started_on but this is idleflow $(plugin_version); agents and scripts may disagree. Finish the run, then restart Claude Code." >&2
+  fi
   echo "$id"
 }
 
@@ -133,7 +140,7 @@ case "$cmd" in
     base="$("${G[@]}" symbolic-ref --short -q HEAD || echo HEAD)"
     base_sha="$("${G[@]}" rev-parse -q --verify HEAD 2>/dev/null || true)"
     cat > "$ACTIVE/run.json" <<JSON
-{"id":"$id","slug":"$safe","base":$(json_str "$base"),"base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"gate_trips":0,"review_findings":0}
+{"id":"$id","plugin_version":$(json_str "$(plugin_version)"),"slug":"$safe","base":$(json_str "$base"),"base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"gate_trips":0,"review_findings":0}
 JSON
     echo "{\"repo\":$(json_str "$(native_path "$REPO")"),\"tasks\":{}}" > "$ACTIVE/ownership.json"
     add_ignore "$(ignore_file)" '.claude/runs/'
@@ -277,6 +284,7 @@ JSON
       echo "$v=${!v:-}"
     done
     echo "RUNTIME=$(idleflow_rt_name)"
+    echo "PLUGIN_VERSION=$(plugin_version)"
     ;;
   *)
     sed -n '2,22p' "$0"; exit 1;;
