@@ -13,6 +13,7 @@ Subcommands:
   own    <file> <task-id> <worktree> <globs-json>
   gate   <limit> <slack> <numstat-all-file> <numstat-code-file>
   guard                                   hook: payload on stdin; exit 2 blocks
+  detach <cwd> <log> <pidfile> <command>  runs the command in its own session, output to log; writes its pid
 """
 import json
 import os
@@ -295,6 +296,16 @@ def orchestrator_file(rel):
     )
 
 
+def cmd_detach(cwd, log, pidfile, command):
+    # A new session: a caller that exits (a command substitution, a hook) must not take the server with it.
+    import subprocess
+    with open(log, "w", encoding="utf-8") as out:
+        proc = subprocess.Popen(["bash", "-c", command], cwd=cwd, stdin=subprocess.DEVNULL,
+                                stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
+    with open(pidfile, "w", encoding="utf-8") as f:
+        f.write(str(proc.pid))
+
+
 def main(argv):
     # -I (isolated mode) ignores PYTHONUTF8, so on Windows stdout/stderr would be cp1252
     # and a BLOCKED message with a non-ASCII filename would come out garbled.
@@ -309,7 +320,7 @@ def main(argv):
     cmd, args = argv[0], argv[1:]
     table = {
         "get": cmd_get, "set": cmd_set, "inc": cmd_inc, "finish": cmd_finish,
-        "own": cmd_own, "gate": cmd_gate, "guard": cmd_guard,
+        "own": cmd_own, "gate": cmd_gate, "guard": cmd_guard, "detach": cmd_detach,
     }
     if cmd not in table:
         sys.stderr.write("idleflow.py: unknown subcommand %r\n" % cmd)

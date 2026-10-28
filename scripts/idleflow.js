@@ -13,6 +13,7 @@
 //   own    <file> <task-id> <worktree> <globs-json>
 //   gate   <limit> <slack> <numstat-all-file> <numstat-code-file>
 //   guard                                   hook: payload on stdin; exit 2 blocks
+//   detach <cwd> <log> <pidfile> <command>  runs the command in its own session, output to log; writes its pid
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -299,7 +300,15 @@ function orchestratorFile(rel) {
   );
 }
 
-const table = { get: cmdGet, set: cmdSet, inc: cmdInc, finish: cmdFinish, own: cmdOwn, gate: cmdGate, guard: cmdGuard };
+// A new session: a caller that exits (a command substitution, a hook) must not take the server with it.
+function cmdDetach(cwd, log, pidfile, command) {
+  const { spawn } = require("child_process");
+  const out = fs.openSync(log, "w");
+  const proc = spawn("bash", ["-c", command], { cwd, detached: true, stdio: ["ignore", out, out] });
+  proc.unref();
+  fs.writeFileSync(pidfile, String(proc.pid));
+}
+const table = { get: cmdGet, set: cmdSet, inc: cmdInc, finish: cmdFinish, own: cmdOwn, gate: cmdGate, guard: cmdGuard, detach: cmdDetach };
 const [cmd, ...args] = process.argv.slice(2);
 if (!cmd || !(cmd in table)) {
   process.stderr.write(`idleflow.js: unknown subcommand ${JSON.stringify(cmd)}\n`);
