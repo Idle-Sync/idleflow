@@ -169,9 +169,9 @@ claude plugin install idleflow --marketplace Idle-Sync/idleflow
 
 Older Claude Code: `claude plugin marketplace add Idle-Sync/idleflow` then `claude plugin install idleflow@idlesync`. For a local checkout, or to hand the whole setup to Claude Code (*"read setup.md and set this up globally"*), see `setup.md`. To publish a new version, see `PUBLISHING.md`.
 
-## Known gaps (v0.1)
+## Known gaps
 
-- Token counts per phase aren't captured; `/cost` after a run is the stopgap. OTEL export is the planned v0.2.
+- Token counts per phase aren't captured; `/cost` after a run is the stopgap. OTEL export is planned.
 - `${CLAUDE_PLUGIN_ROOT}` in command files assumes plugin install; Option B in setup.md rewrites it.
 - Ownership globs use fnmatch rules (`*` crosses `/`); `src/**` is the usual shape. Diff-gate excludes use git pathspec globs and are all `**/`-prefixed so they match at any depth.
 - `model: fable` in agent frontmatter depends on account access; setup.md step 3 checks and falls back.
