@@ -767,6 +767,25 @@ JSON
       esac
     done <<< "$(bash "$0" commands 2>/dev/null || true)"
 
+    # Paths the docs name in backticks that no longer exist. Only tokens whose first folder exists in
+    # the repo are checked, so a branch (origin/main) or a GitHub name (owner/repo) never counts.
+    stale=()
+    for doc in CLAUDE.md "$(index_rel)" "$(progress_rel)"; do
+      [ -f "$REPO/$doc" ] || continue
+      while IFS= read -r tok; do
+        [ -n "$tok" ] || continue
+        tok="${tok#./}"
+        [ -e "$REPO/${tok%%/*}" ] || continue
+        [ -e "$REPO/$tok" ] || stale+=("$doc: $tok")
+      done < <(awk '/^[[:space:]]*```/{fenced=!fenced; next} !fenced' "$REPO/$doc" | grep -o '`[^`]*`' | tr -d '`' \
+        | grep -E '^(\./)?[A-Za-z0-9_][A-Za-z0-9_.-]*/[A-Za-z0-9_./-]*$' | grep -v '\.\.' | sort -u)
+    done
+    if [ "${#stale[@]}" -gt 0 ]; then
+      check_line warn paths "${#stale[@]} path(s) the docs name do not exist: $(printf '%s\n' "${stale[@]}" | head -5 | paste -sd ';' - | sed 's/;/; /g')" "fix the doc, or restore the file it names"
+    else
+      check_line ok paths "every path CLAUDE.md, the index and the progress file name exists"
+    fi
+
     # the retro's suggestions, newest per key, minus those declined or already applied
     if [ -f "$RUNS/config-proposals.md" ]; then
       while IFS=$'\t' read -r key val line; do
