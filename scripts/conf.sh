@@ -24,6 +24,7 @@ idleflow_conf_valid() {
     MAX_IMPLEMENTERS|SIZE_M_IMPLEMENTERS) _idleflow_number_in "$2" 1 8 ;;
     DEBATE_ROUNDS) _idleflow_number_in "$2" 1 2 ;;
     MAX_RETRIES) _idleflow_number_in "$2" 0 3 ;;
+    SLOW_GATE_SECONDS) _idleflow_number_in "$2" 1 86400 ;;
     STEP_DEBATE|STEP_STACK|STEP_LIBRARIES|STEP_TOOLING|STEP_DOC_KEEPER|STEP_MUTATION)
       case "$2" in auto|on|off) ;; *) return 1;; esac ;;
     MODEL_*) [[ "${1#MODEL_}" =~ $agent_re ]] && case "$2" in haiku|sonnet|opus|fable) ;; *) return 1;; esac ;;
