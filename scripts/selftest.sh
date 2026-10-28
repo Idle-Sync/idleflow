@@ -255,7 +255,7 @@ printf 'lessons_in: docs\n' >> .idleflow/conventions.md
 check "lessons_in: docs moves them"      '[ "$(bash "$RUN" path lessons)" = "$(native "$(git rev-parse --show-toplevel)")/docs/lessons.md" ]'
 m="$d-mig"; mkdir -p "$m" && cd "$m" && git init -q && git config user.name "Human" && git config user.email "human@example.com"
 mkdir -p .claude/runs/20260101-x && printf 'mode: repo\n' > .claude/conventions.md && printf '# Lessons\n' > .claude/lessons.md
-printf '{}' > .claude/settings.json && printf 'Read `.claude/lessons.md` first.\n' > CLAUDE.md && printf '.claude/runs/\n' > .gitignore
+printf '{}' > .claude/settings.json && printf 'Read `.claude/lessons.md` first.\n' > CLAUDE.md && mkdir -p docs/notes && printf 'see .claude/runs/log.jsonl\n' > docs/notes/x.md && printf '.claude/runs/\n' > .gitignore
 printf '{"id":"x"}\n' > .claude/runs/log.jsonl && printf '.claude-run/\n' >> .git/info/exclude
 git add -A && commit -m old
 doc="$(bash "$RUN" doctor)"
@@ -267,7 +267,7 @@ out="$(bash "$RUN" migrate)"
 check "migrate moves conventions and lessons" '[ -f .idleflow/conventions.md ] && [ -f .idleflow/lessons.md ] && [ ! -e .claude/lessons.md ]'
 check "migrate keeps past runs"           '[ -f .idleflow/runs/log.jsonl ] && [ -d .idleflow/runs/20260101-x ] && [ ! -e .claude/runs ]'
 check "migrate leaves Claude Code files"  '[ -f .claude/settings.json ]'
-check "migrate rewrites old paths"        'grep -qF ".idleflow/lessons.md" CLAUDE.md && grep -qx ".idleflow/runs/" .gitignore && grep -qx ".idleflow-run/" .git/info/exclude'
+check "migrate rewrites old paths"        'grep -qF ".idleflow/runs/log.jsonl" docs/notes/x.md && grep -qF ".idleflow/lessons.md" CLAUDE.md && grep -qx ".idleflow/runs/" .gitignore && grep -qx ".idleflow-run/" .git/info/exclude'
 check "migrate commits once, cleanly"     'echo "$out" | grep -q "committed" && [ "$(git log -1 --format=%s)" = "chore: move idleflow files to .idleflow/" ] && [ -z "$(git status --porcelain)" ]'
 doc="$(bash "$RUN" doctor)"
 check "doctor passes the new layout"      'echo "$doc" | grep -q "^ok layout" && echo "$doc" | grep -q "^ok shared: .idleflow/lessons.md is committed"'
@@ -296,6 +296,9 @@ check "doctor finds milestones still in prd.md" 'echo "$doc" | grep -q "^warn mi
 printf '# P\n## Must do (v1)\n- a — done when: b\n' > prd.md; printf '# Progress\n## Milestones\n### M1: one\n- [ ] a\n## Log\n<!-- progress start -->\n' > progress.md
 doc="$(bash "$RUN" doctor 2>/dev/null)"
 check "doctor accepts milestones in progress.md" 'echo "$doc" | grep -q "^ok milestones"'
+printf '# Progress\n## Milestones\n### M1: one\n- [x] a (run r1)\n- [ ] a\n## Log\n<!-- progress start -->\n' > progress.md
+doc="$(bash "$RUN" doctor 2>/dev/null)"
+check "doctor finds a milestone item a merge doubled" 'echo "$doc" | grep -q "^warn milestones: listed twice under Milestones (a merge kept both sides): a"'
 rm -f prd.md progress.md
 
 echo "--- customize"
@@ -305,7 +308,8 @@ check "a project setting overrides the default" 'echo "$c" | grep -qx "DIFF_LIMI
 check "out-of-range values are refused"   '! bash "$RUN" custom set DEBATE_ROUNDS 5 2>/dev/null && ! bash "$RUN" custom set MODEL_NO_SUCH_AGENT opus 2>/dev/null'
 printf 'touch "%s/pwned"\nDIFF_SLACK=$(touch "%s/pwned")\n' "$m" "$m" >> .idleflow/idleflow.conf
 c="$(bash "$RUN" conf 2>&1)"
-check "catch-all excludes are refused"   '! bash "$RUN" custom set DIFF_EXCLUDE_ADD "**/*" 2>/dev/null && bash "$RUN" custom set DIFF_EXCLUDE_ADD "**/gen/**" >/dev/null && bash "$RUN" custom unset DIFF_EXCLUDE_ADD >/dev/null'
+mkdir -p src && touch src/x.py
+check "catch-all excludes are refused"   '! bash "$RUN" custom set DIFF_EXCLUDE_ADD "**/*" 2>/dev/null && ! bash "$RUN" custom set DIFF_EXCLUDE_ADD "*/*" 2>/dev/null && bash "$RUN" custom set DIFF_EXCLUDE_ADD "**/gen/**" >/dev/null && bash "$RUN" custom unset DIFF_EXCLUDE_ADD >/dev/null'
 check "report consent is local, never committed" '[ "$(bash "$RUN" custom report)" = ask ] && bash "$RUN" custom report always >/dev/null && [ "$(git config --local idleflow.reportCustomizations)" = always ] && ! grep -q REPORT .idleflow/idleflow.conf && ! bash "$RUN" custom set REPORT_CUSTOMIZATIONS always 2>/dev/null'
 check "the project file is parsed, never run" 'echo "$c" | grep -q "ignored in .idleflow/idleflow.conf" && [ ! -e "$m/pwned" ] && echo "$c" | grep -qx "DIFF_SLACK=300"'
 doc="$(bash "$RUN" doctor 2>/dev/null)"

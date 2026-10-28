@@ -272,7 +272,7 @@ function cmdGuard() {
       process.stderr.write(
         `[idleflow] BLOCKED: ${rel} is in the main checkout while tasks are building.\n` +
           `Implementers edit only inside their worktree; the orchestrator edits only ` +
-          `.idleflow/**, docs/**, root *.md and .gitignore during the build.\n`
+          `.idleflow/runs/**, .idleflow/conventions.md, lessons.md and suggestions.md, docs/**, root *.md and .gitignore during the build.\n`
       );
       process.exit(2);
     }
@@ -292,7 +292,9 @@ function building(runDir) {
 // Paths the orchestrator may write in the main checkout mid-build.
 function orchestratorFile(rel) {
   return (
-    rel.startsWith(".idleflow/") || rel.startsWith("docs/") || rel === ".gitignore" || (!rel.includes("/") && rel.endsWith(".md"))
+    rel.startsWith(".idleflow/runs/") ||
+    [".idleflow/conventions.md", ".idleflow/lessons.md", ".idleflow/suggestions.md"].includes(rel) ||
+    rel.startsWith("docs/") || rel === ".gitignore" || (!rel.includes("/") && rel.endsWith(".md"))
   );
 }
 

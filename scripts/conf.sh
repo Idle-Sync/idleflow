@@ -17,7 +17,7 @@ _idleflow_number_in() { # _idleflow_number_in <value> <min> <max>
 }
 
 idleflow_conf_valid() {
-  local agent_re='^[A-Z][A-Z_]*$' version_re='^[0-9]+\.[0-9]+\.[0-9]+$' globs_re='^[A-Za-z0-9_.*/-]+( [A-Za-z0-9_.*/-]+)*$' glob
+  local agent_re='^[A-Z][A-Z_]*$' version_re='^[0-9]+\.[0-9]+\.[0-9]+$' globs_re='^[A-Za-z0-9_.*/-]+( [A-Za-z0-9_.*/-]+)*$' glob globs
   case "$1" in
     DIFF_LIMIT|SIZE_S_MAX|SIZE_M_MAX|SIZE_S_OVERRUN|LARGE_REPO_LOC) _idleflow_number_in "$2" 1 100000000 ;;
     DIFF_SLACK) _idleflow_number_in "$2" 0 100000000 ;;
@@ -31,7 +31,9 @@ idleflow_conf_valid() {
     DIFF_EXCLUDE_ADD)
       [[ "$2" =~ $globs_re ]] || return 1
       # a glob with no letter or digit (**/*, **/*.*) would exclude every file from the gate
-      for glob in $(tr ' ' '\n' <<< "$2"); do [[ "$glob" =~ [A-Za-z0-9] ]] || return 1; done ;;
+      # read -a splits without pathname expansion; an unquoted $(...) would expand **/* against the cwd
+      IFS=' ' read -ra globs <<< "$2"
+      for glob in "${globs[@]}"; do [[ "$glob" =~ [A-Za-z0-9] ]] || return 1; done ;;
     *) return 1 ;;
   esac
 }
