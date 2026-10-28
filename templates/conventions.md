@@ -96,8 +96,9 @@ shared_files: none
 ## Repo fit
 
 How idleflow fits a repo that already has its own rules. Unset or missing lines keep idleflow's
-defaults. Commands here come from this committed file, like the repo's own test commands, and
-idleflow prints each one before it runs it.
+defaults. A command here (`worktree_setup`, `gate`) runs only as committed, and only after each
+person approved that exact text on their own clone (`run.sh approve <key>`, kept in local git
+config); a changed command is asked about again.
 
 worktrees_in: sibling
 worktree_setup: none

@@ -5,7 +5,7 @@
 #   run.sh new <slug>                     -> creates .idleflow/runs/active/ for a new run, prints its <id>
 #   run.sh wt add <task-id> [base-ref]    -> creates worktree <repo>__wt/<task-id> (or .idleflow/worktrees/<task-id>) on
 #                                            branch idleflow/<run-id>/<task-id>, records the task's base sha, runs the
-#                                            conventions' worktree_setup there (exit 6 on failure), prints the worktree path
+#                                            approved, committed worktree_setup there (6: it failed, 7: not approved)
 #   run.sh wt rm <task-id>                -> removes the worktree (keeps the branch); works with or without an active run
 #   run.sh wt list                        -> lists idleflow worktrees
 #   run.sh own <task-id> '<globs json>'   -> registers file ownership for the guard hook
@@ -28,6 +28,8 @@
 #   run.sh session-name                   -> the path for a new session note: docs/sessions/s_<YYYYMMDD-HHMM>-<author>.md
 #   run.sh behind                         -> commits the upstream has that this branch lacks (fetches first; empty offline)
 #   run.sh team-install                   -> recommends idleflow to teammates: .claude/settings.json plus a CLAUDE.md install note
+#   run.sh commands                       -> the repo's commands (worktree_setup, gate) as committed, approved or unapproved here
+#   run.sh approve <key>                  -> records this person's approval of that exact committed command (local git config)
 #   run.sh agent <name>                   -> how to spawn that agent here: agent, model, extra instructions, contract
 #   run.sh custom list                    -> this repo's customizations (.idleflow/idleflow.conf, agent instructions, replaced agents)
 #   run.sh custom set <KEY> <value>       -> validates and writes one setting to .idleflow/idleflow.conf
@@ -179,12 +181,33 @@ wt_path() {
   if [ "$(conventions_value worktrees_in)" = inside ]; then echo "$IDLE/worktrees/$1"; else echo "${REPO}${SUFFIX}/$1"; fi
 }
 
-# The repo's own preparation for a fresh worktree (link shared folders, copy fixtures). It comes
-# from the committed conventions, like the repo's test commands, so it is printed before it runs.
+# Commands a repo names in its conventions (worktree_setup, gate) come from whoever pushed the
+# repo, so they run only as committed at HEAD (a working-tree edit, even mid-build, changes
+# nothing) and only after this person approved that exact text; the approval is a hash in this
+# clone's local git config, never committed, and any change to the command asks again.
+REPO_COMMANDS="worktree_setup gate"
+repo_command() { # the committed value of a command key, empty when unset
+  local v
+  v="$({ "${G[@]}" show "HEAD:.idleflow/conventions.md" 2>/dev/null || true; } | sed -n "s/^$1: *//p" | head -1 | tr -d '\r' | sed 's/ *$//')"
+  case "$v" in unset|none) v="";; esac
+  echo "$v"
+}
+command_hash() { printf '%s' "$1" | git hash-object --stdin; }
+approval_key() { echo "idleflow.approved-$(echo "$1" | tr '_' '-')"; }   # git config names allow no underscore
+command_approved() { # command_approved <key> <command>
+  [ "$("${G[@]}" config --local --get "$(approval_key "$1")" 2>/dev/null || true)" = "$(command_hash "$2")" ]
+}
+
+# The repo's own preparation for a fresh worktree (link shared folders, copy fixtures).
 run_worktree_setup() { # run_worktree_setup <task-id> <worktree>
   local cmd log
-  cmd="$(conventions_value worktree_setup)"
-  case "$cmd" in ""|unset|none) return 0;; esac
+  cmd="$(idleflow_rt get "$ACTIVE/run.json" worktree_setup 2>/dev/null || true)"
+  case "$cmd" in ""|null) return 0;; esac
+  if ! command_approved worktree_setup "$cmd"; then
+    echo "worktree_setup is not approved on this clone; nothing ran. The command is: $cmd" >&2
+    echo "show it to the human; on a yes: run.sh approve worktree_setup" >&2
+    exit 7
+  fi
   log="$ACTIVE/tasks/$1/setup.log"
   echo "worktree setup ($1): $cmd" >&2
   if ! (cd "$2" && MAIN="$REPO" WORKTREE="$2" bash -c "$cmd") > "$log" 2>&1; then
@@ -274,7 +297,7 @@ case "$cmd" in
     base="$("${G[@]}" symbolic-ref --short -q HEAD || echo HEAD)"
     base_sha="$("${G[@]}" rev-parse -q --verify HEAD 2>/dev/null || true)"
     cat > "$ACTIVE/run.json" <<JSON
-{"id":"$id","plugin_version":$(json_str "$(plugin_version)"),"by":$(json_str "$(git config user.name || echo unknown)"),"slug":"$safe","base":$(json_str "$base"),"base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"gate_trips":0,"review_findings":0}
+{"id":"$id","worktree_setup":$(json_str "$(repo_command worktree_setup)"),"plugin_version":$(json_str "$(plugin_version)"),"by":$(json_str "$(git config user.name || echo unknown)"),"slug":"$safe","base":$(json_str "$base"),"base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"gate_trips":0,"review_findings":0}
 JSON
     shared="$(shared_files | while IFS= read -r f; do json_str "$f"; echo; done | paste -sd, -)"
     echo "{\"repo\":$(json_str "$(native_path "$REPO")"),\"shared\":[${shared}],\"tasks\":{}}" > "$ACTIVE/ownership.json"
@@ -520,6 +543,22 @@ JSON
     fi
     native_path "$REPO/CLAUDE.md"
     ;;
+  commands)
+    # every repo command with its committed text and whether this person approved it
+    for key in $REPO_COMMANDS; do
+      cmd="$(repo_command "$key")"
+      [ -n "$cmd" ] || continue
+      if command_approved "$key" "$cmd"; then echo "approved $key: $cmd"; else echo "unapproved $key: $cmd"; fi
+    done
+    ;;
+  approve)
+    key="${1:?worktree_setup|gate}"
+    case " $REPO_COMMANDS " in *" $key "*) ;; *) echo "approve: unknown command key '$key'" >&2; exit 1;; esac
+    cmd="$(repo_command "$key")"
+    [ -n "$cmd" ] || { echo "approve: no committed $key in .idleflow/conventions.md" >&2; exit 1; }
+    "${G[@]}" config --local "$(approval_key "$key")" "$(command_hash "$cmd")"
+    echo "approved $key: $cmd"
+    ;;
   agent)
     a="${1:-}"; known_agent "$a"
     if [ -f "$(replacement_path "$a")" ]; then
@@ -691,6 +730,14 @@ JSON
     while IFS= read -r f; do grep -qxF "$f merge=union" "$REPO/.gitattributes" 2>/dev/null || union_missing="$union_missing $f"; done < <(union_merge_files)
     if [ -n "$union_missing" ]; then check_line warn merges "no union merge for:$union_missing, so concurrent entries conflict" "run.sh snapshot"; else check_line ok merges "lessons, progress and suggestions merge without conflicts"; fi
 
+    while IFS= read -r line; do
+      case "$line" in
+        approved\ *) check_line ok commands "${line#approved }";;
+        unapproved\ *) key="${line#unapproved }"; key="${key%%:*}"
+          check_line warn commands "not approved by you yet, so it never runs: ${line#unapproved }" "read the command, then run.sh approve $key";;
+      esac
+    done <<< "$(bash "$0" commands 2>/dev/null || true)"
+
     # the retro's suggestions, newest per key, minus those declined or already applied
     if [ -f "$RUNS/config-proposals.md" ]; then
       while IFS=$'\t' read -r key val line; do
@@ -729,5 +776,5 @@ JSON
     echo "REPORT_CUSTOMIZATIONS=$(report_preference)"
     ;;
   *)
-    sed -n '2,38p' "$0"; exit 1;;
+    sed -n '2,40p' "$0"; exit 1;;
 esac

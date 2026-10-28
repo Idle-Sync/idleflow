@@ -267,7 +267,7 @@ def cmd_guard():
             sys.stderr.write(
                 "[idleflow] BLOCKED: %s is in the main checkout while tasks are building.\n"
                 "Implementers edit only inside their worktree; the orchestrator edits only "
-                ".idleflow/runs/**, .idleflow/conventions.md, lessons.md and suggestions.md, docs/**, root *.md and .gitignore during the build.\n" % rel
+                ".idleflow/runs/**, .idleflow/lessons.md and suggestions.md, docs/**, root *.md and .gitignore during the build.\n" % rel
             )
             sys.exit(2)
     sys.exit(0)
@@ -289,7 +289,7 @@ def orchestrator_file(rel):
     """Paths the orchestrator may write in the main checkout mid-build."""
     return (
         rel.startswith(".idleflow/runs/")
-        or rel in (".idleflow/conventions.md", ".idleflow/lessons.md", ".idleflow/suggestions.md")
+        or rel in (".idleflow/lessons.md", ".idleflow/suggestions.md")
         or rel.startswith("docs/") or rel == ".gitignore"
         or ("/" not in rel and rel.endswith(".md"))
     )

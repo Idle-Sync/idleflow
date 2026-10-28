@@ -86,7 +86,7 @@ beside it. Every key is optional and missing keys keep the defaults, so older re
 | Key | What it does |
 |---|---|
 | `worktrees_in: inside` | Task worktrees in `.idleflow/worktrees/` (ignored) instead of a sibling folder |
-| `worktree_setup: <command>` | Run in each new worktree before the implementer starts (`$MAIN`, `$WORKTREE` set); printed first, fails loudly, may not change tracked files |
+| `worktree_setup: <command>` | Run in each new worktree before the implementer starts (`$MAIN`, `$WORKTREE` set). Runs only as committed and after each person approves that exact text (`run.sh approve`, local git config); fails loudly; may not change tracked files |
 | `progress_file`, `index_file`, `sessions_dir`, `time_log`, `lessons_in: <path>` | Use the records the repo already keeps |
 | `index_rewrite: no` | The retro leaves the index to the repo's own process |
 | `session_names: numbered` | Keep a repo's `s_0001.md` numbering |
