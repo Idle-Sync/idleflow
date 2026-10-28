@@ -64,7 +64,7 @@ Spawn `idleflow:doc-keeper` with the repo root and the absolute paths of `progre
 
 ## 3. Plan (Fable)
 
-Spawn `idleflow:planner` with: context.md path, the `$LESSONS` path, conventions path, plan template path, output path `.idleflow/runs/active/plan.md`, the size, `greenfield`, the implementer cap for this size, the diff limit for this run, whether R3 and R4 ran (when they did not, a plan that adds a dependency anyway lists it under "Open questions" for the human), and when `docs: yes` the paths of `prd.md`, `progress.md`, `index.md` plus `templates/prd.md`. Wait.
+Spawn `idleflow:planner` with: context.md path, the `$LESSONS` path, conventions path, plan template path, output path `.idleflow/runs/active/plan.md`, the size, `greenfield`, the implementer cap for this size, the diff limit for this run, `STEP_MUTATION` from `conf`, whether R3 and R4 ran (when they did not, a plan that adds a dependency anyway lists it under "Open questions" for the human), and when `docs: yes` the paths of `prd.md`, `progress.md`, `index.md` plus `templates/prd.md`. Wait.
 
 Read `plan.md` once now; keep the task list, groups, owned globs, models and merge order in working memory and do not re-read the plan unless it is revised.
 

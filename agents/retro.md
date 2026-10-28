@@ -20,6 +20,8 @@ A lesson is a pattern that would have changed this run's plan if the planner had
 - `The red team flagged missing idempotency on webhook handlers in 3 runs; planner should require it by default for anything under webhooks/.`
 - `Estimates for call-site sweeps in this repo run ~2.5× over; the sweep in run X was 90 est / 230 actual.`
 
+Review findings marked `checkable: yes` are a lesson source of their own: when this run's findings and an earlier run's (`.idleflow/runs/*/review/*.md`) name the same deterministic check, the lesson is `A <check> would have caught <n> review findings (runs <ids>); add it to the repo's gate or lint.` A check found once is not yet a lesson.
+
 Not lessons: one-off bugs, things already in lessons.md (check for near-duplicates — if one exists, strengthen it with a count rather than adding a sibling), style preferences, anything specific to this issue that won't recur.
 
 ## Output

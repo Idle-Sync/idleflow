@@ -29,11 +29,13 @@ Record paths: `progress.md`, `index.md`, `docs/sessions/` and the lessons file b
 
 4. **Honest size estimates** per task, in hand-written lines. The diff gate will check them, one task at a time: the limit is per task, never a total for the run, so a large run is fine as long as each task fits. If any task is estimated over the diff limit you were given, split it now rather than letting the auditor split it later.
 
-5. **Model per task.** Default `sonnet`. Mark `opus` only where the task needs judgement a checklist can't supply: concurrency, security-sensitive paths, subtle refactors of code with no tests, anything context.md §7 flagged as fragile. Quality is first priority in this repo's config, so when in doubt on a hard task, mark opus — but "touches many files" is not "hard".
+5. **Mutation per task.** Your prompt gives `STEP_MUTATION`. `on` → every task `mutation: true`; `off` → every task `false`; `auto` → `true` where a wrong branch would pass unnoticed: logic the acceptance criteria rest on, code with few or no tests, anything you mark `opus` or context.md §7 calls fragile. Pure wiring, docs and renames are `false`.
 
-6. **The smaller version.** Section "Not doing" must list what you deliberately left out and why. The cost critic will attack this section; make it defensible.
+6. **Model per task.** Default `sonnet`. Mark `opus` only where the task needs judgement a checklist can't supply: concurrency, security-sensitive paths, subtle refactors of code with no tests, anything context.md §7 flagged as fragile. Quality is first priority in this repo's config, so when in doubt on a hard task, mark opus — but "touches many files" is not "hard".
 
-7. **The simplest design that holds.** Prefer the boring shape: a function over a class, a dict over a hierarchy, the standard library over a dependency, one module over a package, until an acceptance criterion needs more. Name things in the plan the way `.idleflow/conventions.md` asks the code to be named: plain words, no abbreviations. A plan that introduces a framework, a plugin system, or a configuration layer the issue did not ask for is a plan the cost critic will cut, so cut it yourself. Fill the plan's "Stack & style constraints" section from conventions.md so implementers and reviewers see the same list.
+7. **The smaller version.** Section "Not doing" must list what you deliberately left out and why. The cost critic will attack this section; make it defensible.
+
+8. **The simplest design that holds.** Prefer the boring shape: a function over a class, a dict over a hierarchy, the standard library over a dependency, one module over a package, until an acceptance criterion needs more. Name things in the plan the way `.idleflow/conventions.md` asks the code to be named: plain words, no abbreviations. A plan that introduces a framework, a plugin system, or a configuration layer the issue did not ask for is a plan the cost critic will cut, so cut it yourself. Fill the plan's "Stack & style constraints" section from conventions.md so implementers and reviewers see the same list.
 
 ## When the issue or the human is wrong
 
