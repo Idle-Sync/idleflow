@@ -3,9 +3,8 @@
 # Everything is plain git + files so a run can be inspected or resumed by hand.
 #
 #   run.sh new <slug>                     -> creates .idleflow/runs/active/ for a new run, prints its <id>
-#   run.sh wt add <task-id> [base-ref]    -> creates worktree <repo>__wt/<task-id> (or .idleflow/worktrees/<task-id>) on
-#                                            branch idleflow/<run-id>/<task-id>, records the task's base sha, runs the
-#                                            approved, committed worktree_setup there (6: it failed, 7: not approved)
+#   run.sh wt add <task-id> [base-ref]    -> creates the task's worktree and branch, records its base sha, runs the approved
+#                                            worktree_setup there (exit 6: setup failed, 7: not approved), prints the path
 #   run.sh wt rm <task-id>                -> removes the worktree (keeps the branch); works with or without an active run
 #   run.sh wt list                        -> lists idleflow worktrees
 #   run.sh own <task-id> '<globs json>'   -> registers file ownership for the guard hook
@@ -183,10 +182,8 @@ wt_path() {
   if [ "$(conventions_value worktrees_in)" = inside ]; then echo "$IDLE/worktrees/$1"; else echo "${REPO}${SUFFIX}/$1"; fi
 }
 
-# Commands a repo names in its conventions (worktree_setup, gate) come from whoever pushed the
-# repo, so they run only as committed at HEAD (a working-tree edit, even mid-build, changes
-# nothing) and only after this person approved that exact text; the approval is a hash in this
-# clone's local git config, never committed, and any change to the command asks again.
+# Repo commands come from whoever pushed the repo: they run only as committed at HEAD, and only once
+# this person approved that exact text (a hash in local git config; any change asks again).
 REPO_COMMANDS="worktree_setup gate"
 repo_command() { # the committed value of a command key, empty when unset
   local v
@@ -586,7 +583,11 @@ JSON
         case "$f" in *.py) cands+=("python3 $f");; *.sh) cands+=("bash $f");; *) cands+=("./$f");; esac
       done
       for t in check gate ci; do grep -qE "^$t:" "$REPO/Makefile" 2>/dev/null && cands+=("make $t"); grep -qE "^$t:" "$REPO/justfile" 2>/dev/null && cands+=("just $t"); done
-      for t in check ci test; do grep -qE "\"$t\"[[:space:]]*:" "$REPO/package.json" 2>/dev/null && cands+=("npm run $t"); done
+      for t in check ci test; do
+        line="$(grep -E "\"$t\"[[:space:]]*:" "$REPO/package.json" 2>/dev/null | head -1 || true)"
+        # npm init's placeholder test script fails on purpose and checks nothing
+        [ -n "$line" ] && ! echo "$line" | grep -q "no test specified" && cands+=("npm run $t")
+      done
       [ "${#cands[@]}" -gt 0 ] && say gate "${cands[0]}" "candidates found: $(printf '%s, ' "${cands[@]}" | sed 's/, $//')"
     fi
     exit 0
