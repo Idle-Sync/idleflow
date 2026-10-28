@@ -16,6 +16,12 @@ Issue: $ARGUMENTS
 
 If `$ARGUMENTS` is a URL, fetch the issue body with `gh issue view <url> --json title,body` if it is GitHub, otherwise ask the human to paste it. If it is a file path, read it. Write the normalised issue text to `.idleflow/runs/active/issue.md` after step 0.
 
+**Spawning an agent, everywhere in this run.** A project can customize agents (`/idleflow:customize`). Before an agent's first spawn in this run, `bash "$RUN" agent <name>` (for example `planner`, `implementer-hard`) and keep its four lines for the rest of the run:
+- `agent:` is the name to spawn: `idleflow:<name>`, or `idleflow-<name>` when the project replaced it. If a replaced agent is not available, the replacement was added after Claude Code started: stop and tell the human to restart Claude Code.
+- `model:` other than `default` goes in the Agent tool's `model`; a plan's per-task `model:` still picks between `implementer` and `implementer-hard`.
+- `extra:` other than `none`: add to that agent's prompt `Project instructions for this repo: <path>. Read them before you start and follow them with your own; where they conflict with your output file, reply line or report fields, those win.`
+- `contract:` other than `built in`: add `Your output contract is the one in <path>: write the same output file, reply with the same line, and use the same report fields it defines. Your own instructions decide everything else.`
+
 Pushback, everywhere in this run: when the human's answer conflicts with the code, the tests, a research file or a source you can cite, say so once before acting (the conflict in a sentence, the evidence with its path or URL, a better option with its cost), then do what they decide and record the decision with its reason in `plan.md` "Open questions". No pushback without evidence; no agreement without checking.
 
 ---
@@ -41,11 +47,11 @@ Spawn `idleflow:classifier` with the context.md path and the `SIZE_*` values. Pa
 
 The diff limit applies to each task's diff on its own; there is no run-wide total. If `greenfield` is true, the diff limit for this run is `DIFF_LIMIT * 3`; pass that limit as the second argument to every later `gate` call and to the auditor. Implementers per group: `SIZE_M_IMPLEMENTERS` for size M, `MAX_IMPLEMENTERS` for L, 1 for S.
 
-Each later step follows the field that matters to it, not the size alone: the debate (step 4) runs for size L or `risk: high`; stack and library research (R3, R4) run on greenfield or `new_dependency: true`; tooling (R5) runs on greenfield or size L; implementers and reviewers follow the size. Tell the human in one line what that means for this run, for example `Size S, risk low, no new dependency: no debate, no setup research, one reviewer.` If the human corrects a field, set it and record the correction in plan.md "Open questions" once the plan exists.
+Each later step follows the field that matters to it, not the size alone: the debate (step 4) runs for size L or `risk: high`; stack and library research (R3, R4) run on greenfield or `new_dependency: true`; tooling (R5) runs on greenfield or size L; implementers and reviewers follow the size. A project's `STEP_*` values from `conf` override those conditions: `on` runs the step every time, `off` never, `auto` as stated (`STEP_DEBATE` step 4, `STEP_STACK` R3, `STEP_LIBRARIES` R4, `STEP_TOOLING` R5, `STEP_DOC_KEEPER` step 2a); the line to the human names any step a setting forced. Tell the human in one line what that means for this run, for example `Size S, risk low, no new dependency: no debate, no setup research, one reviewer.` If the human corrects a field, set it and record the correction in plan.md "Open questions" once the plan exists.
 
 Then, in this order: **R2** (project docs) from `procedures/repo-setup.md`; step **2a** below; **R3** (stack), **R4** (libraries), **R5** (tooling) when their conditions hold; and always **R6** (snapshot) last.
 
-### 2a. Ground the docs (Sonnet) — when `docs: yes` and not greenfield
+### 2a. Ground the docs (Sonnet) — when `docs: yes` and not greenfield (or `STEP_DOC_KEEPER` says otherwise)
 
 Spawn `idleflow:doc-keeper` with the repo root and the absolute paths of `progress.md`, `index.md`, `prd.md`, `CLAUDE.md`, `README.md`, `docs/`, `.idleflow/conventions.md`. It checks every claim in the docs against the code, fixes stale ones, and commits `docs: ground stale claims`. Nothing else starts until it replies. Repeat its one-line reply to the human verbatim; carry any `unchecked:` items into the final message.
 
@@ -59,7 +65,7 @@ If "Open questions for the human" is non-empty, ask them now with AskUserQuestio
 
 Reject a plan that puts `prd.md`, `progress.md`, `index.md`, `CLAUDE.md` or `.idleflow/conventions.md` in any task's `owns:`; send it back to the planner once with that single instruction.
 
-## 4. Debate (Opus × 2) — only for size L or risk high
+## 4. Debate (Opus × 2) — only for size L or risk high (or `STEP_DEBATE` says otherwise)
 
 Otherwise skip to the "Plan locked" line at the end of this step.
 
