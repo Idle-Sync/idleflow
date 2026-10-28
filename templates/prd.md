@@ -19,8 +19,8 @@ treats it as the source of truth for scope.
 - <thing> — <reason, one clause>
 
 ## Constraints
-- Stack: <from .claude/conventions.md "Stack decisions">
-- Style: <readability mode from .claude/conventions.md>
+- Stack: <from .idleflow/conventions.md "Stack decisions">
+- Style: <readability mode from .idleflow/conventions.md>
 - <runtime, hosting, data, compliance, budget — only what is actually known>
 
 ## Milestones

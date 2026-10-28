@@ -95,7 +95,7 @@ Uninstall: `claude plugin uninstall idleflow@idlesync`; `claude plugin marketpla
   loads it, which is how `commands/feature.md` finds `scripts/run.sh`. It is **not** an environment
   variable inside Bash commands. This is why `setup.md` Option B (manual copy) rewrites it with `sed`.
 - Don't write state under the plugin root; it changes on update. Per-repo state lives in
-  `.claude/runs/` and `.claude/lessons.md`, which is the right place.
+  `.idleflow/runs/` and `.idleflow/lessons.md`, which is the right place.
 - Keep `name` identical in `plugin.json` and the marketplace entry, or installs by name fail.
 
 Sources: https://code.claude.com/docs/en/plugins/publish.md ·

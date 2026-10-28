@@ -99,12 +99,12 @@ If the write was *not* blocked: the hook isn't registered. Run `/hooks` inside C
 
 ## Step 5 — Per-repo first run
 
-In a real repo, nothing needs pre-creating; `/idleflow:feature` creates `.claude/runs/` (and ignores it in `.git/info/exclude`, or in `.gitignore` when conventions say `ignore_in: gitignore`), copies `templates/lessons.md` and `templates/conventions.md` into `.claude/`, and commits them itself (`run.sh snapshot`, with the human's git identity). Both files are what make the workflow improve; keep them committed.
+In a real repo, nothing needs pre-creating; `/idleflow:feature` creates `.idleflow/runs/` (and ignores it in `.git/info/exclude`, or in `.gitignore` when conventions say `ignore_in: gitignore`), copies `templates/lessons.md` and `templates/conventions.md` into `.idleflow/`, and commits them itself (`run.sh snapshot`, with the human's git identity). Both files are what make the workflow improve; keep them committed.
 
 Recommend to the human, in one line each:
 - Run the orchestrator session on Opus (`claude --model opus`); it's the longest-lived context in the run and doesn't need Fable. Only the planner subagent uses Fable.
 - Start with `/idleflow:fix` on a real but small bug to see the S path end to end before running an L feature.
-- After ~10 runs, read `.claude/runs/config-proposals.md` in each repo and apply the numbers that make sense to `config/idleflow.conf`.
+- After ~10 runs, read `.idleflow/runs/config-proposals.md` in each repo and apply the numbers that make sense to `config/idleflow.conf`.
 
 ## Step 6 — Report
 

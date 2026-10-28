@@ -17,11 +17,11 @@ Around the pipeline, five things that keep a repo honest:
 
 - **Not a yes machine.** When a request or an answer conflicts with the code, the tests, a research file or a source an agent can cite, it says so once, with the evidence and a better option, then does what the human decides and records why. Pushback without evidence is left out; agreement without checking is rejected in review.
 
-- **Code style is a contract, not advice.** `.claude/conventions.md` (committed) holds the KISS rules — simplest correct thing, plain names a newcomer can read, one idea per function, failures handled where they happen — and a **readability mode** (`repo` / `balanced` / `explicit` / `idiomatic`) that decides whether a list comprehension or a loop is the right shape. On a repo that already has code, `repo` is offered first with a snippet from the repo itself: implementers copy the style of the files next to the change. The first run asks once, with pros and cons; `/idleflow:style` changes it later. Implementers write to it and the conformance reviewer rejects on it.
+- **Code style is a contract, not advice.** `.idleflow/conventions.md` (committed) holds the KISS rules — simplest correct thing, plain names a newcomer can read, one idea per function, failures handled where they happen — and a **readability mode** (`repo` / `balanced` / `explicit` / `idiomatic`) that decides whether a list comprehension or a loop is the right shape. On a repo that already has code, `repo` is offered first with a snippet from the repo itself: implementers copy the style of the files next to the change. The first run asks once, with pros and cons; `/idleflow:style` changes it later. Implementers write to it and the conformance reviewer rejects on it.
 - **Research before code.** On greenfield runs and changes that add a dependency, a **stack advisor** scans the repo and the machine (pyproject vs requirements.txt, venv, Docker present, lockfiles, linters, CI), a **researcher** checks several internet sources per candidate with a URL on every claim, and the human accepts or declines each proposal. A **library scout** does the same for the capabilities the change needs (canvas animation → p5.js / three.js, not hand-rolled canvas code), writing `docs/research/<capability>.md`. Repos at or above `LARGE_REPO_LOC` hand-written code lines get a proposal for a code map (Graphify, Serena MCP, Sourcegraph, ctags).
-- **No meta commentary, ever.** The generated `CLAUDE.md` and `.claude/conventions.md` ban process narration ("the user asked", "as requested", "I'll now") from every doc, commit, PR, comment and note in the repo, and record whether commits carry a `Co-Authored-By: Claude` trailer (`co_author_claude: yes|no`; footers never). The conformance reviewer rejects on both.
+- **No meta commentary, ever.** The generated `CLAUDE.md` and `.idleflow/conventions.md` ban process narration ("the user asked", "as requested", "I'll now") from every doc, commit, PR, comment and note in the repo, and record whether commits carry a `Co-Authored-By: Claude` trailer (`co_author_claude: yes|no`; footers never). The conformance reviewer rejects on both.
 - **The right tooling, not hand-rolled.** A tooling advisor inventories installed plugins and skills, checks the [Idle-Sync/skills](https://github.com/Idle-Sync/skills) catalogue against what is installed, and proposes the skills, marketplace plugins and workflows the project will use often; accepted items are installed, missing ones become `/idleflow:skills-feedback` requests. `/idleflow:plugin-feedback` reports idleflow's own bugs with the run's evidence attached.
-- **It reports its own gaps.** Any agent that finds the plugin lacks an input, step, tool or config knob it needed appends a `plugin_gap:` line to `.claude/runs/active/gaps.md` instead of working around it. At the end of a run the orchestrator lists them and asks once whether to open them as issues on Idle-Sync/idleflow from the human's GitHub account; nothing is filed without that yes. On greenfield runs the stack advisor always proposes quality tooling per language (ruff, mypy or pyright, pytest and pre-commit for Python; biome or eslint plus prettier, strict tsc and vitest for TypeScript; gofmt and golangci-lint for Go; rustfmt and clippy for Rust, and so on), grounded by the researcher like every other proposal.
+- **It reports its own gaps.** Any agent that finds the plugin lacks an input, step, tool or config knob it needed appends a `plugin_gap:` line to `.idleflow/runs/active/gaps.md` instead of working around it. At the end of a run the orchestrator lists them and asks once whether to open them as issues on Idle-Sync/idleflow from the human's GitHub account; nothing is filed without that yes. On greenfield runs the stack advisor always proposes quality tooling per language (ruff, mypy or pyright, pytest and pre-commit for Python; biome or eslint plus prettier, strict tsc and vitest for TypeScript; gofmt and golangci-lint for Go; rustfmt and clippy for Rust, and so on), grounded by the researcher like every other proposal.
 - **No doc goes stale.** With project docs on (automatic for greenfield), the repo gets `prd.md`, `progress.md`, `index.md`, a `CLAUDE.md` block and `docs/sessions/`. A **doc-keeper** runs before every run, checks each claim in those docs against the code, fixes what is stale and commits. The retro writes a session note and updates progress and index after every run. The generated `CLAUDE.md` makes plain Claude Code sessions follow the same start-and-end protocol, and `/idleflow:endsession` closes a working session with a note whose "Next" lists, in order, what the next session does first: push, CI, release, restarts, open deviations.
 
 ## Decisions baked in (and where to change them)
@@ -35,10 +35,10 @@ Around the pipeline, five things that keep a repo honest:
 | Diff gate | 1500 code lines per task (+300 slack); `.md`, `.txt`, lockfiles, generated excluded | `DIFF_LIMIT`, `DIFF_SLACK`, `DIFF_EXCLUDE` |
 | Retry | one per task, on Opus, then stop and ask | `MAX_RETRIES`, steps 5 and 7 of `commands/feature.md` |
 | Tests | `tests_first: true` forced wherever entry points have no tests | planner §3, conformance reviewer §4 |
-| Lessons | per repo, `.claude/lessons.md`, ≤1 per run | `agents/retro.md` |
-| Metrics | `.claude/runs/log.jsonl` only (no OTEL yet) | `scripts/run.sh finish` |
+| Lessons | per repo, `.idleflow/lessons.md` or `docs/lessons.md` (`lessons_in:`), ≤1 per run | `agents/retro.md`, `run.sh path lessons` |
+| Metrics | `.idleflow/runs/log.jsonl` only (no OTEL yet) | `scripts/run.sh finish` |
 | Priority | quality > tokens > time | retry on Opus; `opus` allowed per task; critics on Opus |
-| Readability mode | asked once per repo; `repo` on existing code and `balanced` on an empty repo when nobody answers | `.claude/conventions.md`, `commands/style.md` |
+| Readability mode | asked once per repo; `repo` on existing code and `balanced` on an empty repo when nobody answers | `.idleflow/conventions.md`, `commands/style.md` |
 | Ignore rules | idleflow's own paths go to `.git/info/exclude` or `.gitignore`, asked once; exclude until answered | `ignore_in:` in conventions.md, `run.sh ignore` |
 | Stack / library research | greenfield or a new dependency; ≥3 sources per candidate, URL on every claim | `agents/stack-advisor.md`, `agents/stack-researcher.md`, `agents/library-scout.md` |
 | Large repo | ≥ 100 000 hand-written code lines → code-map proposal | `LARGE_REPO_LOC`, `run.sh loc` |
@@ -93,18 +93,18 @@ IDLEFLOW_RUNTIME=python bash scripts/selftest.sh
 ## Per-repo state
 
 ```
-.claude/lessons.md                 commit this
-.claude/conventions.md             commit this: style rules, readability mode, stack decisions
+.idleflow/lessons.md                 commit this
+.idleflow/conventions.md             commit this: style rules, readability mode, stack decisions
 prd.md  progress.md  index.md      repo root, when docs are on; humans and the retro both edit them
 CLAUDE.md                          the idleflow block: start-of-session doc grounding, end-of-session notes
 docs/research/<capability>.md      library and stack research with sources
 docs/sessions/s_NNNN.md            one note per run or session; ignored or committed, asked once
-.claude/runs/active/               the run in progress (a plain directory; renamed to <id>/ on finish)
-.claude/runs/active/gaps.md        plugin_gap lines agents append; asked about before every finish
-.claude/runs/<id>/                 ignored (.git/info/exclude or .gitignore, asked once); issue, context, plan, debate/, tasks/, review/, run.json
-.claude/runs/log.jsonl             one line per finished run — tokens aren't captured yet, but
+.idleflow/runs/active/               the run in progress (a plain directory; renamed to <id>/ on finish)
+.idleflow/runs/active/gaps.md        plugin_gap lines agents append; asked about before every finish
+.idleflow/runs/<id>/                 ignored (.git/info/exclude or .gitignore, asked once); issue, context, plan, debate/, tasks/, review/, run.json
+.idleflow/runs/log.jsonl             one line per finished run — tokens aren't captured yet, but
                                    size, retries, gate trips and review findings are
-.claude/runs/config-proposals.md   retro's suggested threshold changes; apply by hand
+.idleflow/runs/config-proposals.md   retro's suggested threshold changes; apply by hand
 <repo>__wt/<task-id>               sibling directory holding task worktrees during a run
 ```
 

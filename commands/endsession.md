@@ -20,9 +20,11 @@ If the human did not type `/idleflow:endsession` in this turn (you are starting 
 
 ## 1. Refuse while anything is still running
 
+First `bash "$RUN" migrate` (moves files an older idleflow kept under `.claude/`); if it exits non-zero, show its message and stop.
+
 Stop, write nothing, and say what is still running when any of these holds:
 
-- `.claude/runs/active/` exists: print its run id and status (`bash "$RUN" get id`, `bash "$RUN" get status`) and every task whose status is not `approved`. A handoff is written only after the run reached `finish`.
+- `.idleflow/runs/active/` exists: print its run id and status (`bash "$RUN" get id`, `bash "$RUN" get status`) and every task whose status is not `approved`. A handoff is written only after the run reached `finish`.
 - `bash "$RUN" wt list` prints anything: list the worktrees.
 - An agent you spawned in this session has not replied yet.
 
@@ -30,14 +32,14 @@ Stop, write nothing, and say what is still running when any of these holds:
 
 - **Git.** Current branch. Unpushed commits: `git rev-list --count @{u}..HEAD`; with no upstream, say `no upstream for <branch>` and the commit count since the default branch. Uncommitted changes: `git status --porcelain` (the paths only; you do not commit them).
 - **CI.** When the unpushed commits touch `.github/workflows/`, CI has not run on the new workflow yet. When the branch is pushed and `gh` works, the newest run: `gh run list --branch <branch> --limit 1`; a failed or pending run is a next step.
-- **Runs this session.** Lines of `.claude/runs/log.jsonl` whose `finished` is later than the commit time of the newest note in `docs/sessions/` with `by: Claude Code session` (`git log -1 --format=%cI -- <note>`); with no such note, the runs finished today. For each: id, status, size, and from `.claude/runs/<id>/tasks/*/report.md` every `deviations:` and `blocked_on:` that is not `none`. A run that finished `needs-human` is a next step with its reason.
+- **Runs this session.** Lines of `.idleflow/runs/log.jsonl` whose `finished` is later than the commit time of the newest note in `docs/sessions/` with `by: Claude Code session` (`git log -1 --format=%cI -- <note>`); with no such note, the runs finished today. For each: id, status, size, and from `.idleflow/runs/<id>/tasks/*/report.md` every `deviations:` and `blocked_on:` that is not `none`. A run that finished `needs-human` is a next step with its reason.
 - **Releases.** When `CLAUDE.md` says `releases: github-tagged` and a run this session proposed a tag (or completed every "Must do" item of a `prd.md` milestone that has no tag yet: `git tag --list`), the next step is the two commands from `CLAUDE.md` "Releases" with the version filled in. Deploy steps named in `CLAUDE.md` or `progress.md` that have not run are next steps too.
 - **Restarts.** Tooling installed this session (`tooling_installed` above 0 in a run's `run.json`, or an install you ran yourself) and plugin updates mean the next session starts with a Claude Code restart.
 - **The rest of the session.** Work done outside runs in this conversation: prototypes, research, decisions and their reasons, human decisions taken mid-run. You were there; write what happened, not what was said.
 
 ## 3. Write
 
-Read `docs:` in `.claude/conventions.md`. When it is `no` (or the file is missing), print the note from the shape below in your reply, write nothing, and stop: the repo keeps no session notes.
+Read `docs:` in `.idleflow/conventions.md`. When it is `no` (or the file is missing), print the note from the shape below in your reply, write nothing, and stop: the repo keeps no session notes.
 
 When `docs: yes`:
 

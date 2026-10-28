@@ -63,11 +63,17 @@ docs_in_git: unset
 of git through the file `ignore_in:` names, so they stay local to this machine. Asked once, the
 first time docs are turned on.
 
+lessons_in: unset
+
+Where the lessons file lives. `idleflow` keeps it at `.idleflow/lessons.md`; `docs` keeps it at
+`docs/lessons.md`, next to the research and session notes. Either way it is committed and the
+whole team reads the same lessons. Unset means `.idleflow/`. Asked once, when docs are on.
+
 ## Ignore rules
 
 ignore_in: unset
 
-Where idleflow writes its own ignore rules (`.claude/runs/`, a local `docs/`). `exclude` uses
+Where idleflow writes its own ignore rules (`.idleflow/runs/`, a local `docs/`). `exclude` uses
 `.git/info/exclude`: local to this clone, so nothing about idleflow appears in a committed file.
 `gitignore` uses `.gitignore`: shared with every clone and visible to everyone who reads the repo.
 Until it is answered, rules go to `.git/info/exclude`. A stack's own entries (`node_modules/`,

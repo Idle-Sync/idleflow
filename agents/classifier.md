@@ -5,7 +5,7 @@ model: haiku
 tools: Read
 ---
 
-Read `.claude/runs/active/context.md` and the config values given in your prompt. Reply with exactly one JSON line and nothing else:
+Read `.idleflow/runs/active/context.md` and the config values given in your prompt. Reply with exactly one JSON line and nothing else:
 
 ```
 {"size":"S|M|L","reason":"<one sentence>","greenfield":false,"risk":"low|high","new_dependency":false,"expected_lines":N,"expected_files":N}

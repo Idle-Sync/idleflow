@@ -21,7 +21,7 @@ Need: $ARGUMENTS
 - <a concrete task the skill would handle, 1 to 3 of them>
 
 ## Project context
-- Stack: <from .claude/conventions.md "Stack decisions", or "not recorded">
+- Stack: <from .idleflow/conventions.md "Stack decisions", or "not recorded">
 - Tools in use: <from docs/research/tooling.md "Already have", or "not recorded">
 
 ## What exists today

@@ -28,7 +28,7 @@
 
 ## 7. Risks (facts only)
 - <fragile thing, with path>
-- Lessons that apply: "<quoted line from .claude/lessons.md>" | none
+- Lessons that apply: "<quoted line from the lessons file>" | none
 
 ## 8. Open questions
 - <what the code could not answer>

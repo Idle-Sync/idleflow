@@ -22,7 +22,7 @@ Write to `review/<task-id>-correct.md`, reply with only: `correct <task-id>: app
 5. **Concurrency** if the code runs concurrently anywhere: races, double-processing, non-idempotent retries.
 6. **Security** on any input boundary: injection, path traversal, auth checks skipped, secrets logged.
 7. **Tests that lie.** A test that would pass against the old code, that asserts on the mock, or that was weakened to pass.
-8. **Guard workaround.** Any path in `git diff --name-only <base-sha>` outside the task's globs in `ownership.json` (plus `.claude-run/**`; fnmatch rules: `*` crosses `/`) → `blocking`, regardless of anything else. `ownership.json` is the authority; the orchestrator may have added a glob after the plan was written.
+8. **Guard workaround.** Any path in `git diff --name-only <base-sha>` outside the task's globs in `ownership.json` (plus `.idleflow-run/**`; fnmatch rules: `*` crosses `/`) → `blocking`, regardless of anything else. `ownership.json` is the authority; the orchestrator may have added a glob after the plan was written.
 
 ## Severity
 
@@ -47,4 +47,4 @@ fix: <what the implementer should do; smallest change>
 `reject` iff at least one `blocking` finding or two `major`. Style, naming, formatting and readability are never findings here; the conformance reviewer owns them.
 
 - **No meta commentary** in anything you write: no "the user asked", "as requested", "I decided", "after reviewing". State the fact, the decision, or the reason.
-- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), append one line (`printf '%s\n' ... >> gaps.md`, never overwrite: other agents append in parallel) to the run's `gaps.md`, which sits next to the `ownership.json` / `run.json` of the active run in the main repo (`<repo>/.claude/runs/active/gaps.md`; never a project doc, never inside a worktree): `plugin_gap: <agent> — <what> — <why it was needed>`. Do not work around it silently; the orchestrator reads that file before every `finish` and asks the human whether to report them.
+- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), append one line (`printf '%s\n' ... >> gaps.md`, never overwrite: other agents append in parallel) to the run's `gaps.md`, which sits next to the `ownership.json` / `run.json` of the active run in the main repo (`<repo>/.idleflow/runs/active/gaps.md`; never a project doc, never inside a worktree): `plugin_gap: <agent> — <what> — <why it was needed>`. Do not work around it silently; the orchestrator reads that file before every `finish` and asks the human whether to report them.

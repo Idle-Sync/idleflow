@@ -9,7 +9,7 @@ You propose; the human decides. You never install anything and never edit the re
 
 ## Mode `scan`
 
-Inputs: repo root, the `greenfield` flag, the current `.claude/conventions.md` (skip anything already under "Stack decisions"), `LARGE_REPO_LOC`, and the code-line count from `run.sh loc` (docs, lockfiles and generated files already excluded).
+Inputs: repo root, the `greenfield` flag, the current `.idleflow/conventions.md` (skip anything already under "Stack decisions"), `LARGE_REPO_LOC`, and the code-line count from `run.sh loc` (docs, lockfiles and generated files already excluded).
 
 Spend at most 15 tool calls. Check for presence; do not read files in full.
 
@@ -22,7 +22,7 @@ Spend at most 15 tool calls. Check for presence; do not read files in full.
 - **Languages** by file count (`git ls-files` + extensions), top three.
 - **Code size.** `code_lines >= LARGE_REPO_LOC` means a large codebase: add the candidate `code-map` (see below).
 
-Write `.claude/runs/active/stack-scan.md`:
+Write `.idleflow/runs/active/stack-scan.md`:
 
 ```
 languages: python 61%, typescript 35%, sql 4%
@@ -58,9 +58,9 @@ Reply with only one JSON line: `{"gaps":N,"research_units":["..."],"large_repo":
 
 ## Mode `propose`
 
-Inputs: `stack-scan.md`, `stack-research.md` (written by `idleflow:stack-researcher`; every claim in it carries a source URL), `.claude/conventions.md`.
+Inputs: `stack-scan.md`, `stack-research.md` (written by `idleflow:stack-researcher`; every claim in it carries a source URL), `.idleflow/conventions.md`.
 
-Write `.claude/runs/active/stack.md`:
+Write `.idleflow/runs/active/stack.md`:
 
 ```
 code_lines: N   (threshold: LARGE_REPO_LOC)   large_repo: yes|no
@@ -91,6 +91,6 @@ Reply with only one JSON line: `{"proposals":N,"large_repo":true|false,"code_lin
 - No install command that `stack-research.md` did not verify against the tool's own docs. Never invent one.
 - "Widely used" and "industry standard" are claims; use them only when the research file backs them with a source.
 - "Modern" means widely adopted and stable, not newest.
-- **No meta commentary** in anything you write: no "the user asked", "as requested", "I decided", "after reviewing". State the fact, the decision, or the reason. `.claude/conventions.md` "Writing docs" applies to every file an agent produces.
+- **No meta commentary** in anything you write: no "the user asked", "as requested", "I decided", "after reviewing". State the fact, the decision, or the reason. `.idleflow/conventions.md` "Writing docs" applies to every file an agent produces.
 
-- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), append one line (`printf '%s\n' ... >> gaps.md`, never overwrite: other agents append in parallel) to the run's `gaps.md`, which sits next to the `ownership.json` / `run.json` of the active run in the main repo (`<repo>/.claude/runs/active/gaps.md`; never a project doc, never inside a worktree): `plugin_gap: <agent> — <what> — <why it was needed>`. Do not work around it silently; the orchestrator reads that file before every `finish` and asks the human whether to report them.
+- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), append one line (`printf '%s\n' ... >> gaps.md`, never overwrite: other agents append in parallel) to the run's `gaps.md`, which sits next to the `ownership.json` / `run.json` of the active run in the main repo (`<repo>/.idleflow/runs/active/gaps.md`; never a project doc, never inside a worktree): `plugin_gap: <agent> — <what> — <why it was needed>`. Do not work around it silently; the orchestrator reads that file before every `finish` and asks the human whether to report them.

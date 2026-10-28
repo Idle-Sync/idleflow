@@ -12,7 +12,7 @@ issue: <link or one-line reference>
 <Bullet list of things deliberately out of scope, each with a one-clause reason. The cost critic attacks this section.>
 
 ## Stack & style constraints
-<Copied from .claude/conventions.md so implementers and reviewers see one list: readability mode; every "Stack decisions" line that touches this change, including libraries chosen by the library scout (name + research file) and capabilities the human chose to hand-write. A task may not contradict these.>
+<Copied from .idleflow/conventions.md so implementers and reviewers see one list: readability mode; every "Stack decisions" line that touches this change, including libraries chosen by the library scout (name + research file) and capabilities the human chose to hand-write. A task may not contradict these.>
 
 ## Interfaces (serial, land first — omit if none)
 <Shared types, signatures, schema changes every parallel task depends on. This is task T0 if present.>
