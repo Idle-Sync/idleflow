@@ -799,7 +799,8 @@ JSON
     elif [ "${people:-0}" -gt 1 ]; then check_line warn team "$people people commit here, but .claude/settings.json does not recommend idleflow, so teammates work without it" "run.sh team-install"
     else check_line ok team "one contributor so far (run.sh team-install when others join)"; fi
     union_missing=""
-    while IFS= read -r f; do grep -qxF "$f merge=union" "$REPO/.gitattributes" 2>/dev/null || union_missing="$union_missing $f"; done < <(union_merge_files)
+    # only files that exist yet: a log no run has written cannot conflict, and snapshot adds its rule anyway
+    while IFS= read -r f; do [ -e "$REPO/$f" ] || continue; grep -qxF "$f merge=union" "$REPO/.gitattributes" 2>/dev/null || union_missing="$union_missing $f"; done < <(union_merge_files)
     if [ -n "$union_missing" ]; then check_line warn merges "no union merge for:$union_missing, so concurrent entries conflict" "run.sh snapshot"; else check_line ok merges "lessons, progress and suggestions merge without conflicts"; fi
 
     while IFS= read -r line; do
