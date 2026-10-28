@@ -282,6 +282,7 @@ copy_report() {
   [ -f "$src" ] || { echo "no report at $src (the implementer did not write .idleflow-run/result.md)" >&2; return 1; }
   mkdir -p "$ACTIVE/tasks/$tid"
   cp "$src" "$dst"
+  idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.t_report" "$(date +%s)"
   native_path "$dst"
 }
 
@@ -330,6 +331,8 @@ JSON
         # the task's own base: groups merged earlier move the branch, so gate/review must diff from here, not from the run start
         idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.base_sha" "\"$("${G[@]}" rev-parse "$base")\""
         idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.worktree" "$(json_str "$(native_path "$p")")"
+        # epoch seconds, so the retro's time log can subtract them without date parsing
+        idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.t_start" "$(date +%s)"
         run_worktree_setup "$tid" "$p"
         native_path "$p"
         ;;
@@ -398,6 +401,7 @@ JSON
       git -C "$p" diff --cached --quiet || git -C "$p" ${IDENTITY[@]+"${IDENTITY[@]}"} commit -q ${finish_msg[@]+"${finish_msg[@]}"}
     fi
     if "${G[@]}" ${IDENTITY[@]+"${IDENTITY[@]}"} merge --no-ff -q "${merge_msg[@]}" "$br"; then
+      idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.t_merge" "$(date +%s)"
       echo "merged $tid"
     elif [ -f "$("${G[@]}" rev-parse --absolute-git-dir)/MERGE_HEAD" ]; then
       "${G[@]}" merge --abort || true

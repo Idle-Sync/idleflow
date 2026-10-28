@@ -50,7 +50,7 @@ Around the pipeline, five things that keep a repo honest:
 | Placeholders | code that cannot do its job yet fails loudly; a plausible default is a blocking finding | implementer, correctness reviewer |
 | Checkable findings | each review finding says whether a deterministic check would have caught it; repeats become a lesson | reviewers, `agents/retro.md` |
 | Lessons | per repo, `.idleflow/lessons.md` or `docs/lessons.md` (`lessons_in:`), ≤1 per run | `agents/retro.md`, `run.sh path lessons` |
-| Metrics | `.idleflow/runs/log.jsonl` only (no OTEL yet) | `scripts/run.sh finish` |
+| Metrics | `.idleflow/runs/log.jsonl` per run; the time log (estimate against actual lines, minutes and reported tokens per task, with why) feeds the planner's estimates | `scripts/run.sh finish`, `time_log`, `agents/retro.md` |
 | Priority | quality > tokens > time | retry on Opus; `opus` allowed per task; critics on Opus |
 | Readability mode | asked once per repo; `repo` on existing code and `balanced` on an empty repo when nobody answers | `.idleflow/conventions.md`, `commands/style.md` |
 | Ignore rules | idleflow's own paths go to `.git/info/exclude` or `.gitignore`, asked once; exclude until answered | `ignore_in:` in conventions.md, `run.sh ignore` |

@@ -112,6 +112,7 @@ wt="$(bash "$RUN" wt add T1)"
 check "wt add prints path"             '[ -n "$wt" ] && [ -d "$wt" ]'
 check "wt on task branch"              'git -C "$wt" rev-parse --abbrev-ref HEAD | grep -q "^idleflow/$id/T1$"'
 check "wt marker written"              '[ "$(cat "$wt/.idleflow-run/task-id")" = "T1" ]'
+check "wt add stamps the task's start"     '[[ "$(bash "$RUN" get tasks.T1.t_start)" =~ ^[0-9]{10}$ ]]'
 check "task base_sha recorded"         '[ "$(bash "$RUN" get tasks.T1.base_sha)" = "$(git rev-parse HEAD)" ]'
 wt_again="$(bash "$RUN" wt add T1)"
 check "wt add again after a crash"     '[ "$wt_again" = "$wt" ] && [ -d "$wt" ]'
@@ -186,6 +187,7 @@ check "merge refuses an unapproved task" 'bash "$RUN" merge T1 >/dev/null 2>&1; 
 bash "$RUN" set tasks.T1.status '"approved"'
 mkdir -p "$wt/.pytest_cache" && echo v > "$wt/.pytest_cache/v"
 m="$(bash "$RUN" merge T1)"
+check "merge stamps the task's merge"     '[[ "$(bash "$RUN" get tasks.T1.t_merge 2>/dev/null)" =~ ^[0-9]{10}$ ]]'
 check "merge reports merged"           '[ "$m" = "merged T1" ]'
 check "merged file on main"            '[ -f src/code.py ]'
 check "merge leaves untracked caches out" '[ ! -e .pytest_cache ] && ! git ls-files | grep -q pytest_cache'

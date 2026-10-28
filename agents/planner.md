@@ -27,7 +27,7 @@ Record paths: `progress.md`, `index.md`, `docs/sessions/` and the lessons file b
 
 3. **Tests-first marking.** For every task whose entry points have no tests in context.md §4, set `tests_first: true`. The implementer then writes the failing test before the change. This is not optional in repos without coverage — the review layer has nothing else to stand on.
 
-4. **Honest size estimates** per task, in hand-written lines. The diff gate will check them, one task at a time: the limit is per task, never a total for the run, so a large run is fine as long as each task fits. If any task is estimated over the diff limit you were given, split it now rather than letting the auditor split it later.
+4. **Honest size estimates** per task, in hand-written lines and in minutes. For minutes, read the time log at the path in your prompt (the latest rows are enough) and estimate from similar tasks in this repo, naming them in the task's `notes`; with no similar rows, say the estimate has no history behind it. The diff gate will check them, one task at a time: the limit is per task, never a total for the run, so a large run is fine as long as each task fits. If any task is estimated over the diff limit you were given, split it now rather than letting the auditor split it later.
 
 5. **Mutation per task.** Your prompt gives `STEP_MUTATION`. `on` → every task `mutation: true`; `off` → every task `false`; `auto` → `true` where a wrong branch would pass unnoticed: logic the acceptance criteria rest on, code with few or no tests, anything you mark `opus` or context.md §7 calls fragile. Pure wiring, docs and renames are `false`.
 
