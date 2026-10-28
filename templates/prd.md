@@ -1,7 +1,8 @@
 # <Project name> — product requirements
 
 Humans own this file: edit it freely. The planner reads it at the start of every run and
-treats it as the source of truth for scope.
+treats it as the source of truth for scope. It describes the product only; milestones and what
+is done live in `progress.md`.
 
 ## Why this exists
 <One paragraph. The problem, who has it, what changes for them when this ships.>
@@ -22,10 +23,6 @@ treats it as the source of truth for scope.
 - Stack: <from .idleflow/conventions.md "Stack decisions">
 - Style: <readability mode from .idleflow/conventions.md>
 - <runtime, hosting, data, compliance, budget — only what is actually known>
-
-## Milestones
-1. <milestone> — <what works at the end of it>
-2. ...
 
 ## Open questions
 - <question> — <who can answer>

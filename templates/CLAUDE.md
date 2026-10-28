@@ -6,7 +6,8 @@ every Claude Code session in this repo, not only to `/idleflow:*` runs.
 
 ## Start of every session
 
-1. Read `progress.md`, then the newest two files in `docs/sessions/` (`s_0001.md`, `s_0002.md`, …).
+1. Read `progress.md`, then the newest two files in `docs/sessions/` by name (`s_20261028-0930-ada.md`;
+   older notes are `s_0001.md`, `s_0002.md`, …, and sort first).
    That is where the last sessions left off. Do not start from the code; start from these.
 2. **Ground the docs before anything else.** Check every claim in `index.md`, `prd.md`,
    `progress.md`, `README.md`, this file and `docs/**/*.md` against the code: a path that no
@@ -22,7 +23,8 @@ every Claude Code session in this repo, not only to `/idleflow:*` runs.
 `/idleflow:endsession` writes the note and the `progress.md` entry and commits them, with "Next"
 as the ordered handoff; it refuses while a run is still active. Commit the work itself first.
 
-1. Write `docs/sessions/s_NNNN.md` (next number, four digits) from `docs/sessions/TEMPLATE.md`:
+1. Write `docs/sessions/s_<YYYYMMDD-HHMM>-<your git name>.md` from `docs/sessions/TEMPLATE.md` (time and
+   author, so two people never pick the same name):
    what was done, which files changed and why, what is next, open questions. Short; paths, not prose.
 2. Add an entry at the top of `progress.md` and bring `index.md` up to date if any file or
    directory a newcomer must know about was added, moved or removed.
@@ -32,7 +34,8 @@ as the ordered handoff; it refuses while a run is still active. Commit the work 
 
 A change that makes any sentence in any `.md` file wrong updates that sentence in the same
 commit. Docs describe the code as it is, never as it is planned to be; plans live in `prd.md`
-under "Nice to have" and "Milestones", and in `progress.md` under "Next".
+under "Nice to have", and in `progress.md` under "Milestones" and "Next". `prd.md` describes
+the product; `progress.md` says how far along it is.
 
 ## Do not reinvent the wheel
 
@@ -93,7 +96,7 @@ still no footers anywhere.
 
 releases: <github-tagged | none>
 
-`github-tagged`: semantic versions. When a `prd.md` milestone completes and the suite is green,
+`github-tagged`: semantic versions. When a `progress.md` milestone completes and the suite is green,
 tag `vX.Y.Z` (minor bump per milestone, patch for fixes, major when a public interface breaks)
 and publish a GitHub release whose notes are that milestone's `progress.md` entries. Nothing is
 tagged automatically; a run that completes a milestone proposes the tag and a human runs:

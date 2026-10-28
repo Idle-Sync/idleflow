@@ -31,11 +31,12 @@ Pushback, everywhere in this run: when the human's answer conflicts with the cod
 ```
 bash "$RUN" migrate                  # moves files an older idleflow kept under .claude/; a no-op otherwise
 bash "$RUN" update-check             # one line when a newer idleflow is out, nothing otherwise
+bash "$RUN" behind                   # commits teammates pushed that this branch lacks; empty when current or offline
 bash "$RUN" conf                     # note every value; you pass them to agents
 ID=$(bash "$RUN" new "<short-slug-from-issue>")
 LESSONS=$(bash "$RUN" path lessons)  # .idleflow/lessons.md, or docs/lessons.md under lessons_in: docs
 ```
-If `migrate` exits non-zero, show its message and stop; do not move files by hand. When it moved something, repeat its lines to the human. Repeat an `update-check` line once as it is; never update the plugin during the run. Ensure `$LESSONS` exists (copy `templates/lessons.md` if not). Run **R1** (readability mode and ignore file) from `procedures/repo-setup.md` if it applies. Tell the human: `Run <ID> started on idleflow <PLUGIN_VERSION> (mode: <mode>). Exploring.`
+If `migrate` exits non-zero, show its message and stop; do not move files by hand. When it moved something, repeat its lines to the human. Repeat an `update-check` line once as it is; never update the plugin during the run. When `behind` prints a number, ask before anything else: **Pull first (Recommended)** (`git pull --ff-only`; the plan then reads the team's latest lessons, conventions and settings) / **Run on this base**; on a failed pull, show the error and stop. Ensure `$LESSONS` exists (copy `templates/lessons.md` if not). Run **R1** (readability mode and ignore file) from `procedures/repo-setup.md` if it applies. Tell the human: `Run <ID> started on idleflow <PLUGIN_VERSION> (mode: <mode>). Exploring.`
 
 ## 1. Explore (Sonnet)
 
@@ -128,7 +129,7 @@ After the last merge, run the plan's "Verification after merge" command. If it f
 
 ## 9. Retro and finish
 
-First decide the release tag: if `CLAUDE.md` says `releases: github-tagged` and this run completed a `prd.md` milestone (every "Must do" item of it now has a landed task), propose `vX.Y.Z` by the rule in `CLAUDE.md` "Releases". Spawn `idleflow:retro` with the run directory path, the `$LESSONS` path, the output of `bash "$RUN" conf`, the `docs:` value and that tag when there is one. When `docs: yes` it also writes the session note and updates `progress.md` and `index.md`, and commits them. **Plugin gaps**, before every `finish` in this run (`done`, `needs-human`, or any other status), after the retro has run when it runs: read `.idleflow/runs/active/gaps.md` if it exists, plus any gap you hit yourself. If there are lines, list them and ask once with AskUserQuestion: **Report them to Idle-Sync/idleflow** / **Not now**. On yes, read `${CLAUDE_PLUGIN_ROOT}/commands/plugin-feedback.md` and follow its batch mode with the lines and the run id; it opens the issues from the human's GitHub account and asks nothing further. Never open an issue without that answer.
+`NOTE=$(bash "$RUN" session-name)` when `docs: yes`. First decide the release tag: if `CLAUDE.md` says `releases: github-tagged` and this run completes a milestone (every box under it in `progress.md` "Milestones" is ticked, or is one this run's merged tasks make true), propose `vX.Y.Z` by the rule in `CLAUDE.md` "Releases". Spawn `idleflow:retro` with the run directory path, the `$NOTE` path, the `$LESSONS` path, the output of `bash "$RUN" conf`, the `docs:` value and that tag when there is one. When `docs: yes` it also writes the session note and updates `progress.md` and `index.md`, and commits them. **Plugin gaps**, before every `finish` in this run (`done`, `needs-human`, or any other status), after the retro has run when it runs: read `.idleflow/runs/active/gaps.md` if it exists, plus any gap you hit yourself. If there are lines, list them and ask once with AskUserQuestion: **Report them to Idle-Sync/idleflow** / **Not now**. On yes, read `${CLAUDE_PLUGIN_ROOT}/commands/plugin-feedback.md` and follow its batch mode with the lines and the run id; it opens the issues from the human's GitHub account and asks nothing further. Never open an issue without that answer.
 
 Then remove worktrees: `bash "$RUN" wt list` → `bash "$RUN" wt rm <id>` each. Then `bash "$RUN" finish done`.
 

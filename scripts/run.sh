@@ -24,6 +24,9 @@
 #   run.sh migrate                        -> moves files a pre-.idleflow/ version kept under .claude/ and commits the move
 #   run.sh doctor                         -> checks the repo's idleflow setup, one "ok|warn|fail|suggest <check>: <detail> | fix: <how>" line each
 #   run.sh update-check                   -> prints one line when a newer idleflow is tagged on GitHub, nothing otherwise
+#   run.sh session-name                   -> the path for a new session note: docs/sessions/s_<YYYYMMDD-HHMM>-<author>.md
+#   run.sh behind                         -> commits the upstream has that this branch lacks (fetches first; empty offline)
+#   run.sh team-install                   -> recommends idleflow in the committed .claude/settings.json, so teammates get it
 #   run.sh agent <name>                   -> how to spawn that agent here: agent, model, extra instructions, contract
 #   run.sh custom list                    -> this repo's customizations (.idleflow/idleflow.conf, agent instructions, replaced agents)
 #   run.sh custom set <KEY> <value>       -> validates and writes one setting to .idleflow/idleflow.conf
@@ -132,6 +135,16 @@ set_project_conf() { # set_project_conf <KEY> [value]: no value removes the key
   cat "$tmp" > "$PROJECT_CONF" && rm -f "$tmp"
 }
 
+# Several people add to these files at the same spot (new lessons at the end, new progress
+# entries at the top); git's built-in union driver keeps both sides instead of conflicting.
+UNION_MERGE_FILES=".idleflow/lessons.md docs/lessons.md progress.md .idleflow/suggestions.md"
+ensure_union_merge() {
+  local f
+  for f in $UNION_MERGE_FILES; do add_ignore "$REPO/.gitattributes" "$f merge=union"; done
+}
+
+author_slug() { git config user.name 2>/dev/null | tr 'A-Z' 'a-z' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//' | cut -c1-20; }
+
 wt_path() { echo "${REPO}${SUFFIX}/$1"; }
 
 exclude_file() {
@@ -206,7 +219,7 @@ case "$cmd" in
     base="$("${G[@]}" symbolic-ref --short -q HEAD || echo HEAD)"
     base_sha="$("${G[@]}" rev-parse -q --verify HEAD 2>/dev/null || true)"
     cat > "$ACTIVE/run.json" <<JSON
-{"id":"$id","plugin_version":$(json_str "$(plugin_version)"),"slug":"$safe","base":$(json_str "$base"),"base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"gate_trips":0,"review_findings":0}
+{"id":"$id","plugin_version":$(json_str "$(plugin_version)"),"by":$(json_str "$(git config user.name || echo unknown)"),"slug":"$safe","base":$(json_str "$base"),"base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"gate_trips":0,"review_findings":0}
 JSON
     echo "{\"repo\":$(json_str "$(native_path "$REPO")"),\"tasks\":{}}" > "$ACTIVE/ownership.json"
     add_ignore "$(ignore_file)" '.idleflow/runs/'
@@ -316,6 +329,7 @@ JSON
     # never other staged work; ignored paths (a docs/ kept local) are skipped, never forced.
     [ -f "$("${G[@]}" rev-parse --absolute-git-dir)/MERGE_HEAD" ] && { echo "snapshot: a merge is in progress; finish or abort it first" >&2; exit 1; }
     paths=()
+    ensure_union_merge
     for f in .idleflow CLAUDE.md prd.md progress.md index.md README.md .gitignore .gitattributes docs; do
       [ -e "$REPO/$f" ] || continue
       # the human chose what is ignored (docs_in_git in R2); an ignored path is simply skipped
@@ -396,6 +410,29 @@ JSON
       gcommit -m "chore: move idleflow files to .idleflow/" -- "${paths[@]}"
       echo "migrate: committed $("${G[@]}" rev-parse --short HEAD)"
     fi
+    ;;
+  session-name)
+    # Named by time and author, not by a running number: two people writing a note on the same
+    # day would otherwise both pick the next number.
+    who="$(author_slug)"; base="docs/sessions/s_$(date +%Y%m%d-%H%M)-${who:-anon}"; f="$base.md"; n=2
+    while [ -e "$REPO/$f" ]; do f="$base-$n.md"; n=$((n+1)); done
+    echo "$f"
+    ;;
+  behind)
+    "${G[@]}" rev-parse -q --verify '@{u}' >/dev/null 2>&1 || exit 0
+    GIT_TERMINAL_PROMPT=0 "${G[@]}" fetch -q 2>/dev/null || exit 0
+    n="$("${G[@]}" rev-list --count 'HEAD..@{u}')"
+    [ "$n" -gt 0 ] && echo "$n"
+    exit 0
+    ;;
+  team-install)
+    f="$REPO/.claude/settings.json"
+    mkdir -p "$REPO/.claude"
+    [ -s "$f" ] || echo '{}' > "$f"
+    idleflow_rt set "$f" extraKnownMarketplaces.idlesync '{"source":{"source":"github","repo":"Idle-Sync/idleflow"}}' 2>/dev/null \
+      || { echo "team-install: $f is not valid JSON; fix it first" >&2; exit 1; }
+    idleflow_rt set "$f" enabledPlugins.idleflow@idlesync true
+    native_path "$f"
     ;;
   agent)
     a="${1:-}"; known_agent "$a"
@@ -558,6 +595,16 @@ JSON
       [ -f "$HERE/../agents/$(basename "$f")" ] || check_line warn agents "instructions for unknown agent $(basename "$f" .md)" "rename or delete $f"
     done
 
+    behind="$(bash "$0" behind 2>/dev/null || true)"
+    if [ -n "$behind" ]; then check_line warn sync "this branch is $behind commit(s) behind its upstream: teammates' lessons and settings are missing" "git pull --ff-only"; fi
+    people="$("${G[@]}" log --format='%ae' 2>/dev/null | sort -u | wc -l | tr -d ' ')"
+    if grep -q '"idleflow@idlesync"' "$REPO/.claude/settings.json" 2>/dev/null; then check_line ok team ".claude/settings.json recommends idleflow to everyone who opens the repo"
+    elif [ "${people:-0}" -gt 1 ]; then check_line warn team "$people people commit here, but .claude/settings.json does not recommend idleflow, so teammates work without it" "run.sh team-install"
+    else check_line ok team "one contributor so far (run.sh team-install when others join)"; fi
+    union_missing=""
+    for f in $UNION_MERGE_FILES; do grep -qxF "$f merge=union" "$REPO/.gitattributes" 2>/dev/null || union_missing="$union_missing $f"; done
+    if [ -n "$union_missing" ]; then check_line warn merges "no union merge for:$union_missing, so concurrent entries conflict" "run.sh snapshot"; else check_line ok merges "lessons, progress and suggestions merge without conflicts"; fi
+
     # the retro's suggestions, newest per key, minus those declined or already applied
     if [ -f "$RUNS/config-proposals.md" ]; then
       while IFS=$'\t' read -r key val line; do
@@ -569,6 +616,10 @@ JSON
           split($0, w, " "); key = w[3]; sub(/:$/, "", key); last[key] = w[6] "\t" $0; if (!(key in seen)) { seen[key] = 1; order[++n] = key }
         } END { for (i = 1; i <= n; i++) print order[i] "\t" last[order[i]] }' "$RUNS/config-proposals.md")
     fi
+
+    if grep -q '^## Milestones' "$REPO/prd.md" 2>/dev/null; then check_line warn milestones "milestones are still in prd.md; progress.md now holds them and prd.md only the product" "move them as procedures/repo-setup.md R2 step 5 says"
+    elif [ -f "$REPO/progress.md" ] && ! grep -q '^## Milestones' "$REPO/progress.md"; then check_line warn milestones "progress.md has no Milestones section, so /idleflow:progress has nothing to count" "add one as procedures/repo-setup.md R2 step 5 says"
+    elif [ -f "$REPO/progress.md" ]; then check_line ok milestones "progress.md holds the milestones"; fi
 
     if [ "$(conventions_value docs)" = yes ]; then
       gone=()
@@ -586,5 +637,5 @@ JSON
     echo "REPORT_CUSTOMIZATIONS=$(report_preference)"
     ;;
   *)
-    sed -n '2,34p' "$0"; exit 1;;
+    sed -n '2,37p' "$0"; exit 1;;
 esac

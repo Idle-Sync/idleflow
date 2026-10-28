@@ -18,6 +18,7 @@ RUN="${CLAUDE_PLUGIN_ROOT}/scripts/run.sh"     # keep the quotes: the path may c
    - `run.sh <args>` → `bash "$RUN" <args>`. `migrate` runs before every other fix.
    - `/idleflow:<command>` → read `${CLAUDE_PLUGIN_ROOT}/commands/<command>.md` and follow it.
    - an update → run the quoted commands exactly, then tell the human the new version takes effect after a Claude Code restart, not before.
+   - the `milestones` fix → `procedures/repo-setup.md` R2 step 5 (it shows the diff and asks before committing).
    - anything else (merge two lessons files, remove an ignore rule) → do it with the smallest edit, show the diff, and commit it alone: `chore: <what was fixed>`.
 6. `suggest` lines are the retro's customization suggestions that are still open. Offer each once, after the fixes, with its evidence: **Apply it** (read `${CLAUDE_PLUGIN_ROOT}/commands/customize.md` and follow it with that change) / **Not now** / **Never suggest this** (append `- declined: <KEY> -> <value> (doctor, <date>)` to `.idleflow/suggestions.md` and commit that file alone: `chore: decline idleflow suggestion <KEY>`).
 7. `bash "$RUN" doctor` again and reply with only the lines that are still `warn` or `fail`, or `idleflow: all <N> checks pass`.

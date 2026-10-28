@@ -79,14 +79,14 @@ Run **R3**, **R4** and **R5** from `procedures/repo-setup.md` with `greenfield` 
 
 Spawn `idleflow:planner` in **PRD mode** with: `brainstorm.md`, `docs/market-research.md`, `.idleflow/conventions.md`, `templates/prd.md`, output `prd.md` at the repo root. Wait.
 
-Show the human the PRD's "Must do (v1)", "Milestones" and "Two-year shape" sections (paste only those). Ask: **Approve** / **Change something** (free text; send it back to the planner once with the change) / **Approve with notes** (append the notes under "Open questions"). Loop on "Change something" at most twice, then ask the human to edit `prd.md` by hand and say when done.
+Show the human the PRD's "Must do (v1)" and "Two-year shape" sections and the "Milestones" section of `progress.md` (paste only those). Ask: **Approve** / **Change something** (free text; send it back to the planner once with the change) / **Approve with notes** (append the notes under "Open questions"). Loop on "Change something" at most twice, then ask the human to edit `prd.md` by hand and say when done.
 
 ## 6. Scaffold the docs and rules
 
 1. Run **R2** steps 1 and 2 (`progress.md`, `index.md`, `docs/sessions/TEMPLATE.md`, `CLAUDE.md`). Fill `co_author_claude:` and `releases:` in `CLAUDE.md` from step 3, `<Project name>` from the brainstorm, and the "Commands" lines with the install/test/run commands the accepted stack decisions imply (or `<to be set by the first feature run>`).
 2. `index.md`: list what exists now (`prd.md`, `progress.md`, `CLAUDE.md`, `.idleflow/`, `docs/`), nothing imagined.
-3. `progress.md`: first entry: `## <date> — project initialised (run <ID>)` with: brainstorm done, market research verdict, N stack decisions, N library decisions, N tooling items, PRD approved, next: milestone 1 from `prd.md`.
-4. `docs/sessions/s_0001.md` from the template: what this session decided, the files it created, next = milestone 1.
+3. `progress.md` (its "Milestones" section is already written): first "Log" entry: `## <date> — project initialised (run <ID>)` with: brainstorm done, market research verdict, N stack decisions, N library decisions, N tooling items, PRD approved, next: milestone 1 from `prd.md`.
+4. The note at `$(bash "$RUN" session-name)` from the template: what this session decided, the files it created, next = milestone 1.
 5. `.gitignore`: add the stack's usual entries (`.venv/`, `node_modules/`, `dist/`, `.env`) only for stacks that were accepted; every clone needs them, so they go here whatever `ignore_in:` says. idleflow's own entries were placed in step 3.
 6. `README.md` if absent: the project name, the one-sentence "what", the one-line "who", and `See prd.md`. Nothing else; it grows with the code.
 
@@ -108,10 +108,10 @@ If releases were chosen: confirm the repo name (default: the folder name) and ow
 ## 8. Hand off
 
 Final message, nothing more:
-- one line: the verdict from market research and the PRD milestone count,
+- one line: the verdict from market research and the milestone count from `progress.md`,
 - one line each: readability mode, attribution, releases, docs in git, tooling installed,
 - the paths created,
-- `Next: /idleflow:feature "Milestone 1: <title from prd.md>"`.
+- `Next: /idleflow:feature "Milestone 1: <title from progress.md>"`.
 
 When R5 installed anything, add a line before `Next:`: restart Claude Code before milestone 1 so agents can use the new tooling.
 
