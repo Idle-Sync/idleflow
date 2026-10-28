@@ -139,7 +139,7 @@ For each task:
 
 In plan merge order: `bash "$RUN" merge <task-id>`. Exit 3 (`CONFLICT`) means the ownership map was wrong; do not resolve by hand. Re-run the later task against the new base (`wt rm`, `wt add <id> HEAD`, `set tasks.<id>.status '"building"'`, re-spawn with the same prompt), re-gate, re-review, merge. One attempt; then stop and ask the human as in step 7. Exit 4 is a different failure (unapproved task, unknown branch, dirty checkout): show the message, remove the worktrees, run the **Plugin gaps** question from step 9, and `bash "$RUN" finish needs-human`.
 
-After the last merge, run `bash "$RUN" repo-gate main` when the run has a gate, then the plan's "Verification after merge" command; a gate failure the base did not have counts as a failed verification. If it fails, show the human the head of the failing output, remove the worktrees, run the **Plugin gaps** question from step 9, and finish with `needs-human`. Never spawn agents to fix a red suite; that is a new run.
+After the last merge, run `bash "$RUN" repo-gate main` when the run has a gate, then the plan's "Verification after merge" command; a gate failure the base did not have counts as a failed verification. When it passes, `bash "$RUN" docs` regenerates the generated blocks in the repo's Markdown from the merged code; when it prints `regenerated <files>`, commit exactly those files: `docs: regenerate generated sections`. If it fails, show the human the head of the failing output, remove the worktrees, run the **Plugin gaps** question from step 9, and finish with `needs-human`. Never spawn agents to fix a red suite; that is a new run.
 
 ## 9. Retro and finish
 

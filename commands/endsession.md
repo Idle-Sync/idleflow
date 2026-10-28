@@ -43,13 +43,15 @@ Stop, write nothing, and say what is still running when any of these holds:
 
 ## 3. Write
 
+First `bash "$RUN" docs`: it regenerates the generated blocks from the repo; commit any files it names with the note below.
+
 Read `docs:` in `.idleflow/conventions.md`. When it is `no` (or the file is missing), print the note from the shape below in your reply, write nothing, and stop: the repo keeps no session notes.
 
 When `docs: yes`:
 
 1. The note at `$(bash "$RUN" session-name)` (named by time and author, so teammates never pick the same name), from `docs/sessions/TEMPLATE.md`, `by: Claude Code session, <git user.name>`. "Done" covers the whole session: each run (id, title, what merged, with paths) and the work outside runs. "Next" is the handoff: a numbered list in the order the next session should do it, each item one line with the exact command where there is one. Uncommitted changes and unpushed commits come first, then CI, then restarts, then release and deploy steps, then `needs-human` runs and open deviations, then the first open box of the first unfinished milestone in `progress.md`. Add the human's notes from `$ARGUMENTS` where they belong. "Open questions" holds what the human still has to decide.
 2. `progress.md`: one entry at the top, under `<!-- progress start -->`: `## <date> — session end`, at most four bullets: what landed this session, and the first two items of the handoff. Skip it when a run's retro already wrote an entry today and nothing landed since; the note alone carries the handoff then.
-3. Stage only those two files and commit: `docs: session handoff`. Follow `CLAUDE.md` for the `Co-Authored-By` trailer. `git add` refuses an ignored path (a `docs/` kept local): skip it, never `git add -f`, and say the note stays local.
+3. Stage only those two files, plus any `run.sh docs` regenerated, and commit: `docs: session handoff`. Follow `CLAUDE.md` for the `Co-Authored-By` trailer. `git add` refuses an ignored path (a `docs/` kept local): skip it, never `git add -f`, and say the note stays local.
 
 No meta commentary in the note or the commit: state what happened and what is next.
 

@@ -14,6 +14,7 @@ Subcommands:
   gate   <limit> <slack> <numstat-all-file> <numstat-code-file>
   guard                                   hook: payload on stdin; exit 2 blocks
   detach <cwd> <log> <pidfile> <command>  runs the command in its own session, output to log; writes its pid
+  entries <file> <key>                    one "name<TAB>value" line per entry of the object at that top-level key
 """
 import json
 import os
@@ -306,6 +307,19 @@ def cmd_detach(cwd, log, pidfile, command):
         f.write(str(proc.pid))
 
 
+def cmd_entries(path, key):
+    try:
+        obj = load(path)
+    except Exception:
+        return
+    section = obj.get(key) if isinstance(obj, dict) else None
+    if not isinstance(section, dict):
+        return
+    for name, value in section.items():
+        text = value if isinstance(value, str) else json.dumps(value, separators=(",", ":"), ensure_ascii=False)
+        print("%s\t%s" % (name, text.replace("\t", " ").replace("\n", " ")))
+
+
 def main(argv):
     # -I (isolated mode) ignores PYTHONUTF8, so on Windows stdout/stderr would be cp1252
     # and a BLOCKED message with a non-ASCII filename would come out garbled.
@@ -320,7 +334,7 @@ def main(argv):
     cmd, args = argv[0], argv[1:]
     table = {
         "get": cmd_get, "set": cmd_set, "inc": cmd_inc, "finish": cmd_finish,
-        "own": cmd_own, "gate": cmd_gate, "guard": cmd_guard, "detach": cmd_detach,
+        "own": cmd_own, "gate": cmd_gate, "guard": cmd_guard, "detach": cmd_detach, "entries": cmd_entries,
     }
     if cmd not in table:
         sys.stderr.write("idleflow.py: unknown subcommand %r\n" % cmd)
