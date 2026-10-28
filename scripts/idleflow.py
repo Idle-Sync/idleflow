@@ -176,13 +176,13 @@ def read_text(path):
 def find_map(start):
     d = norm(start)
     while True:
-        cand = os.path.join(d, ".claude", "runs", "active", "ownership.json")
+        cand = os.path.join(d, ".idleflow", "runs", "active", "ownership.json")
         if os.path.isfile(cand):
             return cand
-        marker = os.path.join(d, ".claude-run", "repo")
+        marker = os.path.join(d, ".idleflow-run", "repo")
         if os.path.isfile(marker):
             try:
-                cand = os.path.join(norm(read_text(marker)), ".claude", "runs", "active", "ownership.json")
+                cand = os.path.join(norm(read_text(marker)), ".idleflow", "runs", "active", "ownership.json")
                 if os.path.isfile(cand):
                     return cand
             except Exception:
@@ -232,11 +232,11 @@ def cmd_guard():
     # through run.sh, and a task that could rewrite ownership.json, run.json or a worktree
     # marker could grant itself globs, approve itself, or make this guard find no map.
     name = os.path.basename(path)
-    if "/.claude/runs/" in path and name in ("ownership.json", "run.json", "gate.json"):
+    if "/.idleflow/runs/" in path and name in ("ownership.json", "run.json", "gate.json"):
         sys.stderr.write("[idleflow] BLOCKED: %s is run state; use scripts/run.sh (set, own, inc) instead.\n" % name)
         sys.exit(2)
-    if "/.claude-run/" in path and name != "result.md":
-        sys.stderr.write("[idleflow] BLOCKED: %s is a worktree marker; only .claude-run/result.md may be written.\n" % name)
+    if "/.idleflow-run/" in path and name != "result.md":
+        sys.stderr.write("[idleflow] BLOCKED: %s is a worktree marker; only .idleflow-run/result.md may be written.\n" % name)
         sys.exit(2)
 
     for tid, t in (omap.get("tasks") or {}).items():
@@ -246,7 +246,7 @@ def cmd_guard():
         if path == wt or path.startswith(wt + "/"):
             rel = path[len(wt) + 1:] if path != wt else ""
             owns = t.get("owns") or []
-            implicit = [".claude-run/result.md"]
+            implicit = [".idleflow-run/result.md"]
             if glob_match(rel, list(owns) + implicit):
                 sys.exit(0)
             sys.stderr.write(
@@ -267,7 +267,7 @@ def cmd_guard():
             sys.stderr.write(
                 "[idleflow] BLOCKED: %s is in the main checkout while tasks are building.\n"
                 "Implementers edit only inside their worktree; the orchestrator edits only "
-                ".claude/runs/**, .claude/conventions.md, .claude/lessons.md, docs/**, root *.md and .gitignore during the build.\n" % rel
+                ".idleflow/**, docs/**, root *.md and .gitignore during the build.\n" % rel
             )
             sys.exit(2)
     sys.exit(0)
@@ -288,7 +288,7 @@ def building(run_dir):
 def orchestrator_file(rel):
     """Paths the orchestrator may write in the main checkout mid-build."""
     return (
-        rel.startswith(".claude/runs/") or rel in (".claude/conventions.md", ".claude/lessons.md")
+        rel.startswith(".idleflow/")
         or rel.startswith("docs/") or rel == ".gitignore"
         or ("/" not in rel and rel.endswith(".md"))
     )

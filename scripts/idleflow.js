@@ -165,12 +165,12 @@ function isFile(p) {
 function findMap(start) {
   let d = norm(start);
   for (;;) {
-    let cand = path.join(d, ".claude", "runs", "active", "ownership.json");
+    let cand = path.join(d, ".idleflow", "runs", "active", "ownership.json");
     if (isFile(cand)) return cand;
-    const marker = path.join(d, ".claude-run", "repo");
+    const marker = path.join(d, ".idleflow-run", "repo");
     if (isFile(marker)) {
       try {
-        cand = path.join(norm(fs.readFileSync(marker, "utf8").trim()), ".claude", "runs", "active", "ownership.json");
+        cand = path.join(norm(fs.readFileSync(marker, "utf8").trim()), ".idleflow", "runs", "active", "ownership.json");
         if (isFile(cand)) return cand;
       } catch {}
     }
@@ -237,12 +237,12 @@ function cmdGuard() {
   // through run.sh, and a task that could rewrite ownership.json, run.json or a worktree
   // marker could grant itself globs, approve itself, or make this guard find no map.
   const name = path.basename(p);
-  if (p.includes("/.claude/runs/") && ["ownership.json", "run.json", "gate.json"].includes(name)) {
+  if (p.includes("/.idleflow/runs/") && ["ownership.json", "run.json", "gate.json"].includes(name)) {
     process.stderr.write(`[idleflow] BLOCKED: ${name} is run state; use scripts/run.sh (set, own, inc) instead.\n`);
     process.exit(2);
   }
-  if (p.includes("/.claude-run/") && name !== "result.md") {
-    process.stderr.write(`[idleflow] BLOCKED: ${name} is a worktree marker; only .claude-run/result.md may be written.\n`);
+  if (p.includes("/.idleflow-run/") && name !== "result.md") {
+    process.stderr.write(`[idleflow] BLOCKED: ${name} is a worktree marker; only .idleflow-run/result.md may be written.\n`);
     process.exit(2);
   }
 
@@ -252,7 +252,7 @@ function cmdGuard() {
     if (p === wt || p.startsWith(wt + "/")) {
       const rel = p === wt ? "" : p.slice(wt.length + 1);
       const owns = Array.isArray(t.owns) ? t.owns : [];
-      if (globMatch(rel, owns.concat([".claude-run/result.md"]))) process.exit(0);
+      if (globMatch(rel, owns.concat([".idleflow-run/result.md"]))) process.exit(0);
       process.stderr.write(
         `[idleflow] BLOCKED: ${rel} is not owned by task ${tid}.\n` +
           `Owned globs: ${JSON.stringify(owns)}\n` +
@@ -272,7 +272,7 @@ function cmdGuard() {
       process.stderr.write(
         `[idleflow] BLOCKED: ${rel} is in the main checkout while tasks are building.\n` +
           `Implementers edit only inside their worktree; the orchestrator edits only ` +
-          `.claude/runs/**, .claude/conventions.md, .claude/lessons.md, docs/**, root *.md and .gitignore during the build.\n`
+          `.idleflow/**, docs/**, root *.md and .gitignore during the build.\n`
       );
       process.exit(2);
     }
@@ -292,8 +292,7 @@ function building(runDir) {
 // Paths the orchestrator may write in the main checkout mid-build.
 function orchestratorFile(rel) {
   return (
-    rel.startsWith(".claude/runs/") || rel === ".claude/conventions.md" || rel === ".claude/lessons.md" ||
-    rel.startsWith("docs/") || rel === ".gitignore" || (!rel.includes("/") && rel.endsWith(".md"))
+    rel.startsWith(".idleflow/") || rel.startsWith("docs/") || rel === ".gitignore" || (!rel.includes("/") && rel.endsWith(".md"))
   );
 }
 

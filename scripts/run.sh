@@ -2,7 +2,7 @@
 # Run lifecycle helper. Called by the orchestrator (the /idleflow:* commands).
 # Everything is plain git + files so a run can be inspected or resumed by hand.
 #
-#   run.sh new <slug>                     -> creates .claude/runs/active/ for a new run, prints its <id>
+#   run.sh new <slug>                     -> creates .idleflow/runs/active/ for a new run, prints its <id>
 #   run.sh wt add <task-id> [base-ref]    -> creates worktree <repo>__wt/<task-id> on branch idleflow/<run-id>/<task-id>,
 #                                            records the task's base sha in run.json, prints the worktree path
 #   run.sh wt rm <task-id>                -> removes the worktree (keeps the branch); works with or without an active run
@@ -11,18 +11,20 @@
 #   run.sh get <key>                      -> prints a value from run.json (dotted keys ok)
 #   run.sh set <key> <json>               -> sets a value in run.json (dotted keys ok)
 #   run.sh inc <key> [n]                  -> adds n (default 1) to a counter in run.json
-#   run.sh report <task-id>               -> copies the task's .claude-run/result.md into the run dir as report.md, prints its path
+#   run.sh report <task-id>               -> copies the task's .idleflow-run/result.md into the run dir as report.md, prints its path
 #   run.sh gate <task-id> [limit]         -> runs diff-gate against the task's own base, writes tasks/<id>/gate.json, prints it;
 #                                            refreshes the run's report.md when the worktree copy is newer
 #   run.sh merge <task-id>                -> merges the task branch into the current branch (no-ff); exit 3 on conflict, 4 otherwise
 #   run.sh ignore <pattern>               -> adds the pattern to the ignore file `ignore_in:` names, prints that file
 #   run.sh snapshot                       -> commits the repo-level docs the orchestrator writes (conventions, CLAUDE.md, prd, ...)
-#   run.sh finish [status]                -> logs the run to .claude/runs/log.jsonl, renames active/ to <id>/
+#   run.sh finish [status]                -> logs the run to .idleflow/runs/log.jsonl, renames active/ to <id>/
 #   run.sh loc                            -> prints hand-written code lines in the repo (DIFF_EXCLUDE applied)
 #   run.sh conf                           -> prints resolved config values and the runtime in use
+#   run.sh path <conventions|lessons|runs> -> prints where that file or directory lives in this repo
+#   run.sh migrate                        -> moves files a pre-.idleflow/ version kept under .claude/ and commits the move
 #
-# The active run lives in .claude/runs/active/ (a real directory, no symlinks, so it
-# works on Windows). `finish` renames it to .claude/runs/<id>/. JSON work is done by
+# The active run lives in .idleflow/runs/active/ (a real directory, no symlinks, so it
+# works on Windows). `finish` renames it to .idleflow/runs/<id>/. JSON work is done by
 # scripts/idleflow.py or idleflow.js through rt.sh, whichever runtime is installed.
 # Commits made here use the human's git identity; the "idleflow" identity is a fallback
 # for machines with none configured.
@@ -37,7 +39,9 @@ CONF="${IDLEFLOW_CONF:-$HERE/../config/idleflow.conf}"
 source "$HERE/rt.sh"
 
 REPO="$(git rev-parse --show-toplevel)"
-RUNS="$REPO/.claude/runs"
+IDLE="$REPO/.idleflow"
+CONVENTIONS="$IDLE/conventions.md"
+RUNS="$IDLE/runs"
 ACTIVE="$RUNS/active"
 SUFFIX="${WORKTREE_SUFFIX:-__wt}"
 G=(git -C "$REPO")
@@ -57,13 +61,28 @@ active_id() {
   [ -f "$ACTIVE/run.json" ] || { echo "no active run (run.sh new <slug> first)" >&2; exit 1; }
   local id started_on
   id="$(idleflow_rt get "$ACTIVE/run.json" id)"
-  [ -n "$id" ] && [ "$id" != "null" ] || { echo "active run.json has no id; fix or delete .claude/runs/active" >&2; exit 1; }
+  [ -n "$id" ] && [ "$id" != "null" ] || { echo "active run.json has no id; fix or delete .idleflow/runs/active" >&2; exit 1; }
   # a plugin reload mid-run hands later agents a new version while this run keeps its old scripts
   started_on="$(idleflow_rt get "$ACTIVE/run.json" plugin_version 2>/dev/null || echo unknown)"
   if [ "$started_on" != unknown ] && [ "$started_on" != "$(plugin_version)" ]; then
     echo "WARNING: run $id started on idleflow $started_on but this is idleflow $(plugin_version); agents and scripts may disagree. Finish the run, then restart Claude Code." >&2
   fi
   echo "$id"
+}
+
+# `lessons_in: docs` puts the lessons next to the team's other docs; anything else keeps them in .idleflow/.
+lessons_path() {
+  if grep -q '^lessons_in: *docs' "$CONVENTIONS" 2>/dev/null; then echo "$REPO/docs/lessons.md"; else echo "$IDLE/lessons.md"; fi
+}
+
+# Older versions kept idleflow's files under .claude/; these rewrite mentions of the old paths.
+rewrite_old_paths() {
+  sed -e 's#\.claude/conventions\.md#.idleflow/conventions.md#g' -e 's#\.claude/lessons\.md#.idleflow/lessons.md#g' \
+      -e 's#\.claude/runs#.idleflow/runs#g' -e 's#\.claude-run/#.idleflow-run/#g'
+}
+rewrite_file() { # keeps the file's mode, which mv over a temp file would not
+  local f="$1" tmp="$1.idleflow-tmp"
+  rewrite_old_paths < "$f" > "$tmp" && cat "$tmp" > "$f" && rm -f "$tmp"
 }
 
 wt_path() { echo "${REPO}${SUFFIX}/$1"; }
@@ -78,7 +97,7 @@ exclude_file() {
 # idleflow's own ignore rules stay clone-local until the human picks `ignore_in: gitignore`,
 # so nothing about the tooling reaches a committed file unasked.
 ignore_file() {
-  if grep -q '^ignore_in: *gitignore' "$REPO/.claude/conventions.md" 2>/dev/null; then
+  if grep -q '^ignore_in: *gitignore' "$CONVENTIONS" 2>/dev/null; then
     echo "$REPO/.gitignore"
   else
     exclude_file
@@ -111,17 +130,17 @@ park_active() {
   fi
   rm -rf "${RUNS:?}/$old"
   mv "$ACTIVE" "$RUNS/$old"
-  echo "parked unfinished run as .claude/runs/$old" >&2
+  echo "parked unfinished run as .idleflow/runs/$old" >&2
 }
 
 # Copy a task's report out of its worktree (the worktree is deleted at the end of the run).
 # The worktree file is not called report.md: Claude Code's Write tool refuses subagents any
 # file named report*.md (also summary, findings, analysis).
-report_src() { echo "$(wt_path "$1")/.claude-run/result.md"; }
+report_src() { echo "$(wt_path "$1")/.idleflow-run/result.md"; }
 copy_report() {
   local tid="$1" src dst
   src="$(report_src "$tid")"; dst="$ACTIVE/tasks/$tid/report.md"
-  [ -f "$src" ] || { echo "no report at $src (the implementer did not write .claude-run/result.md)" >&2; return 1; }
+  [ -f "$src" ] || { echo "no report at $src (the implementer did not write .idleflow-run/result.md)" >&2; return 1; }
   mkdir -p "$ACTIVE/tasks/$tid"
   cp "$src" "$dst"
   native_path "$dst"
@@ -143,9 +162,9 @@ case "$cmd" in
 {"id":"$id","plugin_version":$(json_str "$(plugin_version)"),"slug":"$safe","base":$(json_str "$base"),"base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"gate_trips":0,"review_findings":0}
 JSON
     echo "{\"repo\":$(json_str "$(native_path "$REPO")"),\"tasks\":{}}" > "$ACTIVE/ownership.json"
-    add_ignore "$(ignore_file)" '.claude/runs/'
+    add_ignore "$(ignore_file)" '.idleflow/runs/'
     # worktree marker dir: excluded locally (shared by all worktrees), never committed or merged
-    add_ignore "$(exclude_file)" '.claude-run/'
+    add_ignore "$(exclude_file)" '.idleflow-run/'
     echo "$id"
     ;;
   wt)
@@ -164,9 +183,9 @@ JSON
         fi
         mkdir -p "$(dirname "$p")"
         "${G[@]}" worktree add -B "$br" "$p" "$base" >/dev/null
-        mkdir -p "$p/.claude-run" "$ACTIVE/tasks/$tid"
-        echo "$tid" > "$p/.claude-run/task-id"
-        native_path "$REPO" > "$p/.claude-run/repo"   # lets the guard hook find the ownership map from inside the worktree
+        mkdir -p "$p/.idleflow-run" "$ACTIVE/tasks/$tid"
+        echo "$tid" > "$p/.idleflow-run/task-id"
+        native_path "$REPO" > "$p/.idleflow-run/repo"   # lets the guard hook find the ownership map from inside the worktree
         # the task's own base: groups merged earlier move the branch, so gate/review must diff from here, not from the run start
         idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.base_sha" "\"$("${G[@]}" rev-parse "$base")\""
         idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.worktree" "$(json_str "$(native_path "$p")")"
@@ -250,7 +269,7 @@ JSON
     # never other staged work; ignored paths (a docs/ kept local) are skipped, never forced.
     [ -f "$("${G[@]}" rev-parse --absolute-git-dir)/MERGE_HEAD" ] && { echo "snapshot: a merge is in progress; finish or abort it first" >&2; exit 1; }
     paths=()
-    for f in .claude/conventions.md .claude/lessons.md CLAUDE.md prd.md progress.md index.md README.md .gitignore .gitattributes docs; do
+    for f in .idleflow CLAUDE.md prd.md progress.md index.md README.md .gitignore .gitattributes docs; do
       [ -e "$REPO/$f" ] || continue
       # the human chose what is ignored (docs_in_git in R2); an ignored path is simply skipped
       if "${G[@]}" check-ignore -q --no-index -- "$f"; then
@@ -279,6 +298,58 @@ JSON
     n="$("${G[@]}" ls-files -z -- . ${EXCL[@]+"${EXCL[@]}"} | xargs -0 -r cat 2>/dev/null | wc -l | tr -d ' ')"
     echo "${n:-0}"
     ;;
+  path)
+    case "${1:?conventions|lessons|runs}" in
+      conventions) native_path "$CONVENTIONS";;
+      lessons) native_path "$(lessons_path)";;
+      runs) native_path "$RUNS";;
+      *) echo "unknown path name: $1" >&2; exit 1;;
+    esac
+    ;;
+  migrate)
+    moves=()
+    [ -e "$REPO/.claude/conventions.md" ] && moves+=(".claude/conventions.md:.idleflow/conventions.md")
+    [ -e "$REPO/.claude/lessons.md" ] && moves+=(".claude/lessons.md:.idleflow/lessons.md")
+    if [ "${#moves[@]}" -eq 0 ] && [ ! -d "$REPO/.claude/runs" ]; then echo "migrate: nothing to move"; exit 0; fi
+    # a run started by the old version must finish on it: its scripts and agents expect the old paths
+    [ -d "$REPO/.claude/runs/active" ] && { echo "migrate: a run is still active in .claude/runs/active; finish it on the idleflow version that started it, then run this again" >&2; exit 1; }
+    [ -f "$("${G[@]}" rev-parse --absolute-git-dir)/MERGE_HEAD" ] && { echo "migrate: a merge is in progress; finish or abort it first" >&2; exit 1; }
+    [ -d "$REPO/.claude/runs" ] && [ -e "$RUNS" ] && { echo "migrate: both .claude/runs and .idleflow/runs exist; keep one by hand, then run this again" >&2; exit 1; }
+    for m in ${moves[@]+"${moves[@]}"}; do
+      old="${m%%:*}"; new="${m#*:}"
+      [ -e "$REPO/$new" ] && { echo "migrate: both $old and $new exist; keep one by hand, then run this again" >&2; exit 1; }
+      [ -z "$("${G[@]}" status --porcelain --untracked-files=no -- "$old")" ] || { echo "migrate: $old has uncommitted changes; commit or discard them first" >&2; exit 1; }
+    done
+    mkdir -p "$IDLE"
+    paths=()
+    for m in ${moves[@]+"${moves[@]}"}; do
+      old="${m%%:*}"; new="${m#*:}"
+      if "${G[@]}" ls-files --error-unmatch -- "$old" >/dev/null 2>&1; then
+        "${G[@]}" mv -- "$old" "$new"; paths+=("$old" "$new")
+      else
+        mv "$REPO/$old" "$REPO/$new"
+      fi
+      echo "migrate: $old -> $new"
+    done
+    if [ -d "$REPO/.claude/runs" ]; then
+      mv "$REPO/.claude/runs" "$RUNS"
+      echo "migrate: .claude/runs/ -> .idleflow/runs/"
+    fi
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      rewrite_file "$REPO/$f"; "${G[@]}" add -- "$f"; paths+=("$f")
+      echo "migrate: rewrote old paths in $f"
+    done <<< "$("${G[@]}" grep -lE '\.claude/(conventions\.md|lessons\.md|runs)|\.claude-run/' -- '*.md' .gitignore 2>/dev/null || true)"
+    f="$(exclude_file)"
+    [ -f "$f" ] && rewrite_file "$f"
+    rmdir "$REPO/.claude" 2>/dev/null || true
+    if [ "${#paths[@]}" -eq 0 ]; then
+      echo "migrate: moved; nothing tracked to commit"
+    else
+      gcommit -m "chore: move idleflow files to .idleflow/" -- "${paths[@]}"
+      echo "migrate: committed $("${G[@]}" rev-parse --short HEAD)"
+    fi
+    ;;
   conf)
     for v in DIFF_LIMIT DIFF_SLACK MAX_IMPLEMENTERS SIZE_M_IMPLEMENTERS DEBATE_ROUNDS MAX_RETRIES SIZE_S_MAX SIZE_M_MAX SIZE_S_OVERRUN LARGE_REPO_LOC; do
       echo "$v=${!v:-}"
@@ -287,5 +358,5 @@ JSON
     echo "PLUGIN_VERSION=$(plugin_version)"
     ;;
   *)
-    sed -n '2,22p' "$0"; exit 1;;
+    sed -n '2,24p' "$0"; exit 1;;
 esac

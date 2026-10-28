@@ -14,7 +14,7 @@ RUN="${CLAUDE_PLUGIN_ROOT}/scripts/run.sh"     # keep the quotes: the path may c
 
 Issue: $ARGUMENTS
 
-If `$ARGUMENTS` is a URL, fetch the issue body with `gh issue view <url> --json title,body` if it is GitHub, otherwise ask the human to paste it. If it is a file path, read it. Write the normalised issue text to `.claude/runs/active/issue.md` after step 0.
+If `$ARGUMENTS` is a URL, fetch the issue body with `gh issue view <url> --json title,body` if it is GitHub, otherwise ask the human to paste it. If it is a file path, read it. Write the normalised issue text to `.idleflow/runs/active/issue.md` after step 0.
 
 Pushback, everywhere in this run: when the human's answer conflicts with the code, the tests, a research file or a source you can cite, say so once before acting (the conflict in a sentence, the evidence with its path or URL, a better option with its cost), then do what they decide and record the decision with its reason in `plan.md` "Open questions". No pushback without evidence; no agreement without checking.
 
@@ -23,18 +23,20 @@ Pushback, everywhere in this run: when the human's answer conflicts with the cod
 ## 0. Start the run
 
 ```
+bash "$RUN" migrate                  # moves files an older idleflow kept under .claude/; a no-op otherwise
 bash "$RUN" conf                     # note every value; you pass them to agents
 ID=$(bash "$RUN" new "<short-slug-from-issue>")
+LESSONS=$(bash "$RUN" path lessons)  # .idleflow/lessons.md, or docs/lessons.md under lessons_in: docs
 ```
-Ensure `.claude/lessons.md` exists (copy `templates/lessons.md` if not). Run **R1** (readability mode and ignore file) from `procedures/repo-setup.md` if it applies. Tell the human: `Run <ID> started on idleflow <PLUGIN_VERSION> (mode: <mode>). Exploring.`
+If `migrate` exits non-zero, show its message and stop; do not move files by hand. When it moved something, repeat its lines to the human. Ensure `$LESSONS` exists (copy `templates/lessons.md` if not). Run **R1** (readability mode and ignore file) from `procedures/repo-setup.md` if it applies. Tell the human: `Run <ID> started on idleflow <PLUGIN_VERSION> (mode: <mode>). Exploring.`
 
 ## 1. Explore (Sonnet)
 
-Spawn `idleflow:explorer` with: the issue path, the output path `.claude/runs/active/context.md`, the template path. Wait.
+Spawn `idleflow:explorer` with: the issue path, the `$LESSONS` path, the output path `.idleflow/runs/active/context.md`, the template path. Wait.
 
 ## 2. Classify (Haiku), then set the repo up
 
-Spawn `idleflow:classifier` with the context.md path and the `SIZE_*` values. Parse its JSON line. `bash "$RUN" set size '"<S|M|L>"'`, `bash "$RUN" set greenfield <true|false>`, `bash "$RUN" set risk '"<low|high>"'` and `bash "$RUN" set new_dependency <true|false>`. If the line has a `plugin_gap`, append (`>>`) `plugin_gap: classifier — <text>` to `.claude/runs/active/gaps.md`.
+Spawn `idleflow:classifier` with the context.md path and the `SIZE_*` values. Parse its JSON line. `bash "$RUN" set size '"<S|M|L>"'`, `bash "$RUN" set greenfield <true|false>`, `bash "$RUN" set risk '"<low|high>"'` and `bash "$RUN" set new_dependency <true|false>`. If the line has a `plugin_gap`, append (`>>`) `plugin_gap: classifier — <text>` to `.idleflow/runs/active/gaps.md`.
 
 The diff limit applies to each task's diff on its own; there is no run-wide total. If `greenfield` is true, the diff limit for this run is `DIFF_LIMIT * 3`; pass that limit as the second argument to every later `gate` call and to the auditor. Implementers per group: `SIZE_M_IMPLEMENTERS` for size M, `MAX_IMPLEMENTERS` for L, 1 for S.
 
@@ -44,17 +46,17 @@ Then, in this order: **R2** (project docs) from `procedures/repo-setup.md`; step
 
 ### 2a. Ground the docs (Sonnet) — when `docs: yes` and not greenfield
 
-Spawn `idleflow:doc-keeper` with the repo root and the absolute paths of `progress.md`, `index.md`, `prd.md`, `CLAUDE.md`, `README.md`, `docs/`, `.claude/conventions.md`. It checks every claim in the docs against the code, fixes stale ones, and commits `docs: ground stale claims`. Nothing else starts until it replies. Repeat its one-line reply to the human verbatim; carry any `unchecked:` items into the final message.
+Spawn `idleflow:doc-keeper` with the repo root and the absolute paths of `progress.md`, `index.md`, `prd.md`, `CLAUDE.md`, `README.md`, `docs/`, `.idleflow/conventions.md`. It checks every claim in the docs against the code, fixes stale ones, and commits `docs: ground stale claims`. Nothing else starts until it replies. Repeat its one-line reply to the human verbatim; carry any `unchecked:` items into the final message.
 
 ## 3. Plan (Fable)
 
-Spawn `idleflow:planner` with: context.md path, lessons.md path, conventions path, plan template path, output path `.claude/runs/active/plan.md`, the size, `greenfield`, the implementer cap for this size, the diff limit for this run, whether R3 and R4 ran (when they did not, a plan that adds a dependency anyway lists it under "Open questions" for the human), and when `docs: yes` the paths of `prd.md`, `progress.md`, `index.md` plus `templates/prd.md`. Wait.
+Spawn `idleflow:planner` with: context.md path, the `$LESSONS` path, conventions path, plan template path, output path `.idleflow/runs/active/plan.md`, the size, `greenfield`, the implementer cap for this size, the diff limit for this run, whether R3 and R4 ran (when they did not, a plan that adds a dependency anyway lists it under "Open questions" for the human), and when `docs: yes` the paths of `prd.md`, `progress.md`, `index.md` plus `templates/prd.md`. Wait.
 
 Read `plan.md` once now; keep the task list, groups, owned globs, models and merge order in working memory and do not re-read the plan unless it is revised.
 
 If "Open questions for the human" is non-empty, ask them now with AskUserQuestion, write the answers into plan.md under that section, and continue. If the human is not present, take the planner's stated default for each question and note that you did.
 
-Reject a plan that puts `prd.md`, `progress.md`, `index.md`, `CLAUDE.md` or `.claude/conventions.md` in any task's `owns:`; send it back to the planner once with that single instruction.
+Reject a plan that puts `prd.md`, `progress.md`, `index.md`, `CLAUDE.md` or `.idleflow/conventions.md` in any task's `owns:`; send it back to the planner once with that single instruction.
 
 ## 4. Debate (Opus × 2) — only for size L or risk high
 
@@ -81,8 +83,8 @@ For each group in order; within a group, all tasks in parallel, at most the impl
    bash "$RUN" set tasks.<task-id>.status '"building"'
    ```
    `wt add` records the task's own base sha in `run.json` (`bash "$RUN" get tasks.<task-id>.base_sha`); that sha, not the run's, is what the gate, the auditor and the reviewers diff against.
-2. Spawn one implementer per task in a single message so they run concurrently: `idleflow:implementer` for `model: sonnet`, `idleflow:implementer-hard` for `model: opus`. Prompt each with only: its task id, its worktree path, its own section of plan.md (paste just that section; it is the one exception to the no-paste rule, because the implementer must not read other tasks), the absolute paths of `context.md` and `.claude/conventions.md`. Nothing else; the report format is in the agent's own definition.
-3. Wait for all of them. For each, `bash "$RUN" report <task-id>` copies its report to `.claude/runs/active/tasks/<task-id>/report.md`; read `status`, `deviations`, `blocked_on` from there. Run `report` again after every later implementer run for the task (a retry, a conflict re-run) before reading it; `gate` also refreshes the copy when the worktree's is newer. Never edit a stored report yourself: a wrong report goes back to the implementer.
+2. Spawn one implementer per task in a single message so they run concurrently: `idleflow:implementer` for `model: sonnet`, `idleflow:implementer-hard` for `model: opus`. Prompt each with only: its task id, its worktree path, its own section of plan.md (paste just that section; it is the one exception to the no-paste rule, because the implementer must not read other tasks), the absolute paths of `context.md` and `.idleflow/conventions.md`. Nothing else; the report format is in the agent's own definition.
+3. Wait for all of them. For each, `bash "$RUN" report <task-id>` copies its report to `.idleflow/runs/active/tasks/<task-id>/report.md`; read `status`, `deviations`, `blocked_on` from there. Run `report` again after every later implementer run for the task (a retry, a conflict re-run) before reading it; `gate` also refreshes the copy when the worktree's is newer. Never edit a stored report yourself: a wrong report goes back to the implementer.
 
    **Retries are per task.** A task may be retried while `bash "$RUN" get tasks.<task-id>.retries` is below `MAX_RETRIES` (unset counts as 0). Each retry runs `bash "$RUN" inc tasks.<task-id>.retries` and `bash "$RUN" inc retries` (the run total, kept for the log). A task out of retries stops the run as in step 7.
    - `blocked` → if the needed file belongs to another task in this group, finish and merge the group, then re-run the blocked task in group N+1 with the extra glob added by `bash "$RUN" own` **and** in the task's `owns:` list in plan.md (reviewers read `ownership.json`; the plan is for humans). If the file belongs to no task, add it the same way and re-spawn once. Count it as a retry.
@@ -103,7 +105,7 @@ For each done task: `bash "$RUN" gate <task-id> [limit]` → JSON (pass the gree
 
 ## 7. Review (Opus + Sonnet, per task, in parallel)
 
-Size S: `idleflow:review-correct` only. M and L: `idleflow:review-correct` and `idleflow:review-conform` for every task in one message. Each gets: the worktree path, the task's base sha, the task's plan section (paste), the report path under `tasks/<id>/`, the output path under `review/`, and the `ownership.json` path (the authority on owned globs). The conformance reviewer also gets the `context.md`, `.claude/conventions.md` and `.claude/lessons.md` paths and the value of `co_author_claude` from `CLAUDE.md` (`no` if there is no such file). Both run in parallel; the correctness reviewer runs tests with caches disabled and the conformance reviewer ignores cache directories, so they do not pollute each other.
+Size S: `idleflow:review-correct` only. M and L: `idleflow:review-correct` and `idleflow:review-conform` for every task in one message. Each gets: the worktree path, the task's base sha, the task's plan section (paste), the report path under `tasks/<id>/`, the output path under `review/`, and the `ownership.json` path (the authority on owned globs). The conformance reviewer also gets the `context.md`, `.idleflow/conventions.md` and `$LESSONS` paths and the value of `co_author_claude` from `CLAUDE.md` (`no` if there is no such file). Both run in parallel; the correctness reviewer runs tests with caches disabled and the conformance reviewer ignores cache directories, so they do not pollute each other.
 
 A reply counts only once its review file exists (`test -s <output path>`): the retro and any retry read the file, never the reply. A reviewer that replied without writing it is re-spawned once with the same prompt; a second miss stops the run as below. Before re-running a reviewer on the same task (after a retry or a reword), move its previous file aside with `mv review/<id>-<kind>.md review/<id>-<kind>.<n>.md` (n = 1, 2, …), so the check sees only the new file and the retro keeps the old one.
 
@@ -119,7 +121,7 @@ After the last merge, run the plan's "Verification after merge" command. If it f
 
 ## 9. Retro and finish
 
-First decide the release tag: if `CLAUDE.md` says `releases: github-tagged` and this run completed a `prd.md` milestone (every "Must do" item of it now has a landed task), propose `vX.Y.Z` by the rule in `CLAUDE.md` "Releases". Spawn `idleflow:retro` with the run directory path, the `docs:` value and that tag when there is one. When `docs: yes` it also writes the session note and updates `progress.md` and `index.md`, and commits them. **Plugin gaps**, before every `finish` in this run (`done`, `needs-human`, or any other status), after the retro has run when it runs: read `.claude/runs/active/gaps.md` if it exists, plus any gap you hit yourself. If there are lines, list them and ask once with AskUserQuestion: **Report them to Idle-Sync/idleflow** / **Not now**. On yes, read `${CLAUDE_PLUGIN_ROOT}/commands/plugin-feedback.md` and follow its batch mode with the lines and the run id; it opens the issues from the human's GitHub account and asks nothing further. Never open an issue without that answer.
+First decide the release tag: if `CLAUDE.md` says `releases: github-tagged` and this run completed a `prd.md` milestone (every "Must do" item of it now has a landed task), propose `vX.Y.Z` by the rule in `CLAUDE.md` "Releases". Spawn `idleflow:retro` with the run directory path, the `$LESSONS` path, the `docs:` value and that tag when there is one. When `docs: yes` it also writes the session note and updates `progress.md` and `index.md`, and commits them. **Plugin gaps**, before every `finish` in this run (`done`, `needs-human`, or any other status), after the retro has run when it runs: read `.idleflow/runs/active/gaps.md` if it exists, plus any gap you hit yourself. If there are lines, list them and ask once with AskUserQuestion: **Report them to Idle-Sync/idleflow** / **Not now**. On yes, read `${CLAUDE_PLUGIN_ROOT}/commands/plugin-feedback.md` and follow its batch mode with the lines and the run id; it opens the issues from the human's GitHub account and asks nothing further. Never open an issue without that answer.
 
 Then remove worktrees: `bash "$RUN" wt list` → `bash "$RUN" wt rm <id>` each. Then `bash "$RUN" finish done`.
 
@@ -136,11 +138,11 @@ Commit messages in this run follow `CLAUDE.md`: the `Co-Authored-By: Claude <nor
 - Never implement, review, or plan yourself, even for a one-line fix or a task split. If it's that small, the classifier says S and the ceremony is already minimal.
 - Never paste a file into an agent prompt except a task's own plan section.
 - Never run a third debate round, more than `MAX_RETRIES` retries of one task, or a second conflict resolution. Stop and ask.
-- Never edit a task's stored report; only the implementer's `.claude-run/result.md` fills it.
+- Never edit a task's stored report; only the implementer's `.idleflow-run/result.md` fills it.
 - Never merge a task that lacks an `approved` status.
 - Never edit files in a task worktree yourself, and never edit code in the main checkout while tasks are building (the guard blocks both).
 - Never run `/reload-plugins` or update idleflow while a run is active: agents would come from the new version while this run keeps calling its old scripts. If `run.sh` prints a `started on idleflow` warning, stop at the next point where no implementer or reviewer is running, tell the human both versions, and ask whether to finish this run as it stands or stop it with `needs-human`.
-- Never let a task own `prd.md`, `progress.md`, `index.md`, `CLAUDE.md` or `.claude/conventions.md`.
+- Never let a task own `prd.md`, `progress.md`, `index.md`, `CLAUDE.md` or `.idleflow/conventions.md`.
 - Never install anything into the repo. Accepted stack or library decisions become tasks. The only installs you run are the tooling commands the human accepted by name in R5, and those change the user's Claude Code setup, not the repo.
 - Never agree with an answer the evidence contradicts without saying so once, with the evidence.
-- Never work around something this plugin lacks. Append it (`>>`) as a `plugin_gap: orchestrator — <what> — <why>` line to `.claude/runs/active/gaps.md` and let the Plugin gaps question ask the human whether to report it.
+- Never work around something this plugin lacks. Append it (`>>`) as a `plugin_gap: orchestrator — <what> — <why>` line to `.idleflow/runs/active/gaps.md` and let the Plugin gaps question ask the human whether to report it.

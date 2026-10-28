@@ -22,11 +22,11 @@ Idea: $ARGUMENTS
 
 `ls -A` and `git ls-files 2>/dev/null | wc -l`. The folder qualifies when it has no source files: nothing, or only a README, a licence, `.gitignore`, an editor config, an empty git repo. If it already holds code, stop and say: `This folder has code in it. Use /idleflow:feature for existing projects; /idleflow:init is for empty ones.` Do not continue.
 
-If there is no git repo: `git init -q`. Then `ID=$(bash "$RUN" new init)` (it works before the first commit). Copy `templates/conventions.md` to `.claude/conventions.md` and `templates/lessons.md` to `.claude/lessons.md` if missing. Tell the human: `Starting a new project. First, some questions; answer briefly, "skip" is fine.`
+If there is no git repo: `git init -q`. Then `ID=$(bash "$RUN" new init)` (it works before the first commit). Copy `templates/conventions.md` to `.idleflow/conventions.md` and `templates/lessons.md` to `.idleflow/lessons.md` if missing. Tell the human: `Starting a new project. First, some questions; answer briefly, "skip" is fine.`
 
 ## 1. Brainstorm
 
-Ask with AskUserQuestion in rounds of at most four questions. Every question has three or four concrete options plus the free-text "Other" the tool adds. Skip a round whose answers are already clear from the idea or an earlier answer. Write every answer, as given, into `.claude/runs/active/brainstorm.md` under the round's heading as you go.
+Ask with AskUserQuestion in rounds of at most four questions. Every question has three or four concrete options plus the free-text "Other" the tool adds. Skip a round whose answers are already clear from the idea or an earlier answer. Write every answer, as given, into `.idleflow/runs/active/brainstorm.md` under the round's heading as you go.
 
 Round A — what and for whom
 - What are we building, in one sentence? (options: a web app, a CLI or developer tool, a mobile app, a library or API, a data or ML pipeline)
@@ -69,7 +69,7 @@ Ask in one AskUserQuestion call (four questions):
 
 Then, in a second call, R1's **Ignore file** question with its two options.
 
-Write `mode:`, `docs: yes`, `docs_in_git:` and `ignore_in:` into `.claude/conventions.md`, then `bash "$RUN" ignore .claude/runs/` and, on "No, keep it local", `bash "$RUN" ignore docs/`. Keep `co_author_claude:` and `releases:` for step 6. R1 and the `docs_in_git` question of R2 are now answered; do not ask them again.
+Write `mode:`, `docs: yes`, `docs_in_git:` and `ignore_in:` into `.idleflow/conventions.md`, then `bash "$RUN" ignore .idleflow/runs/` and, on "No, keep it local", `bash "$RUN" ignore docs/`. Keep `co_author_claude:` and `releases:` for step 6. R1 and the `docs_in_git` question of R2 are now answered; do not ask them again.
 
 ## 4. Stack, libraries, tooling
 
@@ -77,14 +77,14 @@ Run **R3**, **R4** and **R5** from `procedures/repo-setup.md` with `greenfield` 
 
 ## 5. PRD (Fable)
 
-Spawn `idleflow:planner` in **PRD mode** with: `brainstorm.md`, `docs/market-research.md`, `.claude/conventions.md`, `templates/prd.md`, output `prd.md` at the repo root. Wait.
+Spawn `idleflow:planner` in **PRD mode** with: `brainstorm.md`, `docs/market-research.md`, `.idleflow/conventions.md`, `templates/prd.md`, output `prd.md` at the repo root. Wait.
 
 Show the human the PRD's "Must do (v1)", "Milestones" and "Two-year shape" sections (paste only those). Ask: **Approve** / **Change something** (free text; send it back to the planner once with the change) / **Approve with notes** (append the notes under "Open questions"). Loop on "Change something" at most twice, then ask the human to edit `prd.md` by hand and say when done.
 
 ## 6. Scaffold the docs and rules
 
 1. Run **R2** steps 1 and 2 (`progress.md`, `index.md`, `docs/sessions/TEMPLATE.md`, `CLAUDE.md`). Fill `co_author_claude:` and `releases:` in `CLAUDE.md` from step 3, `<Project name>` from the brainstorm, and the "Commands" lines with the install/test/run commands the accepted stack decisions imply (or `<to be set by the first feature run>`).
-2. `index.md`: list what exists now (`prd.md`, `progress.md`, `CLAUDE.md`, `.claude/`, `docs/`), nothing imagined.
+2. `index.md`: list what exists now (`prd.md`, `progress.md`, `CLAUDE.md`, `.idleflow/`, `docs/`), nothing imagined.
 3. `progress.md`: first entry: `## <date> — project initialised (run <ID>)` with: brainstorm done, market research verdict, N stack decisions, N library decisions, N tooling items, PRD approved, next: milestone 1 from `prd.md`.
 4. `docs/sessions/s_0001.md` from the template: what this session decided, the files it created, next = milestone 1.
 5. `.gitignore`: add the stack's usual entries (`.venv/`, `node_modules/`, `dist/`, `.env`) only for stacks that were accepted; every clone needs them, so they go here whatever `ignore_in:` says. idleflow's own entries were placed in step 3.
@@ -97,11 +97,11 @@ git add -A
 git commit -m "init: <project name>"      # add the Co-Authored-By trailer only if co_author_claude is yes
 ```
 
-`.claude/runs/` is ignored (in the file `ignore_in:` names), so `brainstorm.md` and the run files stay local; `docs/` is committed unless the human chose otherwise.
+`.idleflow/runs/` is ignored (in the file `ignore_in:` names), so `brainstorm.md` and the run files stay local; `docs/` is committed unless the human chose otherwise.
 
 If releases were chosen: confirm the repo name (default: the folder name) and owner with one AskUserQuestion (options: `<your login>/<name>`, `<each org gh lists>/<name>`), then `gh repo create <owner>/<name> --<public|private> --source . --push`. If `gh` is missing or not logged in, say so, print the exact command for later, and continue. Do not tag anything now; the first tag comes when milestone 1 completes (`CLAUDE.md` "Releases" says how).
 
-**Plugin gaps** (before `finish`). Read `.claude/runs/active/gaps.md` if it exists, plus any gap you hit yourself. If there are lines, list them and ask once: **Report them to Idle-Sync/idleflow** / **Not now**. On yes, read `${CLAUDE_PLUGIN_ROOT}/commands/plugin-feedback.md` and follow its batch mode with the lines and the run id; it opens the issues from the human's GitHub account and asks nothing further. Never open an issue without that answer.
+**Plugin gaps** (before `finish`). Read `.idleflow/runs/active/gaps.md` if it exists, plus any gap you hit yourself. If there are lines, list them and ask once: **Report them to Idle-Sync/idleflow** / **Not now**. On yes, read `${CLAUDE_PLUGIN_ROOT}/commands/plugin-feedback.md` and follow its batch mode with the lines and the run id; it opens the issues from the human's GitHub account and asks nothing further. Never open an issue without that answer.
 
 `bash "$RUN" finish done`.
 

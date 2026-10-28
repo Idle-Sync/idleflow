@@ -2,7 +2,7 @@
 # PreToolUse hook on Edit|Write|MultiEdit|NotebookEdit.
 #
 # Reads the hook payload from stdin, finds the active run's ownership map
-# (.claude/runs/active/ownership.json in the main repo), and blocks any edit to a
+# (.idleflow/runs/active/ownership.json in the main repo), and blocks any edit to a
 # file inside a task worktree that the task does not own.
 #
 # Exit 0  -> allow.   Exit 2 -> block; stderr goes back to the agent as the reason.

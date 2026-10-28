@@ -7,7 +7,7 @@ after every run so it never goes stale. Paths, not prose. Under 80 lines.
 ## Start here
 - `prd.md` — what this project is and is not
 - `progress.md` — what has landed and what is next
-- `.claude/conventions.md` — how code is written here
+- `.idleflow/conventions.md` — how code is written here
 
 ## Layout
 - `<dir>/` — <purpose>
