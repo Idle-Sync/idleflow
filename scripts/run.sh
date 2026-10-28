@@ -24,7 +24,7 @@
 #   run.sh migrate                        -> moves files a pre-.idleflow/ version kept under .claude/ and commits the move
 #   run.sh doctor                         -> checks the repo's idleflow setup, one "ok|warn|fail|suggest <check>: <detail> | fix: <how>" line each
 #   run.sh update-check                   -> prints one line when a newer idleflow is tagged on GitHub, nothing otherwise
-#   run.sh session-name                   -> the path for a new session note: docs/sessions/s_<YYYYMMDD-HHMM>-<author>.md
+#   run.sh session-name                   -> the path for a new session note (time-author, numbered or per-person, from conventions)
 #   run.sh behind                         -> commits the upstream has that this branch lacks (fetches first; empty offline)
 #   run.sh team-install                   -> recommends idleflow to teammates: .claude/settings.json plus a CLAUDE.md install note
 #   run.sh detect                         -> suggests Repo fit and Records settings from evidence in the repo (read-only)
@@ -174,6 +174,18 @@ ensure_union_merge() {
   while IFS= read -r f; do add_ignore "$REPO/.gitattributes" "$f merge=union"; done < <(union_merge_files)
 }
 
+# Who is writing, for per-person session folders: idleflow.person in git config (set it to name the
+# folder), else the GitHub login, looked up once and remembered locally, else the git name.
+person_id() {
+  local p
+  p="${IDLEFLOW_PERSON:-$(git config idleflow.person 2>/dev/null || true)}"
+  if [ -z "$p" ] && command -v gh >/dev/null 2>&1; then
+    p="$(GH_PROMPT_DISABLED=1 gh api user --jq .login 2>/dev/null || true)"
+    [ -n "$p" ] && "${G[@]}" config --local idleflow.person "$p"
+  fi
+  [ -n "$p" ] || p="$(author_slug)"
+  echo "$p" | tr -cs 'A-Za-z0-9_.-' '-' | sed 's/^-//;s/-$//' | cut -c1-39
+}
 author_slug() { git config user.name 2>/dev/null | tr 'A-Z' 'a-z' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//' | cut -c1-20; }
 
 # Sibling by default (<repo>__wt/<task>); `worktrees_in: inside` keeps them in an ignored folder
@@ -512,9 +524,15 @@ JSON
     # Named by time and author, not by a running number: two people writing a note on the same
     # day would otherwise both pick the next number.
     dir="$(sessions_rel)"
+    if [ "$(conventions_value session_names)" = per-person ]; then
+      # each person numbers their own folder, so two writers never pick the same file
+      dir="$dir/$(person_id)"; who_n="$({ ls "$REPO/$dir" 2>/dev/null || true; } | sed -n 's/^s_\([0-9][0-9][0-9][0-9]\)\.md$/\1/p' | sort -n | tail -1)"
+      printf '%s/s_%04d.md\n' "$dir" "$((10#${who_n:-0} + 1))"
+      exit 0
+    fi
     if [ "$(conventions_value session_names)" = numbered ]; then
       # a repo that numbers its notes (s_0001.md, ...) keeps doing so; with several writers it can collide
-      last="$(ls "$REPO/$dir" 2>/dev/null | sed -n 's/^s_\([0-9][0-9][0-9][0-9]\)\.md$/\1/p' | sort -n | tail -1)"
+      last="$({ ls "$REPO/$dir" 2>/dev/null || true; } | sed -n 's/^s_\([0-9][0-9][0-9][0-9]\)\.md$/\1/p' | sort -n | tail -1)"
       printf '%s/s_%04d.md\n' "$dir" "$((10#${last:-0} + 1))"
       exit 0
     fi
@@ -562,7 +580,12 @@ JSON
     if unset_key session_names; then
       dir="$REPO/$(sessions_rel)"
       [ -d "$dir" ] || dir="$REPO/docs/sessions"
-      if ls "$dir" 2>/dev/null | grep -qE '^s_[0-9]{4}\.md$'; then say session_names numbered "$(ls "$dir" | grep -cE '^s_[0-9]{4}\.md$') notes in ${dir#"$REPO"/} are numbered s_NNNN.md"; fi
+      people="$("${G[@]}" log --format='%ae' 2>/dev/null | sort -u | wc -l | tr -d ' ')"
+      if ls "$dir"/*/ 2>/dev/null | grep -qE '^s_[0-9]{4}\.md$'; then say session_names per-person "notes in ${dir#"$REPO"/} are already in one folder per person"
+      elif ls "$dir" 2>/dev/null | grep -qE '^s_[0-9]{4}\.md$'; then
+        if [ "${people:-1}" -gt 1 ]; then say session_names per-person "notes are numbered s_NNNN.md and $people people commit here; a folder per person keeps the numbering without collisions"
+        else say session_names numbered "$(ls "$dir" | grep -cE '^s_[0-9]{4}\.md$') notes in ${dir#"$REPO"/} are numbered s_NNNN.md"; fi
+      fi
     fi
     if unset_key index_rewrite && [ -f "$REPO/$(index_rel)" ] && ! grep -q "Rewritten by the idleflow retro" "$REPO/$(index_rel)"; then
       say index_rewrite no "$(index_rel) was not written by idleflow, so the repo keeps it its own way"

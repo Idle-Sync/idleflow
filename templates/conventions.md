@@ -87,8 +87,10 @@ shared_files: none
 - `progress_file`, `index_file`, `sessions_dir`, `time_log`: relative paths inside the repo.
 - `index_rewrite`: `yes` lets the retro rewrite the index after a run; `no` leaves it to the
   repo's own process (tasks add their rows through `shared_files`).
-- `session_names`: `time-author` (`s_<YYYYMMDD-HHMM>-<author>.md`, safe with several writers) or
-  `numbered` (`s_0001.md`, ...; two writers can pick the same number).
+- `session_names`: `time-author` (`s_<YYYYMMDD-HHMM>-<author>.md`, safe with several writers),
+  `per-person` (`<person>/s_0001.md`: each person numbers their own folder, so nothing collides; the
+  folder is the GitHub login, or `git config idleflow.person <name>` to name it), or `numbered`
+  (`s_0001.md`, ...; two writers can pick the same number).
 - `shared_files`: space-separated paths every task may add its own lines to, such as `CHANGELOG.md`
   or an index the repo's checks require a row in for each new file. No task owns them, they merge by
   union, and a task changes only the lines it adds.

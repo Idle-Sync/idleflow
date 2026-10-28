@@ -285,6 +285,12 @@ top="$(native "$(git rev-parse --show-toplevel)")"
 check "record paths follow the conventions" '[ "$(bash "$RUN" path lessons)" = "$top/lessons.md" ] && [ "$(bash "$RUN" path progress)" = "$top/docs/progress.md" ] && [ "$(bash "$RUN" path index)" = "$top/docs/index.md" ]'
 mkdir -p docs/notes && touch docs/notes/s_0003.md docs/notes/s_0010.md
 check "numbered notes continue the repo's count" '[ "$(bash "$RUN" session-name)" = "docs/notes/s_0011.md" ]'
+sed -i.bak 's#^session_names: .*#session_names: per-person#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
+mkdir -p docs/notes/ada && touch docs/notes/ada/s_0004.md
+check "per-person notes number within the person's folder" '[ "$(IDLEFLOW_PERSON=ada bash "$RUN" session-name)" = "docs/notes/ada/s_0005.md" ] && [ "$(IDLEFLOW_PERSON=bob bash "$RUN" session-name)" = "docs/notes/bob/s_0001.md" ]'
+git config --local idleflow.person "Grace H"
+check "a named folder comes from idleflow.person" '[ "$(bash "$RUN" session-name)" = "docs/notes/Grace-H/s_0001.md" ]'
+git config --local --unset idleflow.person
 rm -rf docs
 sed -i.bak 's#^progress_file: .*#progress_file: ../outside.md#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
 check "a path outside the repo falls back"  'p="$(bash "$RUN" path progress 2>/dev/null)"; [ "$p" = "$top/progress.md" ] && bash "$RUN" path progress 2>&1 >/dev/null | grep -q "not a relative path"'
