@@ -78,6 +78,20 @@ are committed, so everyone who pulls plans with the same rules and lessons. What
   (`extraKnownMarketplaces` and `enabledPlugins`); Claude Code loads it for each teammate once they trust
   the folder. The doctor warns when more than one person commits and it is not set.
 
+## Fitting a repo that has its own rules
+
+Conventions "Repo fit" and "Records" let idleflow work inside a repo's existing process instead of
+beside it. Every key is optional and missing keys keep the defaults, so older repos change nothing.
+
+| Key | What it does |
+|---|---|
+| `worktrees_in: inside` | Task worktrees in `.idleflow/worktrees/` (ignored) instead of a sibling folder |
+| `worktree_setup: <command>` | Run in each new worktree before the implementer starts (`$MAIN`, `$WORKTREE` set); printed first, fails loudly, may not change tracked files |
+| `progress_file`, `index_file`, `sessions_dir`, `time_log`, `lessons_in: <path>` | Use the records the repo already keeps |
+| `index_rewrite: no` | The retro leaves the index to the repo's own process |
+| `session_names: numbered` | Keep a repo's `s_0001.md` numbering |
+| `shared_files: <paths>` | Files every task may add its own lines to (a changelog, an index the repo's checks need a row in), merged by union |
+
 ## Customizing one project
 
 Every number in `config/idleflow.conf` is a default. `/idleflow:customize` overrides it for one repo in

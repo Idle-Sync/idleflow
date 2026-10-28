@@ -93,6 +93,22 @@ shared_files: none
   or an index the repo's checks require a row in for each new file. No task owns them, they merge by
   union, and a task changes only the lines it adds.
 
+## Repo fit
+
+How idleflow fits a repo that already has its own rules. Unset or missing lines keep idleflow's
+defaults. Commands here come from this committed file, like the repo's own test commands, and
+idleflow prints each one before it runs it.
+
+worktrees_in: sibling
+worktree_setup: none
+
+- `worktrees_in`: `sibling` puts task worktrees next to the repo (`<repo>__wt/<task>`); `inside` puts
+  them in `.idleflow/worktrees/` (ignored), for projects that must not write outside their own folder.
+  Tools that scan hidden folders may then see the worktrees.
+- `worktree_setup`: one shell command run in every new task worktree before the implementer starts
+  (link large shared folders, copy fixtures); `$MAIN` is the main checkout, `$WORKTREE` the new one.
+  A failure, or a change to a tracked file, stops the worktree.
+
 ## Ignore rules
 
 ignore_in: unset

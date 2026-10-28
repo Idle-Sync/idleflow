@@ -288,6 +288,31 @@ sed -i.bak 's#^progress_file: .*#progress_file: ../outside.md#' .idleflow/conven
 check "a path outside the repo falls back"  'p="$(bash "$RUN" path progress 2>/dev/null)"; [ "$p" = "$top/progress.md" ] && bash "$RUN" path progress 2>&1 >/dev/null | grep -q "not a relative path"'
 cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"
 
+echo "--- worktrees inside the repo, with a setup command"
+cp .idleflow/conventions.md "$d-conv.bak"
+mkdir -p shared-big src && echo data > shared-big/f && echo x > src/keep.py && git add src/keep.py && commit -q -m "add src"
+printf 'worktrees_in: inside\nworktree_setup: ln -s "$MAIN/shared-big" shared-big && touch .setup-ran\n' >> .idleflow/conventions.md
+bash "$RUN" new inside >/dev/null 2>&1
+wi="$(bash "$RUN" wt add T9 2>/dev/null)"; wi_rc=$?
+check "an inside worktree lives in .idleflow/worktrees" '[ "$wi_rc" = 0 ] && [ "$wi" = "$(native "$(git rev-parse --show-toplevel)")/.idleflow/worktrees/T9" ] && [ -d "$wi/src" ]'
+check "the setup command ran in the worktree" '[ -f "$wi/.setup-ran" ] && [ -f "$wi/shared-big/f" ]'
+bash "$RUN" own T9 '["src/**"]' >/dev/null; bash "$RUN" set tasks.T9.status '"building"'
+check "guard: an owned file in an inside worktree is allowed" '[ "$(guard_rc "$wi/src/keep.py" "$wi")" = "0" ]'
+check "guard: an unowned file in an inside worktree is blocked" '[ "$(guard_rc "$wi/other.py" "$wi")" = "2" ]'
+check "guard: the main checkout stays blocked while building" '[ "$(guard_rc "$PWD/src/keep.py" "$PWD")" = "2" ]'
+st="$(git status --porcelain --untracked-files=all)"
+check "inside worktrees do not dirty the main checkout" '! echo "$st" | grep -q "\.idleflow/worktrees"'
+bash "$RUN" set tasks.T9.status '"approved"'; bash "$RUN" wt rm T9
+sed -i.bak 's#^worktree_setup: .*#worktree_setup: echo boom; exit 3#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
+out="$(bash "$RUN" wt add T8 2>&1)"; rc=$?
+check "a failing setup stops wt add (exit 6)" '[ "$rc" = 6 ] && echo "$out" | grep -q "worktree setup failed for T8" && echo "$out" | grep -q boom'
+bash "$RUN" wt rm T8
+sed -i.bak 's#^worktree_setup: .*#worktree_setup: echo changed >> src/keep.py#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
+out="$(bash "$RUN" wt add T7 2>&1)"; rc=$?
+check "a setup that edits tracked files is refused and undone" '[ "$rc" = 6 ] && echo "$out" | grep -q "changed tracked files" && [ "$(cat .idleflow/worktrees/T7/src/keep.py)" = x ]'
+bash "$RUN" wt rm T7; bash "$RUN" finish done >/dev/null
+rm -rf shared-big; cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"
+
 echo "--- team"
 check "session notes are named by time and author" 'bash "$RUN" session-name | grep -Eq "^docs/sessions/s_[0-9]{8}-[0-9]{4}-human\.md$"'
 mkdir -p docs/sessions && touch "$(bash "$RUN" session-name)"
