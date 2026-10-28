@@ -14,6 +14,8 @@ RUN="${CLAUDE_PLUGIN_ROOT}/scripts/run.sh"     # keep the quotes: the path may c
 
 Project: $ARGUMENTS
 
+Record paths: where this file names `progress.md`, `index.md`, `docs/sessions/`, the lessons file or the time log, use the path `bash "$RUN" path progress|index|sessions|lessons|time-log` prints; a repo can keep its records elsewhere (conventions "Records"), and agents get the resolved paths in their prompts.
+
 Pushback applies throughout, as in `procedures/repo-setup.md`.
 
 ## 0. Which case is this?

@@ -12,6 +12,8 @@ Plugin root: `${CLAUDE_PLUGIN_ROOT}`.
 RUN="${CLAUDE_PLUGIN_ROOT}/scripts/run.sh"     # keep the quotes: the path may contain spaces
 ```
 
+Record paths: where this file names `progress.md`, `index.md`, `docs/sessions/`, the lessons file or the time log, use the path `bash "$RUN" path progress|index|sessions|lessons|time-log` prints; a repo can keep its records elsewhere (conventions "Records"), and agents get the resolved paths in their prompts.
+
 Notes from the human: $ARGUMENTS
 
 ## 0. Only with a yes

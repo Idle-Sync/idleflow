@@ -252,7 +252,8 @@ function cmdGuard() {
     if (p === wt || p.startsWith(wt + "/")) {
       const rel = p === wt ? "" : p.slice(wt.length + 1);
       const owns = Array.isArray(t.owns) ? t.owns : [];
-      if (globMatch(rel, owns.concat([".idleflow-run/result.md"]))) process.exit(0);
+      const shared = Array.isArray(omap.shared) ? omap.shared : [];
+      if (globMatch(rel, owns.concat([".idleflow-run/result.md"], shared))) process.exit(0);
       process.stderr.write(
         `[idleflow] BLOCKED: ${rel} is not owned by task ${tid}.\n` +
           `Owned globs: ${JSON.stringify(owns)}\n` +
