@@ -28,6 +28,7 @@
 #   run.sh session-name                   -> the path for a new session note: docs/sessions/s_<YYYYMMDD-HHMM>-<author>.md
 #   run.sh behind                         -> commits the upstream has that this branch lacks (fetches first; empty offline)
 #   run.sh team-install                   -> recommends idleflow to teammates: .claude/settings.json plus a CLAUDE.md install note
+#   run.sh detect                         -> suggests Repo fit and Records settings from evidence in the repo (read-only)
 #   run.sh repo-gate <base|main|task-id>  -> runs the repo's approved gate there, keeps its output; exit 1 when it fails, 7 unapproved
 #   run.sh commands                       -> the repo's commands (worktree_setup, gate) as committed, approved or unapproved here
 #   run.sh approve <key>                  -> records this person's approval of that exact committed command (local git config)
@@ -548,6 +549,48 @@ JSON
     fi
     native_path "$REPO/CLAUDE.md"
     ;;
+  detect)
+    # Evidence for the Repo fit and Records settings, one `suggest <key>: <value> — <evidence>` line
+    # for each key still unset whose evidence points away from the default. Read-only.
+    unset_key() { case "$(conventions_value "$1")" in ""|unset) return 0;; *) return 1;; esac; }
+    say() { echo "suggest $1: $2 — $3"; }
+    if unset_key commit_format; then
+      subjects="$("${G[@]}" log --no-merges -50 --format=%s 2>/dev/null || true)"
+      total="$(printf '%s' "$subjects" | grep -c . || true)"
+      cc="$(printf '%s\n' "$subjects" | grep -Ec '^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([A-Za-z0-9_./-]+\))?!?: ' || true)"
+      if [ "${total:-0}" -ge 10 ] && [ $((cc * 100 / total)) -ge 80 ]; then say commit_format conventional "$cc of the last $total commit subjects are Conventional Commits"; fi
+    fi
+    if unset_key lessons_in && [ -f "$REPO/lessons.md" ] && [ ! -f "$IDLE/lessons.md" ]; then say lessons_in lessons.md "the repo already keeps lessons.md"; fi
+    if unset_key progress_file && [ ! -f "$REPO/progress.md" ] && [ -f "$REPO/docs/progress.md" ]; then say progress_file docs/progress.md "the repo keeps docs/progress.md"; fi
+    if unset_key session_names; then
+      dir="$REPO/$(sessions_rel)"
+      [ -d "$dir" ] || dir="$REPO/docs/sessions"
+      if ls "$dir" 2>/dev/null | grep -qE '^s_[0-9]{4}\.md$'; then say session_names numbered "$(ls "$dir" | grep -cE '^s_[0-9]{4}\.md$') notes in ${dir#"$REPO"/} are numbered s_NNNN.md"; fi
+    fi
+    if unset_key index_rewrite && [ -f "$REPO/$(index_rel)" ] && ! grep -q "Rewritten by the idleflow retro" "$REPO/$(index_rel)"; then
+      say index_rewrite no "$(index_rel) was not written by idleflow, so the repo keeps it its own way"
+    fi
+    if unset_key shared_files; then
+      shared=()
+      grep -qiE '^## \[?unreleased' "$REPO/CHANGELOG.md" 2>/dev/null && shared+=(CHANGELOG.md)
+      [ "$(conventions_value index_rewrite)" = no ] && [ -f "$REPO/$(index_rel)" ] && shared+=("$(index_rel)")
+      [ "${#shared[@]}" -gt 0 ] && say shared_files "${shared[*]}" "every change adds a line here (an Unreleased changelog section, an index the repo keeps itself)"
+    fi
+    if unset_key worktrees_in && grep -qiE '(outside|beyond) (of )?(this|the) (folder|directory|repo|repository|project)' "$REPO/CLAUDE.md" 2>/dev/null; then
+      say worktrees_in inside "CLAUDE.md forbids working outside this folder"
+    fi
+    if unset_key gate; then
+      cands=()
+      for f in tools/gate.py scripts/gate.py tools/gate.sh scripts/gate.sh scripts/check.sh bin/check; do
+        [ -f "$REPO/$f" ] || continue
+        case "$f" in *.py) cands+=("python3 $f");; *.sh) cands+=("bash $f");; *) cands+=("./$f");; esac
+      done
+      for t in check gate ci; do grep -qE "^$t:" "$REPO/Makefile" 2>/dev/null && cands+=("make $t"); grep -qE "^$t:" "$REPO/justfile" 2>/dev/null && cands+=("just $t"); done
+      for t in check ci test; do grep -qE "\"$t\"[[:space:]]*:" "$REPO/package.json" 2>/dev/null && cands+=("npm run $t"); done
+      [ "${#cands[@]}" -gt 0 ] && say gate "${cands[0]}" "candidates found: $(printf '%s, ' "${cands[@]}" | sed 's/, $//')"
+    fi
+    exit 0
+    ;;
   repo-gate)
     # The repo's own check, the definition of done: on the run's base before building (so earlier
     # breakage is not blamed on the run), in a task's worktree, or on the main checkout after merge.
@@ -786,6 +829,14 @@ JSON
       check_line ok paths "every path CLAUDE.md, the index and the progress file name exists"
     fi
 
+    # settings that would fit this repo better, from evidence; declined ones stay quiet
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      kv="${line#suggest }"; key="${kv%%:*}"; rest="${kv#*: }"; val="${rest%% — *}"
+      grep -qF -- "- declined: $key -> $val " "$IDLE/suggestions.md" 2>/dev/null && continue
+      check_line suggest "fit $key" "$val (${rest#* — })" "/idleflow:setup, which asks before changing anything"
+    done <<< "$(bash "$0" detect 2>/dev/null || true)"
+
     # the retro's suggestions, newest per key, minus those declined or already applied
     if [ -f "$RUNS/config-proposals.md" ]; then
       while IFS=$'\t' read -r key val line; do
@@ -824,5 +875,5 @@ JSON
     echo "REPORT_CUSTOMIZATIONS=$(report_preference)"
     ;;
   *)
-    sed -n '2,41p' "$0"; exit 1;;
+    sed -n '2,42p' "$0"; exit 1;;
 esac

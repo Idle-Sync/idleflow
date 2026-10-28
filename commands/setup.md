@@ -26,7 +26,7 @@ Pushback applies throughout, as in `procedures/repo-setup.md`.
 2. `bash "$RUN" migrate` (stop on a non-zero exit, showing its message) and `bash "$RUN" update-check` (repeat its line once).
 3. If `.idleflow/runs/active/` exists, say a run is in progress and stop: setup changes the files that run reads.
 4. `bash "$RUN" loc`. At 0 the folder has no code: say `No code here yet: /idleflow:init is for new projects.` and stop.
-5. `bash "$RUN" doctor`. If no line is `fail` and the `conventions`, `lessons` and `docs` lines are `ok`, the repo is already set up: say `idleflow is already set up here.`, then read `${CLAUDE_PLUGIN_ROOT}/commands/doctor.md` and follow it. Otherwise continue; each step below runs only for what is still unanswered or missing, so a repo `/idleflow:init` set up gets only its gaps filled.
+5. `bash "$RUN" doctor`. If no line is `fail`, the `conventions`, `lessons` and `docs` lines are `ok` and no line is `suggest fit`, the repo is already set up: say `idleflow is already set up here.`, then read `${CLAUDE_PLUGIN_ROOT}/commands/doctor.md` and follow it. Otherwise continue; each step below runs only for what is still unanswered or missing, so a repo `/idleflow:init` set up gets only its gaps filled.
 
 `ID=$(bash "$RUN" new setup)`. `LESSONS=$(bash "$RUN" path lessons)`. Tell the human: `Setting up idleflow in <repo name>. Mapping the code first.`
 
@@ -39,6 +39,16 @@ Write `.idleflow/runs/active/issue.md`: `Set this repository up for idleflow. Ma
 Run **R1** (readability mode, ignore file) for whatever is unanswered.
 
 **Project docs**, when `docs:` is `unset` in `.idleflow/conventions.md` (ask; do not infer it the way R2 does for a feature run): **Yes (Recommended for teams)** — `prd.md`, `progress.md`, `index.md`, a `CLAUDE.md` block and `docs/` keep every session and every teammate on the same page, and the doc-keeper keeps them true; cons: more files to keep current. **No** — idleflow runs without project docs; cons: no shared progress or handoff. Write the answer, then run **R2** (it asks `docs_in_git` and `lessons_in` when they apply). Ensure `$LESSONS` exists after R2 (`bash "$RUN" path lessons` again: the answer may have moved it), copying `templates/lessons.md` if not.
+
+## 2b. Fit the repo's own rules
+
+A repo that already has its own process (a check script, Conventional Commits in CI, its own lessons or progress files, numbered session notes, a rule against writing outside its folder) keeps it; idleflow adapts.
+
+1. Add any of the sections "Talking to the human", "Records" and "Repo fit" that `.idleflow/conventions.md` lacks, copied from `templates/conventions.md` with their defaults. Lines already there stay as they are.
+2. `bash "$RUN" detect` prints `suggest <key>: <value> — <evidence>` for each setting the evidence says to change. Ask with AskUserQuestion, `multiSelect: true`, at most four per question (more calls when there are more): label = what the setting does in plain words with the key in parentheses; description = the value and the evidence. Selected means apply it. When `index_rewrite: no` was just chosen, run `detect` again: the index may now belong in `shared_files`.
+3. For the commands: when a `gate` was suggested, confirm its exact text in the question (the human may type a different one). Ask about `worktree_setup` only when a gate is set: **A fresh checkout runs the gate as it is** / **It needs a setup command first** (free text: the command; `$MAIN` is the main checkout, `$WORKTREE` the new one).
+4. Write each answer into its line in conventions (replace the line; never add a second line for the same key). For a key the human declined, append `- declined: <key> -> <value> (setup, <date>)` to `.idleflow/suggestions.md` so the doctor stops suggesting it.
+5. After the snapshot in step 6 commits conventions, run `bash "$RUN" approve gate` and `bash "$RUN" approve worktree_setup` for each command the human chose or typed in this session: their answer is the approval of that exact text. Commands they did not see stay unapproved.
 
 ## 3. The stack it already has
 
@@ -63,7 +73,7 @@ Run **R5** when nothing is under "Tooling" yet (setup counts as size L for its c
 
 **Team.** Unless `.claude/settings.json` already names `idleflow@idlesync`, ask once: **Recommend idleflow to everyone who opens this repo (Recommended when others work here)** — `bash "$RUN" team-install` adds it to the committed `.claude/settings.json` (Claude Code then loads it for a teammate once they trust the folder) and adds an install note to `CLAUDE.md` for sessions that have not loaded it; cons: it changes the team's Claude Code settings file, so say that in review. **Just me for now** — nothing changes; `/idleflow:doctor` suggests it once a second person commits. On yes, commit those two files alone: `chore: recommend idleflow to the team`.
 
-Run **R6** (snapshot): it commits `.idleflow/`, `CLAUDE.md`, the project docs and `docs/`, so every teammate who pulls gets the same setup.
+Run **R6** (snapshot): it commits `.idleflow/`, `CLAUDE.md`, the project docs and `docs/`, so every teammate who pulls gets the same setup. Then the approvals from step 2b.5; each teammate approves the commands on their own clone the first time a run asks.
 
 **Plugin gaps** as in `commands/feature.md` step 9, then `bash "$RUN" finish done`.
 

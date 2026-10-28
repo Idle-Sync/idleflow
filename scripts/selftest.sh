@@ -440,6 +440,23 @@ printf 'x\n' > .claude/conventions.md
 check "migrate refuses two copies"        '! bash "$RUN" migrate 2>/dev/null'
 cd "$d"
 
+echo "--- detect: settings a repo with its own rules needs"
+f="$(mktemp -d)"; ( cd "$f" && git init -q && git config user.name H && git config user.email h@h \
+  && mkdir -p .idleflow docs/sessions tools && printf 'mode: repo\n' > .idleflow/conventions.md && echo l > lessons.md \
+  && echo p > docs/progress.md && touch docs/sessions/s_0001.md && printf '# Index\n' > index.md \
+  && printf '# Changelog\n## Unreleased\n' > CHANGELOG.md && printf 'Never write outside this folder.\n' > CLAUDE.md \
+  && echo 'print(1)' > tools/gate.py && git add -A && git commit -qm "chore: start" \
+  && for i in 1 2 3 4 5 6 7 8 9 10 11; do echo $i >> f; git add f; git commit -qm "feat(core): step $i"; done )
+det="$(cd "$f" && bash "$RUN" detect)"
+for want in "commit_format: conventional" "lessons_in: lessons.md" "progress_file: docs/progress.md" "session_names: numbered" "index_rewrite: no" "shared_files: CHANGELOG.md" "worktrees_in: inside" "gate: python3 tools/gate.py"; do
+  check "detect suggests $want" 'echo "$det" | grep -qF "suggest $want —"'
+done
+( cd "$f" && printf 'commit_format: idleflow\n' >> .idleflow/conventions.md && mkdir -p .idleflow && printf -- '- declined: gate -> python3 tools/gate.py (doctor, today)\n' > .idleflow/suggestions.md )
+det="$(cd "$f" && bash "$RUN" detect)"; doc="$(cd "$f" && bash "$RUN" doctor 2>/dev/null)"
+check "detect leaves an answered key alone" '! echo "$det" | grep -q "^suggest commit_format"'
+check "doctor hides a declined fit suggestion" '! echo "$doc" | grep -q "^suggest fit gate" && echo "$doc" | grep -q "^suggest fit lessons_in"'
+rm -rf "$f"
+
 echo "--- prompt contracts"
 researcher="$HERE/../agents/stack-researcher.md"
 advisor="$HERE/../agents/stack-advisor.md"
