@@ -358,13 +358,22 @@ JSON
     # the "never merge an unapproved task" rule, enforced here and not only in the prompt
     st="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$tid.status" 2>/dev/null || true)"
     [ "$st" = "approved" ] || { echo "refusing to merge $tid: status is '${st:-unset}', not approved" >&2; exit 4; }
+    # `commit_format: conventional` repos often check every subject in CI (type(scope): ..., at most
+    # 72 characters), so the run id moves to the body there.
+    if [ "$(conventions_value commit_format)" = conventional ]; then
+      finish_msg=(-m "chore(idleflow): finish task $tid" -m "Run: $id")
+      merge_msg=(-m "chore(idleflow): merge task $tid" -m "Run: $id")
+    else
+      finish_msg=(-m "$tid: finish task")
+      merge_msg=(-m "idleflow: merge $tid ($id)")
+    fi
     # commit tracked changes the implementer left uncommitted; untracked files (test caches,
     # scratch) stay out, since the reviewers already rejected anything that should have been added
     if [ -d "$p" ]; then
       git -C "$p" add -u
-      git -C "$p" diff --cached --quiet || git -C "$p" ${IDENTITY[@]+"${IDENTITY[@]}"} commit -qm "$tid: finish task"
+      git -C "$p" diff --cached --quiet || git -C "$p" ${IDENTITY[@]+"${IDENTITY[@]}"} commit -q ${finish_msg[@]+"${finish_msg[@]}"}
     fi
-    if "${G[@]}" ${IDENTITY[@]+"${IDENTITY[@]}"} merge --no-ff -q -m "idleflow: merge $tid ($id)" "$br"; then
+    if "${G[@]}" ${IDENTITY[@]+"${IDENTITY[@]}"} merge --no-ff -q "${merge_msg[@]}" "$br"; then
       echo "merged $tid"
     elif [ -f "$("${G[@]}" rev-parse --absolute-git-dir)/MERGE_HEAD" ]; then
       "${G[@]}" merge --abort || true

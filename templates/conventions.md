@@ -101,6 +101,7 @@ idleflow prints each one before it runs it.
 
 worktrees_in: sibling
 worktree_setup: none
+commit_format: idleflow
 
 - `worktrees_in`: `sibling` puts task worktrees next to the repo (`<repo>__wt/<task>`); `inside` puts
   them in `.idleflow/worktrees/` (ignored), for projects that must not write outside their own folder.
@@ -108,6 +109,9 @@ worktree_setup: none
 - `worktree_setup`: one shell command run in every new task worktree before the implementer starts
   (link large shared folders, copy fixtures); `$MAIN` is the main checkout, `$WORKTREE` the new one.
   A failure, or a change to a tracked file, stops the worktree.
+- `commit_format`: `idleflow` (task commits `T1: ...`, merges `idleflow: merge T1 (<run>)`) or
+  `conventional` (Conventional Commits subjects of at most 72 characters for task, finish and merge
+  commits, run and task ids in the body), for repos whose CI checks commit subjects.
 
 ## Ignore rules
 

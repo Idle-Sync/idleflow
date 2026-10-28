@@ -313,6 +313,20 @@ check "a setup that edits tracked files is refused and undone" '[ "$rc" = 6 ] &&
 bash "$RUN" wt rm T7; bash "$RUN" finish done >/dev/null
 rm -rf shared-big; cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"
 
+echo "--- conventional commits"
+cp .idleflow/conventions.md "$d-conv.bak"
+printf 'commit_format: conventional\n' >> .idleflow/conventions.md
+bash "$RUN" new conventional-commits-with-a-long-slug-name >/dev/null 2>&1
+wc6="$(bash "$RUN" wt add T6 2>/dev/null)"
+( cd "$wc6" && echo y >> src/keep.py )
+bash "$RUN" set tasks.T6.status '"approved"'; bash "$RUN" merge T6 >/dev/null 2>&1
+subjects="$(git log -2 --format=%s)"; bodies="$(git log -2 --format=%b)"
+cc_re='^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([A-Za-z0-9_./-]+\))?!?: [^ ]'
+check "merge and finish commits are Conventional Commits" '[ "$(echo "$subjects" | grep -Ec "$cc_re")" = 2 ] && [ "$(echo "$subjects" | awk "length > 72" | wc -l | tr -d " ")" = 0 ]'
+check "the run id moves to the commit body" '[ "$(echo "$bodies" | grep -c "^Run: ")" = 2 ]'
+bash "$RUN" wt rm T6; bash "$RUN" finish done >/dev/null
+cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"
+
 echo "--- team"
 check "session notes are named by time and author" 'bash "$RUN" session-name | grep -Eq "^docs/sessions/s_[0-9]{8}-[0-9]{4}-human\.md$"'
 mkdir -p docs/sessions && touch "$(bash "$RUN" session-name)"
