@@ -2,6 +2,8 @@
 
 Shared by `commands/feature.md` and `commands/init.md`. Each section states when it applies; the caller runs the ones that apply, in order R1 → R6, then returns to its own steps. `RUN` is `"${CLAUDE_PLUGIN_ROOT}/scripts/run.sh"` (always quoted; the path may contain spaces). Agent names are the ones the plugin exposes: `idleflow:<name>`.
 
+Record paths, throughout: where this file names `progress.md`, `index.md`, `docs/sessions/` or the lessons file, use the path `bash "$RUN" path progress|index|sessions|lessons` prints; a repo can keep its records elsewhere (conventions "Records").
+
 Pushback applies throughout: when the human's answer conflicts with something you can cite (a research file, the code, the tests, a documented platform limit), say so once before acting, with the evidence and a better option with its cost; then do what they decide and record the decision and its reason. Nothing without evidence.
 
 ## R1. Readability mode and ignore file — when `.idleflow/conventions.md` is missing, or its `mode:` or `ignore_in:` is `unset` or absent
@@ -33,7 +35,7 @@ When `docs:` in `.idleflow/conventions.md` is `unset`: set it to `yes` when the 
 
 When `docs: yes` (a caller may name only some of these sub-steps; step 5 runs whenever its condition holds):
 
-1. Copy any of `templates/prd.md`, `templates/progress.md`, `templates/index.md` whose target does not exist at the repo root. Create `docs/research/` and `docs/sessions/`; copy `templates/session.md` to `docs/sessions/TEMPLATE.md` if missing.
+1. Copy `templates/prd.md` to `prd.md`, `templates/progress.md` to the progress file and `templates/index.md` to the index file (`bash "$RUN" path progress|index`), each only when its target does not exist. Create `docs/research/` and the sessions folder (`bash "$RUN" path sessions`); copy `templates/session.md` to `TEMPLATE.md` in it if missing.
 2. `CLAUDE.md`: if absent, copy `templates/CLAUDE.md`. If present without the `<!-- idleflow start -->` marker, append the template's block. Never overwrite a human's content. Fill the "Commands" lines from `context.md` §5 when known; leave `co_author_claude:` and `releases:` as they are unless R2 is running from `/idleflow:init`, which fills them.
 3. If `docs_in_git:` is `unset`, ask once: **Keep docs/ in the repo (Recommended)** — research, market research and session notes are shared with everyone who clones; cons: more files in review. **Keep docs/ local** — notes stay on this machine; cons: the next person starts without the research or the session history. Write the answer. On `no`, run `bash "$RUN" ignore docs/` (it writes to the file `ignore_in:` names). If the human is not present, choose `yes` and say so.
 4. If `lessons_in:` is `unset` and `docs_in_git: yes`, ask once: **.idleflow/lessons.md (Recommended)** — next to the conventions every agent already reads; cons: a dot-folder people rarely open. **docs/lessons.md** — next to the research and session notes the team reads; cons: one more file in `docs/`. Write `idleflow` or `docs`. On `docs`, move an existing file with `git mv .idleflow/lessons.md docs/lessons.md`. With `docs_in_git: no`, write `idleflow` without asking: lessons are shared, and a local `docs/` would hide them. If the human is not present, write `idleflow`.

@@ -66,8 +66,32 @@ first time docs are turned on.
 lessons_in: unset
 
 Where the lessons file lives. `idleflow` keeps it at `.idleflow/lessons.md`; `docs` keeps it at
-`docs/lessons.md`, next to the research and session notes. Either way it is committed and the
-whole team reads the same lessons. Unset means `.idleflow/`. Asked once, when docs are on.
+`docs/lessons.md`, next to the research and session notes; a path such as `lessons.md` uses a
+lessons file the repo already keeps. Either way it is committed and the whole team reads the same
+lessons. Unset means `.idleflow/`. Asked once, when docs are on.
+
+## Records
+
+Where this repo keeps the records idleflow reads and writes. The defaults are idleflow's own files;
+a repo that already keeps these somewhere points idleflow at them instead of getting a second set.
+`run.sh path <name>` resolves each one. Unset or missing lines mean the default.
+
+progress_file: progress.md
+index_file: index.md
+index_rewrite: yes
+sessions_dir: docs/sessions
+session_names: time-author
+time_log: .idleflow/time-log.md
+shared_files: none
+
+- `progress_file`, `index_file`, `sessions_dir`, `time_log`: relative paths inside the repo.
+- `index_rewrite`: `yes` lets the retro rewrite the index after a run; `no` leaves it to the
+  repo's own process (tasks add their rows through `shared_files`).
+- `session_names`: `time-author` (`s_<YYYYMMDD-HHMM>-<author>.md`, safe with several writers) or
+  `numbered` (`s_0001.md`, ...; two writers can pick the same number).
+- `shared_files`: space-separated paths every task may add its own lines to, such as `CHANGELOG.md`
+  or an index the repo's checks require a row in for each new file. No task owns them, they merge by
+  union, and a task changes only the lines it adds.
 
 ## Ignore rules
 

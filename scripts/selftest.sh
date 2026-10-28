@@ -67,7 +67,7 @@ check "snapshot is a no-op when clean"    '[ "$(bash "$RUN" snapshot)" = "snapsh
 git reset -q unrelated.txt; rm -f unrelated.txt; printf '.idleflow/runs/\n' > .gitignore; git add .gitignore; commit -m gitignore
 bash "$RUN" finish setup >/dev/null
 
-printf 'ignore_in: gitignore\n' >> .idleflow/conventions.md
+printf 'ignore_in: gitignore\nshared_files: CHANGELOG.md\n' >> .idleflow/conventions.md
 mkdir -p src && echo 'a' > src/a.txt && git add . && commit -m base
 
 printf 'node_modules/' > .gitignore   # no trailing newline on purpose
@@ -124,6 +124,7 @@ check "blocks unowned file (native path)" '[ "$(guard_rc "$wtn/other.txt" "$wtn"
 check "blocks unowned file (posix path)"  '[ "$(guard_rc "$wt/other.txt" "$wt")" = "2" ]'
 check "allows owned file"                 '[ "$(guard_rc "$wtn/src/new.txt" "$wtn")" = "0" ]'
 check "allows owned nested file"          '[ "$(guard_rc "$wtn/tests/a/b/c.txt" "$wtn")" = "0" ]'
+check "allows a shared file to any task"  '[ "$(guard_rc "$wtn/CHANGELOG.md" "$wtn")" = "0" ]'
 check "allows .idleflow-run/result.md"     '[ "$(guard_rc "$wtn/.idleflow-run/result.md" "$wtn")" = "0" ]'
 check "blocks worktree marker rewrite"    '[ "$(guard_rc "$wtn/.idleflow-run/repo" "$wtn")" = "2" ]'
 check "blocks ownership.json via editor"  '[ "$(guard_rc "$dn/.idleflow/runs/active/ownership.json" "$wtn")" = "2" ]'
@@ -274,6 +275,18 @@ check "doctor passes the new layout"      'echo "$doc" | grep -q "^ok layout" &&
 check "doctor names unanswered settings"  'echo "$doc" | grep -q "^warn conventions: not answered yet: ignore_in docs"'
 check "update-check is silent offline"    '[ -z "$(bash "$RUN" update-check)" ]'
 check "migrate again is a no-op"          '[ "$(bash "$RUN" migrate)" = "migrate: nothing to move" ]'
+
+echo "--- records where the repo keeps them"
+cp .idleflow/conventions.md "$d-conv.bak"
+printf 'lessons_in: lessons.md\nprogress_file: docs/progress.md\nindex_file: docs/index.md\nsessions_dir: docs/notes\nsession_names: numbered\n' >> .idleflow/conventions.md
+top="$(native "$(git rev-parse --show-toplevel)")"
+check "record paths follow the conventions" '[ "$(bash "$RUN" path lessons)" = "$top/lessons.md" ] && [ "$(bash "$RUN" path progress)" = "$top/docs/progress.md" ] && [ "$(bash "$RUN" path index)" = "$top/docs/index.md" ]'
+mkdir -p docs/notes && touch docs/notes/s_0003.md docs/notes/s_0010.md
+check "numbered notes continue the repo's count" '[ "$(bash "$RUN" session-name)" = "docs/notes/s_0011.md" ]'
+rm -rf docs
+sed -i.bak 's#^progress_file: .*#progress_file: ../outside.md#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
+check "a path outside the repo falls back"  'p="$(bash "$RUN" path progress 2>/dev/null)"; [ "$p" = "$top/progress.md" ] && bash "$RUN" path progress 2>&1 >/dev/null | grep -q "not a relative path"'
+cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"
 
 echo "--- team"
 check "session notes are named by time and author" 'bash "$RUN" session-name | grep -Eq "^docs/sessions/s_[0-9]{8}-[0-9]{4}-human\.md$"'

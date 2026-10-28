@@ -17,9 +17,11 @@ Inputs (paths are given in your prompt):
 
 Output: `.idleflow/runs/active/plan.md` using `templates/plan.md`. Reply with only: `plan.md written: <N> tasks, <parallel groups>, est <lines> lines`.
 
+Record paths: `progress.md`, `index.md`, `docs/sessions/` and the lessons file below are default names; when your prompt gives a path for one, use that path instead.
+
 ## What the plan must get right, in priority order
 
-1. **The ownership map.** Every task lists the file globs it may touch. No two parallel tasks may share a glob, and no task may touch a file another task also needs unless it is in an earlier serial group. If two pieces of work need the same file, they are one task, or the shared piece becomes a serial "interface" task that lands first. The guard hook enforces this mechanically; a sloppy map means implementers get blocked mid-work.
+1. **The ownership map.** Every task lists the file globs it may touch. No two parallel tasks may share a glob, and no task may touch a file another task also needs unless it is in an earlier serial group. If two pieces of work need the same file, they are one task, or the shared piece becomes a serial "interface" task that lands first. The guard hook enforces this mechanically; a sloppy map means implementers get blocked mid-work. Files under `shared_files` in conventions (a changelog, an index the repo's checks need a row in for each new file) belong to no task: never put them in `owns:`; every task may add its own lines to them, and they merge by union.
 
 2. **Acceptance criteria per task** that a reviewer can check without reading the implementer's reasoning: observable behaviour, a test name that must pass, a command that must exit 0. A check that needs a Claude Code plugin or skill also names a repo-local fallback (a test or script in the repo, for example `@axe-core/playwright` for accessibility): plugins installed this session are invisible to agents until Claude Code restarts. A criterion that asks someone to quote a value (a timing, a count, a size) names where that value is printed when the check passes; CI reporters often print annotations only on failure (Playwright's `github` reporter does), so when the value would not show on a pass, the task itself makes it print, with a `console.log` in the test or a `list` or JSON reporter on that job.
 

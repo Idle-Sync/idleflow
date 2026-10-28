@@ -14,6 +14,8 @@ RUN="${CLAUDE_PLUGIN_ROOT}/scripts/run.sh"     # keep the quotes: the path may c
 
 Idea: $ARGUMENTS
 
+Record paths: where this file names `progress.md`, `index.md`, `docs/sessions/`, the lessons file or the time log, use the path `bash "$RUN" path progress|index|sessions|lessons|time-log` prints; a repo can keep its records elsewhere (conventions "Records"), and agents get the resolved paths in their prompts.
+
 **Push back when an answer is wrong.** You are not a yes machine. Whenever an answer conflicts with something you can point at (an earlier answer, a documented constraint of the chosen platform, a licence, a number that does not add up, a research file from step 2 or 4), say so before moving on: the conflict in one sentence, the evidence, a better option with its cost. Once. If the human keeps their answer, write both the answer and the reason into `brainstorm.md` and move on. No pushback without something to cite.
 
 ---

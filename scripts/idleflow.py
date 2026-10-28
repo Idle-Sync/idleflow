@@ -246,7 +246,7 @@ def cmd_guard():
         if path == wt or path.startswith(wt + "/"):
             rel = path[len(wt) + 1:] if path != wt else ""
             owns = t.get("owns") or []
-            implicit = [".idleflow-run/result.md"]
+            implicit = [".idleflow-run/result.md"] + list(omap.get("shared") or [])
             if glob_match(rel, list(owns) + implicit):
                 sys.exit(0)
             sys.stderr.write(

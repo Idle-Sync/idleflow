@@ -20,7 +20,7 @@
 #   run.sh finish [status]                -> logs the run to .idleflow/runs/log.jsonl, renames active/ to <id>/
 #   run.sh loc                            -> prints hand-written code lines in the repo (DIFF_EXCLUDE applied)
 #   run.sh conf                           -> prints resolved config values and the runtime in use
-#   run.sh path <conventions|lessons|runs> -> prints where that file or directory lives in this repo
+#   run.sh path <name>                    -> where a record lives here: conventions, lessons, progress, index, sessions, time-log, runs
 #   run.sh migrate                        -> moves files a pre-.idleflow/ version kept under .claude/ and commits the move
 #   run.sh doctor                         -> checks the repo's idleflow setup, one "ok|warn|fail|suggest <check>: <detail> | fix: <how>" line each
 #   run.sh update-check                   -> prints one line when a newer idleflow is tagged on GitHub, nothing otherwise
@@ -83,9 +83,35 @@ active_id() {
   echo "$id"
 }
 
-# `lessons_in: docs` puts the lessons next to the team's other docs; anything else keeps them in .idleflow/.
-lessons_path() {
-  if grep -q '^lessons_in: *docs' "$CONVENTIONS" 2>/dev/null; then echo "$REPO/docs/lessons.md"; else echo "$IDLE/lessons.md"; fi
+# A repo can keep its records where it already keeps them (conventions "Records"). A value must be
+# a plain relative path inside the repo; anything else falls back to the default, with a warning.
+record_path() { # record_path <conventions key> <default>
+  local v; v="$(conventions_value "$1")"
+  case "$v" in ""|unset) echo "$2"; return;; esac
+  if [[ "$v" =~ ^[A-Za-z0-9_][A-Za-z0-9_./-]*$ ]] && [[ "$v" != *..* ]]; then echo "${v%/}"; return; fi
+  echo "[idleflow] $1: '$v' is not a relative path inside the repo; using $2" >&2
+  echo "$2"
+}
+lessons_rel() {
+  case "$(conventions_value lessons_in)" in
+    docs) echo docs/lessons.md;;
+    *.md) record_path lessons_in .idleflow/lessons.md;;
+    *) echo .idleflow/lessons.md;;
+  esac
+}
+lessons_path() { echo "$REPO/$(lessons_rel)"; }
+progress_rel() { record_path progress_file progress.md; }
+index_rel() { record_path index_file index.md; }
+sessions_rel() { record_path sessions_dir docs/sessions; }
+time_log_rel() { record_path time_log .idleflow/time-log.md; }
+# Files every task may add its own lines to (a changelog, an index the repo's checks require rows
+# in); parallel tasks cannot own one file, so these sit outside ownership and merge by union.
+shared_files() {
+  local v f; v="$(conventions_value shared_files)"
+  case "$v" in ""|unset|none) return 0;; esac
+  for f in $(set -f; echo $v); do
+    if [[ "$f" =~ ^[A-Za-z0-9_.*][A-Za-z0-9_.*/-]*$ ]] && [[ "$f" != *..* ]]; then echo "$f"; else echo "[idleflow] shared_files: skipped '$f'" >&2; fi
+  done
 }
 
 # Older versions kept idleflow's files under .claude/; these rewrite mentions of the old paths.
@@ -135,12 +161,12 @@ set_project_conf() { # set_project_conf <KEY> [value]: no value removes the key
   cat "$tmp" > "$PROJECT_CONF" && rm -f "$tmp"
 }
 
-# Several people add to these files at the same spot (new lessons at the end, new progress
-# entries at the top); git's built-in union driver keeps both sides instead of conflicting.
-UNION_MERGE_FILES=".idleflow/lessons.md docs/lessons.md progress.md .idleflow/suggestions.md"
+# Several people (or parallel tasks) add to these files at the same spot (new lessons at the end,
+# new progress entries at the top); git's built-in union driver keeps both sides instead of conflicting.
+union_merge_files() { { lessons_rel; progress_rel; echo .idleflow/suggestions.md; time_log_rel; shared_files; } 2>/dev/null | awk '!seen[$0]++'; }
 ensure_union_merge() {
   local f
-  for f in $UNION_MERGE_FILES; do add_ignore "$REPO/.gitattributes" "$f merge=union"; done
+  while IFS= read -r f; do add_ignore "$REPO/.gitattributes" "$f merge=union"; done < <(union_merge_files)
 }
 
 author_slug() { git config user.name 2>/dev/null | tr 'A-Z' 'a-z' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//' | cut -c1-20; }
@@ -221,7 +247,8 @@ case "$cmd" in
     cat > "$ACTIVE/run.json" <<JSON
 {"id":"$id","plugin_version":$(json_str "$(plugin_version)"),"by":$(json_str "$(git config user.name || echo unknown)"),"slug":"$safe","base":$(json_str "$base"),"base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"gate_trips":0,"review_findings":0}
 JSON
-    echo "{\"repo\":$(json_str "$(native_path "$REPO")"),\"tasks\":{}}" > "$ACTIVE/ownership.json"
+    shared="$(shared_files | while IFS= read -r f; do json_str "$f"; echo; done | paste -sd, -)"
+    echo "{\"repo\":$(json_str "$(native_path "$REPO")"),\"shared\":[${shared}],\"tasks\":{}}" > "$ACTIVE/ownership.json"
     add_ignore "$(ignore_file)" '.idleflow/runs/'
     # worktree marker dir: excluded locally (shared by all worktrees), never committed or merged
     add_ignore "$(exclude_file)" '.idleflow-run/'
@@ -330,7 +357,7 @@ JSON
     [ -f "$("${G[@]}" rev-parse --absolute-git-dir)/MERGE_HEAD" ] && { echo "snapshot: a merge is in progress; finish or abort it first" >&2; exit 1; }
     paths=()
     ensure_union_merge
-    for f in .idleflow CLAUDE.md prd.md progress.md index.md README.md .gitignore .gitattributes docs; do
+    for f in $(printf '%s\n' .idleflow CLAUDE.md prd.md "$(progress_rel)" "$(index_rel)" "$(lessons_rel)" README.md .gitignore .gitattributes docs | awk '!seen[$0]++'); do
       [ -e "$REPO/$f" ] || continue
       # the human chose what is ignored (docs_in_git in R2); an ignored path is simply skipped
       if "${G[@]}" check-ignore -q --no-index -- "$f"; then
@@ -360,9 +387,13 @@ JSON
     echo "${n:-0}"
     ;;
   path)
-    case "${1:?conventions|lessons|runs}" in
+    case "${1:?conventions|lessons|progress|index|sessions|time-log|runs}" in
       conventions) native_path "$CONVENTIONS";;
       lessons) native_path "$(lessons_path)";;
+      progress) native_path "$REPO/$(progress_rel)";;
+      index) native_path "$REPO/$(index_rel)";;
+      sessions) native_path "$REPO/$(sessions_rel)";;
+      time-log) native_path "$REPO/$(time_log_rel)";;
       runs) native_path "$RUNS";;
       *) echo "unknown path name: $1" >&2; exit 1;;
     esac
@@ -414,7 +445,14 @@ JSON
   session-name)
     # Named by time and author, not by a running number: two people writing a note on the same
     # day would otherwise both pick the next number.
-    who="$(author_slug)"; base="docs/sessions/s_$(date +%Y%m%d-%H%M)-${who:-anon}"; f="$base.md"; n=2
+    dir="$(sessions_rel)"
+    if [ "$(conventions_value session_names)" = numbered ]; then
+      # a repo that numbers its notes (s_0001.md, ...) keeps doing so; with several writers it can collide
+      last="$(ls "$REPO/$dir" 2>/dev/null | sed -n 's/^s_\([0-9][0-9][0-9][0-9]\)\.md$/\1/p' | sort -n | tail -1)"
+      printf '%s/s_%04d.md\n' "$dir" "$((10#${last:-0} + 1))"
+      exit 0
+    fi
+    who="$(author_slug)"; base="$dir/s_$(date +%Y%m%d-%H%M)-${who:-anon}"; f="$base.md"; n=2
     while [ -e "$REPO/$f" ]; do f="$base-$n.md"; n=$((n+1)); done
     echo "$f"
     ;;
@@ -610,7 +648,7 @@ JSON
     elif [ "${people:-0}" -gt 1 ]; then check_line warn team "$people people commit here, but .claude/settings.json does not recommend idleflow, so teammates work without it" "run.sh team-install"
     else check_line ok team "one contributor so far (run.sh team-install when others join)"; fi
     union_missing=""
-    for f in $UNION_MERGE_FILES; do grep -qxF "$f merge=union" "$REPO/.gitattributes" 2>/dev/null || union_missing="$union_missing $f"; done
+    while IFS= read -r f; do grep -qxF "$f merge=union" "$REPO/.gitattributes" 2>/dev/null || union_missing="$union_missing $f"; done < <(union_merge_files)
     if [ -n "$union_missing" ]; then check_line warn merges "no union merge for:$union_missing, so concurrent entries conflict" "run.sh snapshot"; else check_line ok merges "lessons, progress and suggestions merge without conflicts"; fi
 
     # the retro's suggestions, newest per key, minus those declined or already applied
@@ -625,20 +663,21 @@ JSON
         } END { for (i = 1; i <= n; i++) print order[i] "\t" last[order[i]] }' "$RUNS/config-proposals.md")
     fi
 
+    progress="$REPO/$(progress_rel)"
     if grep -q '^## Milestones' "$REPO/prd.md" 2>/dev/null; then check_line warn milestones "milestones are still in prd.md; progress.md now holds them and prd.md only the product" "move them as procedures/repo-setup.md R2 step 5 says"
-    elif [ -f "$REPO/progress.md" ] && ! grep -q '^## Milestones' "$REPO/progress.md"; then check_line warn milestones "progress.md has no Milestones section, so /idleflow:progress has nothing to count" "add one as procedures/repo-setup.md R2 step 5 says"
-    elif [ -f "$REPO/progress.md" ]; then
+    elif [ -f "$progress" ] && ! grep -q '^## Milestones' "$progress"; then check_line warn milestones "$(progress_rel) has no Milestones section, so /idleflow:progress has nothing to count" "add one as procedures/repo-setup.md R2 step 5 says"
+    elif [ -f "$progress" ]; then
       # union merge keeps both sides of a conflicting hunk, so two people ticking nearby boxes can leave an item twice
-      dupes="$(awk '/^## Milestones/{m=1;next} /^## /{m=0} m && /^- \[[ x]\] /{k=$0; sub(/^- \[[ x]\] /,"",k); sub(/ \(run [^)]*\)$/,"",k); sub(/ \([0-9a-f]+\)$/,"",k); if (seen[k]++) print k}' "$REPO/progress.md" | head -3 | paste -sd ';' -)"
+      dupes="$(awk '/^## Milestones/{m=1;next} /^## /{m=0} m && /^- \[[ x]\] /{k=$0; sub(/^- \[[ x]\] /,"",k); sub(/ \(run [^)]*\)$/,"",k); sub(/ \([0-9a-f]+\)$/,"",k); if (seen[k]++) print k}' "$progress" | head -3 | paste -sd ';' -)"
       if [ -n "$dupes" ]; then check_line warn milestones "listed twice under Milestones (a merge kept both sides): $dupes" "keep one line each in progress.md, ticked if either was"
-      else check_line ok milestones "progress.md holds the milestones"; fi
+      else check_line ok milestones "$(progress_rel) holds the milestones"; fi
     fi
 
     if [ "$(conventions_value docs)" = yes ]; then
       gone=()
-      for f in prd.md progress.md index.md; do [ -f "$REPO/$f" ] || gone+=("$f"); done
+      for f in prd.md "$(progress_rel)" "$(index_rel)"; do [ -f "$REPO/$f" ] || gone+=("$f"); done
       grep -q '<!-- idleflow start -->' "$REPO/CLAUDE.md" 2>/dev/null || gone+=("CLAUDE.md block")
-      if [ "${#gone[@]}" -gt 0 ]; then check_line warn docs "missing: ${gone[*]}" "/idleflow:setup"; else check_line ok docs "prd.md, progress.md, index.md and the CLAUDE.md block are present"; fi
+      if [ "${#gone[@]}" -gt 0 ]; then check_line warn docs "missing: ${gone[*]}" "/idleflow:setup"; else check_line ok docs "prd.md, $(progress_rel), $(index_rel) and the CLAUDE.md block are present"; fi
     fi
     ;;
   conf)

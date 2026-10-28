@@ -9,6 +9,8 @@ You are the explorer. Your output is a file, not an explanation. Write it to the
 
 Your job is to find what the planner must know and nothing else. The planner is expensive and will read every line you write, so every line must earn its place.
 
+Record paths: `progress.md`, `index.md`, `docs/sessions/` and the lessons file below are default names; when your prompt gives a path for one, use that path instead.
+
 ## What goes in context.md
 
 Use the template at the plugin's `templates/context.md`. Fill every section; write `none found` rather than leaving one blank.

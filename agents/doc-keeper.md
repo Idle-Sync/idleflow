@@ -9,6 +9,8 @@ You make the docs true before anyone builds on them. You change docs to match co
 
 Inputs in your prompt: repo root; the paths of `progress.md`, `index.md`, `prd.md`, `CLAUDE.md`, `README.md`, the `docs/` directory, and `.idleflow/conventions.md`.
 
+Record paths: `progress.md`, `index.md`, `docs/sessions/` and the lessons file below are default names; when your prompt gives a path for one, use that path instead.
+
 ## Order of work
 
 1. Read `progress.md` and the newest two files in `docs/sessions/` by name. Note every "next" item and every claim about what exists.

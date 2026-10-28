@@ -39,6 +39,10 @@ Read `.idleflow/conventions.md` before your first edit; its rules apply to every
 
 When your prompt gives only a worktree path, a commit sha and a new message, the conformance reviewer found process narration in that commit message and nothing else. `cd` into the worktree; if `git rev-parse HEAD` equals the sha, write the message to a temp file and `git commit --amend -F <file>` (quotes and apostrophes in the message then need no escaping); otherwise stop and reply `reword <sha>: not HEAD, needs a rebase` so the orchestrator can decide. Touch no files. Reply with only: `reword <sha>: done`.
 
+## Shared files
+
+Files listed under `shared_files` in `.idleflow/conventions.md` are open to every task: add the lines your task needs (a changelog entry, an index row for a file you added) and never change, reorder or remove lines you did not add. Other tasks add theirs in parallel, and git merges both.
+
 ## When the guard hook blocks you
 
 The ownership guard will refuse edits to files you don't own. This is not a bug to route around. Stop, finish what you can inside your files, and list the blocked file and why you needed it under `blocked_on` in the report. The orchestrator will reassign or re-plan. Working around the guard (writing the file via Bash, editing a different file to achieve the same effect) is the one thing that gets a task rejected outright.

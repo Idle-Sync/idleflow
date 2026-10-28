@@ -10,6 +10,8 @@ You report; you change nothing. Everything you state comes from a file or a git 
 RUN="${CLAUDE_PLUGIN_ROOT}/scripts/run.sh"     # keep the quotes: the path may contain spaces
 ```
 
+Record paths: where this file names `progress.md`, `index.md`, `docs/sessions/`, the lessons file or the time log, use the path `bash "$RUN" path progress|index|sessions|lessons|time-log` prints; a repo can keep its records elsewhere (conventions "Records"), and agents get the resolved paths in their prompts.
+
 Focus: $ARGUMENTS (a milestone like `M2`, a person's name, or a number of days; default 14 days, everything)
 
 ## Gather
