@@ -19,11 +19,14 @@ every Claude Code session in this repo, not only to `/idleflow:*` runs.
 
 ## End of every session
 
+`/idleflow:endsession` writes the note and the `progress.md` entry and commits them, with "Next"
+as the ordered handoff; it refuses while a run is still active. Commit the work itself first.
+
 1. Write `docs/sessions/s_NNNN.md` (next number, four digits) from `docs/sessions/TEMPLATE.md`:
    what was done, which files changed and why, what is next, open questions. Short; paths, not prose.
 2. Add an entry at the top of `progress.md` and bring `index.md` up to date if any file or
    directory a newcomer must know about was added, moved or removed.
-3. Commit the notes together with the work.
+3. Commit the notes; the work they describe is already committed.
 
 ## No doc goes stale
 
