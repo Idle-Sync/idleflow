@@ -24,6 +24,17 @@ Around the pipeline, five things that keep a repo honest:
 - **It reports its own gaps.** Any agent that finds the plugin lacks an input, step, tool or config knob it needed appends a `plugin_gap:` line to `.idleflow/runs/active/gaps.md` instead of working around it. At the end of a run the orchestrator lists them and asks once whether to open them as issues on Idle-Sync/idleflow from the human's GitHub account; nothing is filed without that yes. On greenfield runs the stack advisor always proposes quality tooling per language (ruff, mypy or pyright, pytest and pre-commit for Python; biome or eslint plus prettier, strict tsc and vitest for TypeScript; gofmt and golangci-lint for Go; rustfmt and clippy for Rust, and so on), grounded by the researcher like every other proposal.
 - **No doc goes stale.** With project docs on (automatic for greenfield), the repo gets `prd.md` (the product), `progress.md` (milestones as checkboxes the retro ticks, plus the log), `index.md`, a `CLAUDE.md` block and `docs/sessions/`. A **doc-keeper** runs before every run, checks each claim in those docs against the code, fixes what is stale and commits. The retro writes a session note and updates progress and index after every run. The generated `CLAUDE.md` makes plain Claude Code sessions follow the same start-and-end protocol, and `/idleflow:endsession` closes a working session with a note whose "Next" lists, in order, what the next session does first: push, CI, release, restarts, open deviations.
 
+## What it adds over plain Claude Code
+
+| Plain Claude Code | With idleflow |
+|---|---|
+| One session plans, codes and checks its own work | Sonnet explores, Fable plans, two Opus critics attack large or risky plans, implementers build, two independent reviewers gate each task |
+| One working tree; parallel work collides | One git worktree per task; a hook blocks edits outside the files a task owns |
+| Size of a change is unchecked | A diff gate sends oversized tasks to an auditor that accepts, splits or rejects |
+| Each session starts fresh | Lessons from every run feed the next plan; conventions and settings are committed for the team |
+| Status lives in people's heads | Milestones as checkboxes in `progress.md`, `/idleflow:progress`, session handoffs, docs grounded against the code |
+| Settings are per person | `/idleflow:customize` per repo, shared through git; `/idleflow:doctor` checks setup and updates |
+
 ## Decisions baked in (and where to change them)
 
 | Decision | Value | Where |
@@ -110,7 +121,7 @@ scripts/idleflow.py             the JSON / gate / guard logic (Python)
 scripts/idleflow.js             the same program in Node; keep the two in sync
 scripts/selftest.sh             end-to-end check of the scripts in a throwaway repo
 config/idleflow.conf            every number the workflow uses
-templates/                      plan.md, context.md, lessons.md, conventions.md, prd.md, progress.md,
+templates/                      plan.md, context.md, lessons.md, conventions.md, prd.md, progress.md, install-note.md,
                                 index.md, session.md, CLAUDE.md
 setup.md                        global install, written for Claude Code to execute
 PUBLISHING.md                   validate, push to GitHub, install elsewhere, release updates

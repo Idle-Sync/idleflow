@@ -26,7 +26,7 @@
 #   run.sh update-check                   -> prints one line when a newer idleflow is tagged on GitHub, nothing otherwise
 #   run.sh session-name                   -> the path for a new session note: docs/sessions/s_<YYYYMMDD-HHMM>-<author>.md
 #   run.sh behind                         -> commits the upstream has that this branch lacks (fetches first; empty offline)
-#   run.sh team-install                   -> recommends idleflow in the committed .claude/settings.json, so teammates get it
+#   run.sh team-install                   -> recommends idleflow to teammates: .claude/settings.json plus a CLAUDE.md install note
 #   run.sh agent <name>                   -> how to spawn that agent here: agent, model, extra instructions, contract
 #   run.sh custom list                    -> this repo's customizations (.idleflow/idleflow.conf, agent instructions, replaced agents)
 #   run.sh custom set <KEY> <value>       -> validates and writes one setting to .idleflow/idleflow.conf
@@ -433,6 +433,14 @@ JSON
       || { echo "team-install: $f is not valid JSON; fix it first" >&2; exit 1; }
     idleflow_rt set "$f" enabledPlugins.idleflow@idlesync true
     native_path "$f"
+    # Claude reads CLAUDE.md with or without the plugin, so this note reaches a teammate whose
+    # session has not loaded idleflow (folder not trusted yet, a cloud session).
+    if ! grep -q '<!-- idleflow install start -->' "$REPO/CLAUDE.md" 2>/dev/null; then
+      [ ! -s "$REPO/CLAUDE.md" ] || [ -z "$(tail -c1 "$REPO/CLAUDE.md")" ] || echo >> "$REPO/CLAUDE.md"
+      [ ! -s "$REPO/CLAUDE.md" ] || echo >> "$REPO/CLAUDE.md"
+      cat "$HERE/../templates/install-note.md" >> "$REPO/CLAUDE.md"
+    fi
+    native_path "$REPO/CLAUDE.md"
     ;;
   agent)
     a="${1:-}"; known_agent "$a"

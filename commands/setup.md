@@ -57,6 +57,8 @@ Run **R5** when nothing is under "Tooling" yet (setup counts as size L for its c
 
 ## 6. Commit and finish
 
+**Team.** Unless `.claude/settings.json` already names `idleflow@idlesync`, ask once: **Recommend idleflow to everyone who opens this repo (Recommended when others work here)** — `bash "$RUN" team-install` adds it to the committed `.claude/settings.json` (Claude Code then loads it for a teammate once they trust the folder) and adds an install note to `CLAUDE.md` for sessions that have not loaded it; cons: it changes the team's Claude Code settings file, so say that in review. **Just me for now** — nothing changes; `/idleflow:doctor` suggests it once a second person commits. On yes, commit those two files alone: `chore: recommend idleflow to the team`.
+
 Run **R6** (snapshot): it commits `.idleflow/`, `CLAUDE.md`, the project docs and `docs/`, so every teammate who pulls gets the same setup.
 
 **Plugin gaps** as in `commands/feature.md` step 9, then `bash "$RUN" finish done`.

@@ -286,6 +286,8 @@ printf '{"permissions":{"allow":["Bash(ls)"]}}' > .claude/settings.json
 bash "$RUN" team-install >/dev/null
 check "team-install recommends idleflow, keeps the rest" '[ "$(idleflow_rt get .claude/settings.json enabledPlugins.idleflow@idlesync)" = "true" ] && [ "$(idleflow_rt get .claude/settings.json extraKnownMarketplaces.idlesync.source.repo)" = "Idle-Sync/idleflow" ] && grep -q "Bash(ls)" .claude/settings.json'
 printf '{bad' > .claude/settings.json
+bash "$RUN" team-install >/dev/null
+check "team-install adds the CLAUDE.md note once" '[ "$(grep -c "idleflow install start" CLAUDE.md)" = "1" ] && grep -q "claude plugin install idleflow@idlesync" CLAUDE.md && grep -qF ".idleflow/lessons.md" CLAUDE.md'
 check "team-install refuses broken JSON"  '! bash "$RUN" team-install 2>/dev/null && [ "$(cat .claude/settings.json)" = "{bad" ]'
 printf '{}' > .claude/settings.json
 printf '# P\n## Must do (v1)\n- a — done when: b\n## Milestones\n1. one\n' > prd.md; printf '# Progress\n<!-- progress start -->\n' > progress.md
