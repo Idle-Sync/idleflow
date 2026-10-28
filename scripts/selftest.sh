@@ -485,6 +485,11 @@ det="$(cd "$f" && bash "$RUN" detect)"; doc="$(cd "$f" && bash "$RUN" doctor 2>/
 check "detect leaves an answered key alone" '! echo "$det" | grep -q "^suggest commit_format"'
 check "doctor hides a declined fit suggestion" '! echo "$doc" | grep -q "^suggest fit gate" && echo "$doc" | grep -q "^suggest fit lessons_in"'
 rm -rf "$f"
+f="$(mktemp -d)"; ( cd "$f" && git init -q && printf '{"scripts":{"dev":"vite"}}' > package.json )
+det="$(cd "$f" && bash "$RUN" detect)"; det_rc=$?
+check "detect works before the first commit" '[ "$det_rc" = 0 ] && echo "$det" | grep -q "^suggest preview: npm run dev —"'
+check "doctor works before the first commit" '(cd "$f" && bash "$RUN" doctor >/dev/null 2>&1)'
+rm -rf "$f"
 
 echo "--- prompt contracts"
 researcher="$HERE/../agents/stack-researcher.md"
@@ -505,6 +510,9 @@ check "fix sizing ignores module count"   '! grep -q "more than one module" "$fi
 check "ignore rules go through run.sh ignore" 'grep -q "^ignore_in: unset" "$conventions" && grep -q "\"\$RUN\" ignore" "$setup" && grep -q "\"\$RUN\" ignore" "$init"'
 check "repo readability mode is offered and enforced" 'grep -q "^| \`repo\` |" "$conventions" && grep -q "Match this repo" "$setup" && grep -q "Match this repo" "$HERE/../commands/style.md" && grep -q "\`repo\`" "$HERE/../agents/implementer.md" && grep -q "\`repo\`" "$HERE/../agents/implementer-hard.md" && grep -q "\`repo\`" "$HERE/../agents/review-conform.md"'
 check "both reviewers allow shared files" 'grep -q "top-level \`shared\` list" "$HERE/../agents/review-conform.md" && grep -q "top-level \`shared\` list" "$HERE/../agents/review-correct.md"'
+check "the designer and design reviewer exist" '[ -f "$HERE/../agents/designer.md" ] && [ -f "$HERE/../agents/review-design.md" ] && grep -q "\"ui\"" "$HERE/../agents/classifier.md" && grep -q "^### 2c. Design" "$HERE/../commands/feature.md"'
+check "the design handbook carries the contrast rule" 'grep -q "4.5:1" "$HERE/../procedures/design.md" && grep -q "0.2126 R + 0.7152 G + 0.0722 B" "$HERE/../procedures/design-data.md"'
+check "STEP_DESIGN is a setting" 'grep -q STEP_DESIGN "$HERE/conf.sh" && grep -q "^STEP_DESIGN=auto" "$HERE/../config/idleflow.conf"'
 check "every command reads the talking rules" '[ -z "$(cd "$HERE/../commands" && grep -L "procedures/talking.md" *.md | grep -vx fix.md)" ]'
 check "R3 chunks and concatenates"      'grep -q "stack-research-<n>.md" "$setup" && grep -q "\`cat\` them in order into \`.idleflow/runs/active/stack-research.md\` before step 3" "$setup"'
 

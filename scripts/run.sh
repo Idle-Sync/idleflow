@@ -196,7 +196,7 @@ wt_path() {
 
 # Repo commands come from whoever pushed the repo: they run only as committed at HEAD, and only once
 # this person approved that exact text (a hash in local git config; any change asks again).
-REPO_COMMANDS="worktree_setup gate gate_quick"
+REPO_COMMANDS="worktree_setup gate gate_quick preview"
 repo_command() { # the committed value of a command key, empty when unset
   local v
   v="$({ "${G[@]}" show "HEAD:.idleflow/conventions.md" 2>/dev/null || true; } | sed -n "s/^$1: *//p" | head -1 | tr -d '\r' | sed 's/ *$//')"
@@ -309,7 +309,7 @@ case "$cmd" in
     base="$("${G[@]}" symbolic-ref --short -q HEAD || echo HEAD)"
     base_sha="$("${G[@]}" rev-parse -q --verify HEAD 2>/dev/null || true)"
     cat > "$ACTIVE/run.json" <<JSON
-{"id":"$id","worktree_setup":$(json_str "$(repo_command worktree_setup)"),"gate":$(json_str "$(repo_command gate)"),"gate_quick":$(json_str "$(repo_command gate_quick)"),"plugin_version":$(json_str "$(plugin_version)"),"by":$(json_str "$(git config user.name || echo unknown)"),"slug":"$safe","base":$(json_str "$base"),"base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"gate_trips":0,"review_findings":0}
+{"id":"$id","worktree_setup":$(json_str "$(repo_command worktree_setup)"),"gate":$(json_str "$(repo_command gate)"),"gate_quick":$(json_str "$(repo_command gate_quick)"),"preview":$(json_str "$(repo_command preview)"),"plugin_version":$(json_str "$(plugin_version)"),"by":$(json_str "$(git config user.name || echo unknown)"),"slug":"$safe","base":$(json_str "$base"),"base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"gate_trips":0,"review_findings":0}
 JSON
     shared="$(shared_files | while IFS= read -r f; do json_str "$f"; echo; done | paste -sd, -)"
     echo "{\"repo\":$(json_str "$(native_path "$REPO")"),\"shared\":[${shared}],\"tasks\":{}}" > "$ACTIVE/ownership.json"
@@ -583,7 +583,7 @@ JSON
     if unset_key session_names; then
       dir="$REPO/$(sessions_rel)"
       [ -d "$dir" ] || dir="$REPO/docs/sessions"
-      people="$("${G[@]}" log --format='%ae' 2>/dev/null | sort -u | wc -l | tr -d ' ')"
+      people="$({ "${G[@]}" log --format='%ae' 2>/dev/null || true; } | sort -u | grep -c . || true)"
       if ls "$dir"/*/ 2>/dev/null | grep -qE '^s_[0-9]{4}\.md$'; then say session_names per-person "notes in ${dir#"$REPO"/} are already in one folder per person"
       elif ls "$dir" 2>/dev/null | grep -qE '^s_[0-9]{4}\.md$'; then
         if [ "${people:-1}" -gt 1 ]; then say session_names per-person "notes are numbered s_NNNN.md and $people people commit here; a folder per person keeps the numbering without collisions"
@@ -610,6 +610,11 @@ JSON
       tests_re='pytest|jest|vitest|mocha|go test|cargo test|npm (run )?test|yarn test|pnpm test|mvn .*test|gradle.* test|tox|rspec|phpunit|make (test|check)|gate'
       for h in .husky/pre-commit .husky/pre-push .git/hooks/pre-commit .git/hooks/pre-push .pre-commit-config.yaml lefthook.yml lefthook.yaml; do
         [ -f "$REPO/$h" ] && grep -qE "$tests_re" "$REPO/$h" && say hooks "move the tests out of $h" "it runs tests on every commit or push, and each idleflow task commits several times while the gate takes ${slowest}s"
+      done
+    fi
+    if unset_key preview; then
+      for t in dev start preview; do
+        if grep -qE "\"$t\"[[:space:]]*:" "$REPO/package.json" 2>/dev/null; then say preview "npm run $t" "package.json has a $t script; the design reviewer can serve the app to take screenshots (setup asks for its address)"; break; fi
       done
     fi
     if unset_key gate; then
@@ -687,7 +692,7 @@ JSON
     done
     ;;
   approve)
-    key="${1:?worktree_setup|gate|gate_quick}"
+    key="${1:?worktree_setup|gate|gate_quick|preview}"
     case " $REPO_COMMANDS " in *" $key "*) ;; *) echo "approve: unknown command key '$key'" >&2; exit 1;; esac
     cmd="$(repo_command "$key")"
     [ -n "$cmd" ] || { echo "approve: no committed $key in .idleflow/conventions.md" >&2; exit 1; }
@@ -857,7 +862,7 @@ JSON
 
     behind="$(bash "$0" behind 2>/dev/null || true)"
     if [ -n "$behind" ]; then check_line warn sync "this branch is $behind commit(s) behind its upstream: teammates' lessons and settings are missing" "git pull --ff-only"; fi
-    people="$("${G[@]}" log --format='%ae' 2>/dev/null | sort -u | wc -l | tr -d ' ')"
+    people="$({ "${G[@]}" log --format='%ae' 2>/dev/null || true; } | sort -u | grep -c . || true)"
     if grep -q '"idleflow@idlesync"' "$REPO/.claude/settings.json" 2>/dev/null; then check_line ok team ".claude/settings.json recommends idleflow to everyone who opens the repo"
     elif [ "${people:-0}" -gt 1 ]; then check_line warn team "$people people commit here, but .claude/settings.json does not recommend idleflow, so teammates work without it" "run.sh team-install"
     else check_line ok team "one contributor so far (run.sh team-install when others join)"; fi
@@ -935,7 +940,7 @@ JSON
     fi
     ;;
   conf)
-    for v in DIFF_LIMIT DIFF_SLACK MAX_IMPLEMENTERS SIZE_M_IMPLEMENTERS DEBATE_ROUNDS MAX_RETRIES SIZE_S_MAX SIZE_M_MAX SIZE_S_OVERRUN LARGE_REPO_LOC STEP_DEBATE STEP_STACK STEP_LIBRARIES STEP_TOOLING STEP_DOC_KEEPER STEP_MUTATION SLOW_GATE_SECONDS; do
+    for v in DIFF_LIMIT DIFF_SLACK MAX_IMPLEMENTERS SIZE_M_IMPLEMENTERS DEBATE_ROUNDS MAX_RETRIES SIZE_S_MAX SIZE_M_MAX SIZE_S_OVERRUN LARGE_REPO_LOC STEP_DEBATE STEP_STACK STEP_LIBRARIES STEP_TOOLING STEP_DOC_KEEPER STEP_MUTATION STEP_DESIGN SLOW_GATE_SECONDS; do
       echo "$v=${!v:-}"
     done
     echo "RUNTIME=$(idleflow_rt_name)"
