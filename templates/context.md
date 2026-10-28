@@ -21,6 +21,7 @@
 - Config: lives in <where> (see `path`)
 - Migrations: <how> (see `path`)
 - Tests: runner `<cmd>`; single test: `<cmd>`
+- Install: `<frozen-lockfile command, through corepack when the package manager is pinned>` (see `path`) | none
 
 ## 6. Prior art
 - `<commit or path>` — <a similar change; what to copy>
