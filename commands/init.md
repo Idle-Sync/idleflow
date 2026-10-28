@@ -67,7 +67,7 @@ Ask in one AskUserQuestion call (four questions):
 3. **Versioned, tagged releases on GitHub?** **Yes, public repo**: semantic versions, a `vX.Y.Z` tag and a GitHub release with notes when a PRD milestone completes; cons: the code is public from the first push. **Yes, private repo**: same, visible to collaborators only. **Not now**: local git only; a repo can be added later.
 4. **Keep docs/ in git?** **Yes (Recommended)**: research, market research and session notes are shared with everyone who clones. **No, keep it local**: notes stay on this machine; cons: the next person starts blind.
 
-Then, in a second call, R1's **Ignore file** question with its two options.
+Then, in a second call, R1's **Ignore file** question with its two options and a **Team** question: **Recommend idleflow to everyone who opens this repo** (`bash "$RUN" team-install` in step 6: the committed `.claude/settings.json` offers it to teammates and `CLAUDE.md` carries an install note) / **Just me for now** (`/idleflow:doctor` suggests it once a second person commits).
 
 Write `mode:`, `docs: yes`, `docs_in_git:` and `ignore_in:` into `.idleflow/conventions.md`, then `bash "$RUN" ignore .idleflow/runs/` and, on "No, keep it local", `bash "$RUN" ignore docs/`. Keep `co_author_claude:` and `releases:` for step 6. R1 and the `docs_in_git` question of R2 are now answered; do not ask them again.
 
@@ -85,10 +85,11 @@ Show the human the PRD's "Must do (v1)" and "Two-year shape" sections and the "M
 
 1. Run **R2** steps 1 and 2 (`progress.md`, `index.md`, `docs/sessions/TEMPLATE.md`, `CLAUDE.md`). Fill `co_author_claude:` and `releases:` in `CLAUDE.md` from step 3, `<Project name>` from the brainstorm, and the "Commands" lines with the install/test/run commands the accepted stack decisions imply (or `<to be set by the first feature run>`).
 2. `index.md`: list what exists now (`prd.md`, `progress.md`, `CLAUDE.md`, `.idleflow/`, `docs/`), nothing imagined.
-3. `progress.md` (its "Milestones" section is already written): first "Log" entry: `## <date> — project initialised (run <ID>)` with: brainstorm done, market research verdict, N stack decisions, N library decisions, N tooling items, PRD approved, next: milestone 1 from `prd.md`.
+3. `progress.md` (its "Milestones" section is already written): first "Log" entry: `## <date> — project initialised (run <ID>)` with: brainstorm done, market research verdict, N stack decisions, N library decisions, N tooling items, PRD approved, next: milestone 1 from `progress.md` "Milestones".
 4. The note at `$(bash "$RUN" session-name)` from the template: what this session decided, the files it created, next = milestone 1.
-5. `.gitignore`: add the stack's usual entries (`.venv/`, `node_modules/`, `dist/`, `.env`) only for stacks that were accepted; every clone needs them, so they go here whatever `ignore_in:` says. idleflow's own entries were placed in step 3.
-6. `README.md` if absent: the project name, the one-sentence "what", the one-line "who", and `See prd.md`. Nothing else; it grows with the code.
+5. On the **Team** answer "Recommend", `bash "$RUN" team-install`.
+6. `.gitignore`: add the stack's usual entries (`.venv/`, `node_modules/`, `dist/`, `.env`) only for stacks that were accepted; every clone needs them, so they go here whatever `ignore_in:` says. idleflow's own entries were placed in step 3.
+7. `README.md` if absent: the project name, the one-sentence "what", the one-line "who", and `See prd.md`. Nothing else; it grows with the code.
 
 ## 7. First commit and, if chosen, the GitHub repo
 

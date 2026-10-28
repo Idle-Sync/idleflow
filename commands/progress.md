@@ -1,5 +1,5 @@
 ---
-description: Where the project stands, for one person or a whole team. Shows each prd.md milestone with its Must-do boxes ticked and open, what landed recently and who landed it, the run in progress, what's next from the latest handoff, and what is waiting on a human. Read-only. Use when asked "where are we", "project status", "what's left for the milestone", "what did the team do this week", "progress". Usage: /idleflow:progress [milestone, person, or number of days]
+description: Where the project stands, for one person or a whole team. Shows each milestone in progress.md with its boxes ticked and open, what landed recently and who landed it, the run in progress, what's next from the latest handoff, and what is waiting on a human. Read-only. Use when asked "where are we", "project status", "what's left for the milestone", "what did the team do this week", "progress". Usage: /idleflow:progress [milestone, person, or number of days]
 argument-hint: [milestone, person, or number of days]
 allowed-tools: Bash, Read, Grep, Glob
 ---
