@@ -36,7 +36,7 @@ Spawn `idleflow:explorer` with: the issue path, the output path `.claude/runs/ac
 
 Spawn `idleflow:classifier` with the context.md path and the `SIZE_*` values. Parse its JSON line. `bash "$RUN" set size '"<S|M|L>"'`, `bash "$RUN" set greenfield <true|false>`, `bash "$RUN" set risk '"<low|high>"'` and `bash "$RUN" set new_dependency <true|false>`. If the line has a `plugin_gap`, append (`>>`) `plugin_gap: classifier — <text>` to `.claude/runs/active/gaps.md`.
 
-If `greenfield` is true, the diff limit for this run is `DIFF_LIMIT * 3`; pass that limit as the second argument to every later `gate` call and to the auditor. Implementers per group: `SIZE_M_IMPLEMENTERS` for size M, `MAX_IMPLEMENTERS` for L, 1 for S.
+The diff limit applies to each task's diff on its own; there is no run-wide total. If `greenfield` is true, the diff limit for this run is `DIFF_LIMIT * 3`; pass that limit as the second argument to every later `gate` call and to the auditor. Implementers per group: `SIZE_M_IMPLEMENTERS` for size M, `MAX_IMPLEMENTERS` for L, 1 for S.
 
 Each later step follows the field that matters to it, not the size alone: the debate (step 4) runs for size L or `risk: high`; stack and library research (R3, R4) run on greenfield or `new_dependency: true`; tooling (R5) runs on greenfield or size L; implementers and reviewers follow the size. Tell the human in one line what that means for this run, for example `Size S, risk low, no new dependency: no debate, no setup research, one reviewer.` If the human corrects a field, set it and record the correction in plan.md "Open questions" once the plan exists.
 

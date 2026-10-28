@@ -25,7 +25,7 @@ Output: `.claude/runs/active/plan.md` using `templates/plan.md`. Reply with only
 
 3. **Tests-first marking.** For every task whose entry points have no tests in context.md §4, set `tests_first: true`. The implementer then writes the failing test before the change. This is not optional in repos without coverage — the review layer has nothing else to stand on.
 
-4. **Honest size estimates** per task, in hand-written lines. The diff gate will check them. If any task is estimated over `DIFF_LIMIT`, split it now rather than letting the auditor split it later.
+4. **Honest size estimates** per task, in hand-written lines. The diff gate will check them, one task at a time: the limit is per task, never a total for the run, so a large run is fine as long as each task fits. If any task is estimated over the diff limit you were given, split it now rather than letting the auditor split it later.
 
 5. **Model per task.** Default `sonnet`. Mark `opus` only where the task needs judgement a checklist can't supply: concurrency, security-sensitive paths, subtle refactors of code with no tests, anything context.md §7 flagged as fragile. Quality is first priority in this repo's config, so when in doubt on a hard task, mark opus — but "touches many files" is not "hard".
 
