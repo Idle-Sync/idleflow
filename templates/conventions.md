@@ -116,6 +116,8 @@ worktrees_in: sibling
 worktree_setup: none
 commit_format: idleflow
 gate: none
+gate_quick: none
+gate_runs: every-task
 
 - `worktrees_in`: `sibling` puts task worktrees next to the repo (`<repo>__wt/<task>`); `inside` puts
   them in `.idleflow/worktrees/` (ignored), for projects that must not write outside their own folder.
@@ -126,6 +128,9 @@ gate: none
 - `gate`: the one command that says whether the repo is healthy (its own check script, `make check`,
   `npm test`). Set, it is the definition of done: run on the base before building, by each implementer
   after its last change, by the correctness reviewer, and after the merge.
+- `gate_runs`: `every-task` runs the gate on the base, for each task and after the merge; `once` (for a
+  gate slower than `SLOW_GATE_SECONDS`) runs `gate_quick` for each task and the full gate once after the
+  merge, checking the base only if that fails. `gate_quick` follows the same approval rule as `gate`.
 - `commit_format`: `idleflow` (task commits `T1: ...`, merges `idleflow: merge T1 (<run>)`) or
   `conventional` (Conventional Commits subjects of at most 72 characters for task, finish and merge
   commits, run and task ids in the body), for repos whose CI checks commit subjects.

@@ -359,6 +359,29 @@ wg="$(bash "$RUN" wt add T4 2>/dev/null)"; ( cd "$wg" && echo y > src/keep.py )
 out="$(bash "$RUN" repo-gate T4 2>/dev/null)"; rc=$?
 check "a red gate in a task worktree exits 1" '[ "$rc" = 1 ] && echo "$out" | grep -q "^repo gate T4: exit 1" && [ -f .idleflow/runs/active/tasks/T4/repo-gate.log ]'
 bash "$RUN" wt rm T4; bash "$RUN" finish done >/dev/null
+check "the gate's time reaches the log"   'tail -1 .idleflow/runs/log.jsonl | grep -q "\"gate_seconds_max\":[0-9]"'
+printf 'gate_quick: grep -q x src/keep.py && echo quick-ok\n' >> .idleflow/conventions.md
+sed -i.bak 's#^gate: .*#gate: sleep 2; grep -q x src/keep.py#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
+mkdir -p .husky && printf 'npm test\n' > .husky/pre-commit
+git add .idleflow/conventions.md .husky && commit -q -m "slow gate"; bash "$RUN" approve gate >/dev/null; bash "$RUN" approve gate_quick >/dev/null
+bash "$RUN" custom set SLOW_GATE_SECONDS 1 >/dev/null
+bash "$RUN" new slow >/dev/null 2>&1
+err="$(bash "$RUN" repo-gate base 2>&1 >/dev/null)"
+check "a slow gate says so"               'echo "$err" | grep -q "^slow: the gate took [0-9]*s (over SLOW_GATE_SECONDS=1)"'
+wq="$(bash "$RUN" wt add T3 2>/dev/null)"
+out="$(bash "$RUN" repo-gate T3 --quick 2>/dev/null)"
+check "--quick runs gate_quick in the task" 'echo "$out" | grep -q "^repo gate_quick T3: exit 0" && grep -q quick-ok .idleflow/runs/active/tasks/T3/repo-gate_quick.log'
+( cd "$wq" && git -c user.name=t -c user.email=t@t commit -qam wip --allow-empty ); bash "$RUN" set tasks.T3.status '"approved"'
+echo z > src/keep.py; git add src/keep.py; commit -q -m "main moves on"
+out="$(bash "$RUN" repo-gate base 2>/dev/null)"; rc=$?
+check "the base check runs at the recorded base after main moved" '[ "$rc" = 0 ] && echo "$out" | grep -q "^repo gate base: exit 0" && [ ! -d "$(dirname "$wq")/_gate-base" ]'
+bash "$RUN" wt rm T3; bash "$RUN" finish done >/dev/null
+det="$(bash "$RUN" detect)"
+check "detect suggests gate_runs: once for a slow gate" 'echo "$det" | grep -q "^suggest gate_runs: once — the gate took"'
+check "detect names a hook that runs tests" 'echo "$det" | grep -q "^suggest hooks: move the tests out of .husky/pre-commit —"'
+doc="$(bash "$RUN" doctor 2>/dev/null)"
+check "doctor shows hook advice without a fix it would apply" 'echo "$doc" | grep -q "^suggest fit hooks: .*idleflow never edits hooks"'
+bash "$RUN" custom unset SLOW_GATE_SECONDS >/dev/null; rm -rf .husky; git checkout -q HEAD~1 -- src/keep.py 2>/dev/null || true
 cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"; git add .idleflow/conventions.md && commit -q -m "restore conventions"
 
 echo "--- conventional commits"

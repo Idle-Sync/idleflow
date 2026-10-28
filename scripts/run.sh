@@ -28,7 +28,7 @@
 #   run.sh behind                         -> commits the upstream has that this branch lacks (fetches first; empty offline)
 #   run.sh team-install                   -> recommends idleflow to teammates: .claude/settings.json plus a CLAUDE.md install note
 #   run.sh detect                         -> suggests Repo fit and Records settings from evidence in the repo (read-only)
-#   run.sh repo-gate <base|main|task-id>  -> runs the repo's approved gate there, keeps its output; exit 1 when it fails, 7 unapproved
+#   run.sh repo-gate <base|main|task> [--quick] -> runs the approved gate (or gate_quick) there, times it; 1 failed, 7 unapproved
 #   run.sh commands                       -> the repo's commands (worktree_setup, gate) as committed, approved or unapproved here
 #   run.sh approve <key>                  -> records this person's approval of that exact committed command (local git config)
 #   run.sh agent <name>                   -> how to spawn that agent here: agent, model, extra instructions, contract
@@ -196,7 +196,7 @@ wt_path() {
 
 # Repo commands come from whoever pushed the repo: they run only as committed at HEAD, and only once
 # this person approved that exact text (a hash in local git config; any change asks again).
-REPO_COMMANDS="worktree_setup gate"
+REPO_COMMANDS="worktree_setup gate gate_quick"
 repo_command() { # the committed value of a command key, empty when unset
   local v
   v="$({ "${G[@]}" show "HEAD:.idleflow/conventions.md" 2>/dev/null || true; } | sed -n "s/^$1: *//p" | head -1 | tr -d '\r' | sed 's/ *$//')"
@@ -309,7 +309,7 @@ case "$cmd" in
     base="$("${G[@]}" symbolic-ref --short -q HEAD || echo HEAD)"
     base_sha="$("${G[@]}" rev-parse -q --verify HEAD 2>/dev/null || true)"
     cat > "$ACTIVE/run.json" <<JSON
-{"id":"$id","worktree_setup":$(json_str "$(repo_command worktree_setup)"),"gate":$(json_str "$(repo_command gate)"),"plugin_version":$(json_str "$(plugin_version)"),"by":$(json_str "$(git config user.name || echo unknown)"),"slug":"$safe","base":$(json_str "$base"),"base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"gate_trips":0,"review_findings":0}
+{"id":"$id","worktree_setup":$(json_str "$(repo_command worktree_setup)"),"gate":$(json_str "$(repo_command gate)"),"gate_quick":$(json_str "$(repo_command gate_quick)"),"plugin_version":$(json_str "$(plugin_version)"),"by":$(json_str "$(git config user.name || echo unknown)"),"slug":"$safe","base":$(json_str "$base"),"base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"gate_trips":0,"review_findings":0}
 JSON
     shared="$(shared_files | while IFS= read -r f; do json_str "$f"; echo; done | paste -sd, -)"
     echo "{\"repo\":$(json_str "$(native_path "$REPO")"),\"shared\":[${shared}],\"tasks\":{}}" > "$ACTIVE/ownership.json"
@@ -343,6 +343,9 @@ JSON
         idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.worktree" "$(json_str "$(native_path "$p")")"
         # epoch seconds, so the retro's time log can subtract them without date parsing
         idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.t_start" "$(date +%s)"
+        # the commit the first tasks branch from is the base a later gate is compared against
+        gb="$(idleflow_rt get "$ACTIVE/run.json" gate_base 2>/dev/null || true)"
+        [ -n "$gb" ] && [ "$gb" != null ] || idleflow_rt set "$ACTIVE/run.json" gate_base "\"$("${G[@]}" rev-parse "$base")\""
         run_worktree_setup "$tid" "$p"
         native_path "$p"
         ;;
@@ -599,6 +602,16 @@ JSON
     if unset_key worktrees_in && grep -qiE '(outside|beyond) (of )?(this|the) (folder|directory|repo|repository|project)' "$REPO/CLAUDE.md" 2>/dev/null; then
       say worktrees_in inside "CLAUDE.md forbids working outside this folder"
     fi
+    # the slowest full gate the last few runs measured
+    slowest="$({ tail -10 "$RUNS/log.jsonl" 2>/dev/null || true; } | { grep -o '"gate_seconds_max":[0-9]*' || true; } | cut -d: -f2 | sort -n | tail -1)"
+    if [ -n "$slowest" ] && [ "$slowest" -gt "${SLOW_GATE_SECONDS:-120}" ]; then
+      unset_key gate_runs && say gate_runs once "the gate took ${slowest}s in a recent run (over ${SLOW_GATE_SECONDS:-120}s); once per run instead of once per task, with gate_quick per task"
+      unset_key gate_quick && say gate_quick "<a fast subset: the tests nearest the change, a lint, a type check>" "a slow gate needs a quick check for each task"
+      tests_re='pytest|jest|vitest|mocha|go test|cargo test|npm (run )?test|yarn test|pnpm test|mvn .*test|gradle.* test|tox|rspec|phpunit|make (test|check)|gate'
+      for h in .husky/pre-commit .husky/pre-push .git/hooks/pre-commit .git/hooks/pre-push .pre-commit-config.yaml lefthook.yml lefthook.yaml; do
+        [ -f "$REPO/$h" ] && grep -qE "$tests_re" "$REPO/$h" && say hooks "move the tests out of $h" "it runs tests on every commit or push, and each idleflow task commits several times while the gate takes ${slowest}s"
+      done
+    fi
     if unset_key gate; then
       cands=()
       for f in tools/gate.py scripts/gate.py tools/gate.sh scripts/gate.sh scripts/check.sh bin/check; do
@@ -616,27 +629,53 @@ JSON
     exit 0
     ;;
   repo-gate)
-    # The repo's own check, the definition of done: on the run's base before building (so earlier
-    # breakage is not blamed on the run), in a task's worktree, or on the main checkout after merge.
-    target="${1:?base|main|<task-id>}"; active_id >/dev/null
-    cmd="$(idleflow_rt get "$ACTIVE/run.json" gate 2>/dev/null || true)"
-    case "$cmd" in ""|null) echo "repo gate: none"; exit 0;; esac
-    command_approved gate "$cmd" || { echo "gate is not approved on this clone; nothing ran. The command is: $cmd" >&2; exit 7; }
+    # The repo's own check, the definition of done: on the base the tasks branch from (so earlier
+    # breakage is not blamed on the run), in a task's worktree (--quick: gate_quick), or after merge.
+    target="${1:?base|main|<task-id>}"; key=gate; [ "${2:-}" = --quick ] && key=gate_quick
+    active_id >/dev/null
+    cmd="$(idleflow_rt get "$ACTIVE/run.json" "$key" 2>/dev/null || true)"
+    case "$cmd" in ""|null) echo "repo $key: none"; exit 0;; esac
+    command_approved "$key" "$cmd" || { echo "$key is not approved on this clone; nothing ran. The command is: $cmd" >&2; exit 7; }
+    tmp_base=""
     case "$target" in
-      base|main) dir="$REPO"; log="$ACTIVE/repo-gate-$target.log";;
-      *) dir="$(wt_path "$target")"; log="$ACTIVE/tasks/$target/repo-gate.log"; mkdir -p "$ACTIVE/tasks/$target"
+      main) dir="$REPO"; log="$ACTIVE/repo-$key-main.log";;
+      base)
+        log="$ACTIVE/repo-$key-base.log"
+        gb="$(idleflow_rt get "$ACTIVE/run.json" gate_base 2>/dev/null || true)"; head="$("${G[@]}" rev-parse HEAD)"
+        if [ -z "$gb" ] || [ "$gb" = null ]; then gb="$head"; idleflow_rt set "$ACTIVE/run.json" gate_base "\"$gb\""; fi
+        if [ "$gb" = "$head" ]; then
+          if [ -n "$("${G[@]}" status --porcelain --untracked-files=no)" ]; then
+            echo "repo-gate base: the main checkout has uncommitted changes, so it is not the base; commit or stash them first" >&2; exit 1
+          fi
+          dir="$REPO"
+        else
+          # the main checkout has moved on (with gate_runs: once the base is checked only after a failing merge)
+          tmp_base="$(wt_path _gate-base)"; mkdir -p "$ACTIVE/tasks/_gate-base" "$(dirname "$tmp_base")"
+          "${G[@]}" worktree remove --force "$tmp_base" 2>/dev/null || true
+          "${G[@]}" worktree add -q --detach "$tmp_base" "$gb" >/dev/null 2>&1
+          run_worktree_setup _gate-base "$tmp_base"
+          dir="$tmp_base"
+        fi;;
+      *) dir="$(wt_path "$target")"; log="$ACTIVE/tasks/$target/repo-$key.log"; mkdir -p "$ACTIVE/tasks/$target"
          [ -d "$dir" ] || { echo "repo-gate: no worktree for $target" >&2; exit 1; };;
     esac
-    if [ "$target" = base ] && [ -n "$("${G[@]}" status --porcelain --untracked-files=no)" ]; then
-      echo "repo-gate base: the main checkout has uncommitted changes, so it is not the base; commit or stash them first" >&2; exit 1
-    fi
-    echo "repo gate ($target): $cmd" >&2
+    echo "repo $key ($target): $cmd" >&2
+    started="$(date +%s)"
     set +e
     (cd "$dir" && MAIN="$REPO" bash -c "$cmd") > "$log" 2>&1
     rc=$?
     set -e
-    echo "repo gate $target: exit $rc (full output: $(native_path "$log"))"
+    secs=$(( $(date +%s) - started ))
+    [ -z "$tmp_base" ] || "${G[@]}" worktree remove --force "$tmp_base" 2>/dev/null || true
+    if [ "$key" = gate ]; then
+      most="$(idleflow_rt get "$ACTIVE/run.json" gate_seconds_max 2>/dev/null || true)"
+      if [ -z "$most" ] || [ "$most" = null ] || [ "$secs" -gt "$most" ]; then idleflow_rt set "$ACTIVE/run.json" gate_seconds_max "$secs"; fi
+    fi
+    echo "repo $key $target: exit $rc in ${secs}s (full output: $(native_path "$log"))"
     tail -15 "$log"
+    if [ "$key" = gate ] && [ "$secs" -gt "${SLOW_GATE_SECONDS:-120}" ] && [ "$(conventions_value gate_runs)" != once ]; then
+      echo "slow: the gate took ${secs}s (over SLOW_GATE_SECONDS=${SLOW_GATE_SECONDS:-120}); running it for every task multiplies that. /idleflow:doctor suggests gate_runs: once with a quick check per task." >&2
+    fi
     [ "$rc" -eq 0 ] || exit 1
     ;;
   commands)
@@ -648,7 +687,7 @@ JSON
     done
     ;;
   approve)
-    key="${1:?worktree_setup|gate}"
+    key="${1:?worktree_setup|gate|gate_quick}"
     case " $REPO_COMMANDS " in *" $key "*) ;; *) echo "approve: unknown command key '$key'" >&2; exit 1;; esac
     cmd="$(repo_command "$key")"
     [ -n "$cmd" ] || { echo "approve: no committed $key in .idleflow/conventions.md" >&2; exit 1; }
@@ -859,7 +898,11 @@ JSON
       [ -n "$line" ] || continue
       kv="${line#suggest }"; key="${kv%%:*}"; rest="${kv#*: }"; val="${rest%% — *}"
       grep -qF -- "- declined: $key -> $val " "$IDLE/suggestions.md" 2>/dev/null && continue
-      check_line suggest "fit $key" "$val (${rest#* — })" "/idleflow:setup, which asks before changing anything"
+      if [ "$key" = hooks ]; then
+        check_line suggest "fit hooks" "$val (${rest#* — })" "move that step to one run, before the push or in CI; idleflow never edits hooks"
+      else
+        check_line suggest "fit $key" "$val (${rest#* — })" "/idleflow:setup, which asks before changing anything"
+      fi
     done <<< "$(bash "$0" detect 2>/dev/null || true)"
 
     # the retro's suggestions, newest per key, minus those declined or already applied
@@ -892,7 +935,7 @@ JSON
     fi
     ;;
   conf)
-    for v in DIFF_LIMIT DIFF_SLACK MAX_IMPLEMENTERS SIZE_M_IMPLEMENTERS DEBATE_ROUNDS MAX_RETRIES SIZE_S_MAX SIZE_M_MAX SIZE_S_OVERRUN LARGE_REPO_LOC STEP_DEBATE STEP_STACK STEP_LIBRARIES STEP_TOOLING STEP_DOC_KEEPER STEP_MUTATION; do
+    for v in DIFF_LIMIT DIFF_SLACK MAX_IMPLEMENTERS SIZE_M_IMPLEMENTERS DEBATE_ROUNDS MAX_RETRIES SIZE_S_MAX SIZE_M_MAX SIZE_S_OVERRUN LARGE_REPO_LOC STEP_DEBATE STEP_STACK STEP_LIBRARIES STEP_TOOLING STEP_DOC_KEEPER STEP_MUTATION SLOW_GATE_SECONDS; do
       echo "$v=${!v:-}"
     done
     echo "RUNTIME=$(idleflow_rt_name)"
