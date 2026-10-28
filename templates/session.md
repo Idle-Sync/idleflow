@@ -1,4 +1,4 @@
-# Session s_NNNN — <date> — <one-line title>
+# Session <date> — <one-line title>
 
 by: <idleflow run <id> | human | Claude Code session>
 

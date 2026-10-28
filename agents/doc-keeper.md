@@ -11,7 +11,7 @@ Inputs in your prompt: repo root; the paths of `progress.md`, `index.md`, `prd.m
 
 ## Order of work
 
-1. Read `progress.md` and the newest two files in `docs/sessions/`. Note every "next" item and every claim about what exists.
+1. Read `progress.md` and the newest two files in `docs/sessions/` by name. Note every "next" item and every claim about what exists.
 2. Collect the claims. A claim is any sentence in those files or in `docs/**/*.md` that the code can contradict:
    - a path (`src/auth/login.py`, `tests/`) — does it exist?
    - a command (`just test`, `uv run pytest`, `npm run dev`) — does the target exist (script name, task name, binary in the lockfile)? Run it only if it is a read-only command (`--help`, `--version`, a listing); never run tests or builds here.

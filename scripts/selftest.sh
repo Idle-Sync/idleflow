@@ -14,7 +14,7 @@
 # get / set / inc (parity cases), the plugin version check, merge (conflict → 3, unknown branch → 4), wt rm after
 # finish, finish, a runtime given as a full path, a second `new` that parks a
 # leftover run, ignore (info/exclude until conventions say gitignore, no duplicates),
-# path, migrate from the .claude/ layout, doctor, customize, and prompt contracts (the stack scan, researcher and R3 agree on research units,
+# path, migrate from the .claude/ layout, doctor, team (note names, union merges, team-install), customize, and prompt contracts (the stack scan, researcher and R3 agree on research units,
 # budget and reply counts; setup steps follow the classifier's risk and dependency
 # fields; ignore rules go through run.sh ignore; the `repo` readability mode is
 # offered and enforced). Exit 0 and a final "PASS" line mean everything worked.
@@ -78,6 +78,7 @@ check "new prints an id"               '[ -n "$id" ]'
 check "active/run.json exists"         '[ -f .idleflow/runs/active/run.json ]'
 check ".gitignore has runs/ when ignore_in: gitignore" 'grep -qx ".idleflow/runs/" .gitignore'
 check "ignore follows ignore_in: gitignore" 'bash "$RUN" ignore "scratch-b/" >/dev/null && bash "$RUN" ignore "scratch-b/" >/dev/null && [ "$(grep -cxF "scratch-b/" .gitignore)" = "1" ] && ! grep -qxF "scratch-b/" .git/info/exclude'
+check "new records who started the run"  '[ "$(bash "$RUN" get by)" = "Human" ]'
 check "new records the plugin version"  '[ "$(bash "$RUN" get plugin_version)" = "$(idleflow_rt get "$HERE/../.claude-plugin/plugin.json" version)" ]'
 check "same version, no warning"       '[ -z "$(bash "$RUN" get id 2>&1 >/dev/null)" ]'
 v="$(bash "$RUN" get plugin_version)"; bash "$RUN" set plugin_version '"0.0.0"' 2>/dev/null
@@ -243,7 +244,7 @@ check "snapshot refuses during a merge" '[ -f .git/MERGE_HEAD ] && ! bash "$RUN"
 git merge --abort 2>/dev/null || true
 
 echo "--- loc / conf"
-check "loc counts code lines only"     '[ "$(bash "$RUN" loc)" = "$(cat src/big.py src/code.py .gitignore | wc -l | tr -d " ")" ]'
+check "loc counts code lines only"     '[ "$(bash "$RUN" loc)" = "$(cat src/big.py src/code.py .gitignore $(git ls-files .gitattributes) | wc -l | tr -d " ")" ]'
 c="$(bash "$RUN" conf)"
 check "conf prints runtime"            'echo "$c" | grep -q "^RUNTIME="'
 check "conf prints plugin version"     'echo "$c" | grep -q "^PLUGIN_VERSION=[0-9]"'
@@ -273,6 +274,27 @@ check "doctor passes the new layout"      'echo "$doc" | grep -q "^ok layout" &&
 check "doctor names unanswered settings"  'echo "$doc" | grep -q "^warn conventions: not answered yet: ignore_in docs"'
 check "update-check is silent offline"    '[ -z "$(bash "$RUN" update-check)" ]'
 check "migrate again is a no-op"          '[ "$(bash "$RUN" migrate)" = "migrate: nothing to move" ]'
+
+echo "--- team"
+check "session notes are named by time and author" 'bash "$RUN" session-name | grep -Eq "^docs/sessions/s_[0-9]{8}-[0-9]{4}-human\.md$"'
+mkdir -p docs/sessions && touch "$(bash "$RUN" session-name)"
+check "a second note in the same minute gets a suffix" 'bash "$RUN" session-name | grep -q -- "-human-2\.md$"'
+rm -rf docs
+bash "$RUN" snapshot >/dev/null
+check "snapshot sets union merges for shared logs" 'grep -qx ".idleflow/lessons.md merge=union" .gitattributes && grep -qx "progress.md merge=union" .gitattributes && git ls-files --error-unmatch .gitattributes >/dev/null 2>&1'
+printf '{"permissions":{"allow":["Bash(ls)"]}}' > .claude/settings.json
+bash "$RUN" team-install >/dev/null
+check "team-install recommends idleflow, keeps the rest" '[ "$(idleflow_rt get .claude/settings.json enabledPlugins.idleflow@idlesync)" = "true" ] && [ "$(idleflow_rt get .claude/settings.json extraKnownMarketplaces.idlesync.source.repo)" = "Idle-Sync/idleflow" ] && grep -q "Bash(ls)" .claude/settings.json'
+printf '{bad' > .claude/settings.json
+check "team-install refuses broken JSON"  '! bash "$RUN" team-install 2>/dev/null && [ "$(cat .claude/settings.json)" = "{bad" ]'
+printf '{}' > .claude/settings.json
+printf '# P\n## Must do (v1)\n- a — done when: b\n## Milestones\n1. one\n' > prd.md; printf '# Progress\n<!-- progress start -->\n' > progress.md
+doc="$(bash "$RUN" doctor 2>/dev/null)"
+check "doctor finds milestones still in prd.md" 'echo "$doc" | grep -q "^warn milestones: milestones are still in prd.md"'
+printf '# P\n## Must do (v1)\n- a — done when: b\n' > prd.md; printf '# Progress\n## Milestones\n### M1: one\n- [ ] a\n## Log\n<!-- progress start -->\n' > progress.md
+doc="$(bash "$RUN" doctor 2>/dev/null)"
+check "doctor accepts milestones in progress.md" 'echo "$doc" | grep -q "^ok milestones"'
+rm -f prd.md progress.md
 
 echo "--- customize"
 bash "$RUN" custom set DIFF_LIMIT 3000 >/dev/null

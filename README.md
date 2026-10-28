@@ -22,7 +22,7 @@ Around the pipeline, five things that keep a repo honest:
 - **No meta commentary, ever.** The generated `CLAUDE.md` and `.idleflow/conventions.md` ban process narration ("the user asked", "as requested", "I'll now") from every doc, commit, PR, comment and note in the repo, and record whether commits carry a `Co-Authored-By: Claude` trailer (`co_author_claude: yes|no`; footers never). The conformance reviewer rejects on both.
 - **The right tooling, not hand-rolled.** A tooling advisor inventories installed plugins and skills, checks the [Idle-Sync/skills](https://github.com/Idle-Sync/skills) catalogue against what is installed, and proposes the skills, marketplace plugins and workflows the project will use often; accepted items are installed, missing ones become `/idleflow:skills-feedback` requests. `/idleflow:plugin-feedback` reports idleflow's own bugs with the run's evidence attached.
 - **It reports its own gaps.** Any agent that finds the plugin lacks an input, step, tool or config knob it needed appends a `plugin_gap:` line to `.idleflow/runs/active/gaps.md` instead of working around it. At the end of a run the orchestrator lists them and asks once whether to open them as issues on Idle-Sync/idleflow from the human's GitHub account; nothing is filed without that yes. On greenfield runs the stack advisor always proposes quality tooling per language (ruff, mypy or pyright, pytest and pre-commit for Python; biome or eslint plus prettier, strict tsc and vitest for TypeScript; gofmt and golangci-lint for Go; rustfmt and clippy for Rust, and so on), grounded by the researcher like every other proposal.
-- **No doc goes stale.** With project docs on (automatic for greenfield), the repo gets `prd.md`, `progress.md`, `index.md`, a `CLAUDE.md` block and `docs/sessions/`. A **doc-keeper** runs before every run, checks each claim in those docs against the code, fixes what is stale and commits. The retro writes a session note and updates progress and index after every run. The generated `CLAUDE.md` makes plain Claude Code sessions follow the same start-and-end protocol, and `/idleflow:endsession` closes a working session with a note whose "Next" lists, in order, what the next session does first: push, CI, release, restarts, open deviations.
+- **No doc goes stale.** With project docs on (automatic for greenfield), the repo gets `prd.md` (the product), `progress.md` (milestones as checkboxes the retro ticks, plus the log), `index.md`, a `CLAUDE.md` block and `docs/sessions/`. A **doc-keeper** runs before every run, checks each claim in those docs against the code, fixes what is stale and commits. The retro writes a session note and updates progress and index after every run. The generated `CLAUDE.md` makes plain Claude Code sessions follow the same start-and-end protocol, and `/idleflow:endsession` closes a working session with a note whose "Next" lists, in order, what the next session does first: push, CI, release, restarts, open deviations.
 
 ## Decisions baked in (and where to change them)
 
@@ -47,6 +47,23 @@ Around the pipeline, five things that keep a repo honest:
 | Tooling | skills from Idle-Sync/skills, marketplace plugins, workflows; installed only when accepted by name | `agents/tooling-advisor.md`, "Tooling" in conventions.md |
 | Pushback | once, with evidence, then the human's call stands | `templates/CLAUDE.md`, planner, both orchestrators |
 | Project docs | on for greenfield; doc-keeper before, retro after every run | `docs:` in conventions.md, `agents/doc-keeper.md`, `agents/retro.md`, `templates/CLAUDE.md` |
+
+## Working as a team
+
+`.idleflow/` (conventions, lessons, settings, declined suggestions), `progress.md` and the session notes
+are committed, so everyone who pulls plans with the same rules and lessons. What would otherwise collide:
+
+- **Concurrent additions.** `snapshot` sets git's built-in `merge=union` for the lessons file, `progress.md`
+  and `.idleflow/suggestions.md`, so two people's new lines merge instead of conflicting.
+- **Session notes.** Named `s_<YYYYMMDD-HHMM>-<author>.md` (`run.sh session-name`), never by a running
+  number two people could both pick.
+- **A stale base.** `/idleflow:feature` checks `run.sh behind` first and offers to pull, so a run plans with
+  the team's latest lessons and settings.
+- **Who did what.** `run.json` records `by`; merge commits carry the run id; `/idleflow:progress` shows the
+  whole team's landed work from git history, plus the milestones in `progress.md`.
+- **Teammates without idleflow.** `run.sh team-install` adds idleflow to the committed `.claude/settings.json`
+  (`extraKnownMarketplaces` and `enabledPlugins`); Claude Code loads it for each teammate once they trust
+  the folder. The doctor warns when more than one person commits and it is not set.
 
 ## Customizing one project
 
@@ -78,6 +95,7 @@ commands/skills-feedback.md     open a skill request on github.com/Idle-Sync/ski
 commands/plugin-feedback.md     report a bug or idea about idleflow on github.com/Idle-Sync/idleflow
 commands/endsession.md          end a working session: handoff note with ordered next steps, progress entry, commit
 commands/setup.md               set idleflow up in a project that already has code; fills only the gaps on one already set up
+commands/progress.md            where the project stands: milestones ticked and open, who landed what, what is next, what waits on a human
 commands/customize.md           per-project settings, step toggles, agent models, extra instructions, agent replacement; reports each change
 commands/doctor.md              check the repo's idleflow setup and for a newer release; offers the safe fixes
 agents/                         one file per role; frontmatter sets the model
@@ -119,7 +137,7 @@ IDLEFLOW_RUNTIME=python bash scripts/selftest.sh
 prd.md  progress.md  index.md      repo root, when docs are on; humans and the retro both edit them
 CLAUDE.md                          the idleflow block: start-of-session doc grounding, end-of-session notes
 docs/research/<capability>.md      library and stack research with sources
-docs/sessions/s_NNNN.md            one note per run or session; ignored or committed, asked once
+docs/sessions/s_<time>-<author>.md one note per run or session, named so teammates never collide; ignored or committed, asked once
 .idleflow/runs/active/               the run in progress (a plain directory; renamed to <id>/ on finish)
 .idleflow/runs/active/gaps.md        plugin_gap lines agents append; asked about before every finish
 .idleflow/runs/<id>/                 ignored (.git/info/exclude or .gitignore, asked once); issue, context, plan, debate/, tasks/, review/, run.json
