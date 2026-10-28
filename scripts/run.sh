@@ -627,7 +627,12 @@ JSON
 
     if grep -q '^## Milestones' "$REPO/prd.md" 2>/dev/null; then check_line warn milestones "milestones are still in prd.md; progress.md now holds them and prd.md only the product" "move them as procedures/repo-setup.md R2 step 5 says"
     elif [ -f "$REPO/progress.md" ] && ! grep -q '^## Milestones' "$REPO/progress.md"; then check_line warn milestones "progress.md has no Milestones section, so /idleflow:progress has nothing to count" "add one as procedures/repo-setup.md R2 step 5 says"
-    elif [ -f "$REPO/progress.md" ]; then check_line ok milestones "progress.md holds the milestones"; fi
+    elif [ -f "$REPO/progress.md" ]; then
+      # union merge keeps both sides of a conflicting hunk, so two people ticking nearby boxes can leave an item twice
+      dupes="$(awk '/^## Milestones/{m=1;next} /^## /{m=0} m && /^- \[[ x]\] /{k=$0; sub(/^- \[[ x]\] /,"",k); sub(/ \(run [^)]*\)$/,"",k); sub(/ \([0-9a-f]+\)$/,"",k); if (seen[k]++) print k}' "$REPO/progress.md" | head -3 | paste -sd ';' -)"
+      if [ -n "$dupes" ]; then check_line warn milestones "listed twice under Milestones (a merge kept both sides): $dupes" "keep one line each in progress.md, ticked if either was"
+      else check_line ok milestones "progress.md holds the milestones"; fi
+    fi
 
     if [ "$(conventions_value docs)" = yes ]; then
       gone=()

@@ -65,7 +65,9 @@ Around the pipeline, five things that keep a repo honest:
 are committed, so everyone who pulls plans with the same rules and lessons. What would otherwise collide:
 
 - **Concurrent additions.** `snapshot` sets git's built-in `merge=union` for the lessons file, `progress.md`
-  and `.idleflow/suggestions.md`, so two people's new lines merge instead of conflicting.
+  and `.idleflow/suggestions.md`, so two people's new lines merge instead of conflicting. The trade: when
+  both edit the same lines (two people ticking neighbouring milestone boxes), union keeps both versions;
+  the doctor reports a milestone item listed twice so one line can be kept.
 - **Session notes.** Named `s_<YYYYMMDD-HHMM>-<author>.md` (`run.sh session-name`), never by a running
   number two people could both pick.
 - **A stale base.** `/idleflow:feature` checks `run.sh behind` first and offers to pull, so a run plans with
