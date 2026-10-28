@@ -1,19 +1,31 @@
 # Index
 
-A map of this repository for a reader who has never opened it: what each top-level
-directory and important file is for, in one line each. Rewritten by the idleflow retro agent
-after every run so it never goes stale. Paths, not prose. Under 80 lines.
+A map of this repository for a reader who has never opened it. The blocks between
+`idleflow:generated` and `idleflow:end` markers are written by `run.sh docs` from the repo itself
+and checked by `/idleflow:doctor`; edit only the one-line descriptions after the dashes, and
+everything outside the markers.
 
 ## Start here
 - `prd.md` — what this project is and is not
-- `progress.md` — what has landed and what is next
+- `progress.md` — milestones and what has landed
 - `.idleflow/conventions.md` — how code is written here
 
 ## Layout
-- `<dir>/` — <purpose>
-  - `<dir>/<file>` — <purpose, only for files a newcomer must know>
+<!-- idleflow:generated files -->
+<!-- idleflow:end -->
 
 ## Run it
-- Install: `<command>`
-- Test: `<command>`
-- Start: `<command>`
+<!-- idleflow:generated commands -->
+<!-- idleflow:end -->
+
+## Milestones
+<!-- idleflow:generated milestones -->
+<!-- idleflow:end -->
+
+## Dependencies
+<!-- idleflow:generated dependencies -->
+<!-- idleflow:end -->
+
+## Recent runs
+<!-- idleflow:generated runs -->
+<!-- idleflow:end -->

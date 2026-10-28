@@ -508,6 +508,36 @@ check "detect works before the first commit" '[ "$det_rc" = 0 ] && echo "$det" |
 check "doctor works before the first commit" '(cd "$f" && bash "$RUN" doctor >/dev/null 2>&1)'
 rm -rf "$f"
 
+echo "--- docs kept by code"
+f="$(mktemp -d)"; ( cd "$f" && git init -q && git config user.name Ada && git config user.email a@a && mkdir -p .idleflow src \
+  && printf 'mode: repo\n' > .idleflow/conventions.md && touch pnpm-lock.yaml \
+  && printf '{"scripts":{"test":"vitest `run`"},"dependencies":{"react":"^19.0.0"}}' > package.json \
+  && printf 'build:\n\tcc x\nVAR := 1\n' > Makefile && echo a > src/a.ts \
+  && printf '# Progress\n\n## Milestones\n\n### M1: Sign in — users sign in\n- [x] a\n- [ ] b\n\n## Log\n<!-- progress start -->\n' > progress.md \
+  && printf '# Index\n<!-- idleflow:generated files -->\n- `src/` — the app source\n- `gone/` — removed\n<!-- idleflow:end -->\n<!-- idleflow:generated commands -->\n<!-- idleflow:end -->\n<!-- idleflow:generated milestones -->\n<!-- idleflow:end -->\n<!-- idleflow:generated dependencies -->\n<!-- idleflow:end -->\n<!-- idleflow:generated runs -->\n<!-- idleflow:end -->\n' > index.md \
+  && git add -A && git commit -qm "chore: start" \
+  && git checkout -qb a && echo b > src/b.ts && git add -A && git commit -qm "feat: b" && git checkout -q - && git merge -q --no-ff -m "chore(idleflow): merge task T1" -m "Run: run-new" a \
+  && git checkout -qb b && echo c > src/c.ts && git add -A && git commit -qm "c" && git checkout -q - && git merge -q --no-ff -m "idleflow: merge T2 (run-old)" b )
+( cd "$f" && bash "$RUN" docs --check >/dev/null 2>&1 ); rc=$?
+check "docs --check fails on stale blocks"  '[ "$rc" = 1 ]'
+out="$(cd "$f" && bash "$RUN" docs)"; idx="$(cat "$f/index.md")"
+check "docs regenerates in place"           'echo "$out" | grep -q "^docs: regenerated index.md"'
+check "files keeps written descriptions, drops gone rows" 'echo "$idx" | grep -qxF -- "- \`src/\` — the app source" && ! echo "$idx" | grep -q "gone/" && echo "$idx" | grep -qxF -- "- \`package.json\` — (describe)"'
+check "commands follow the package manager" 'echo "$idx" | grep -qxF -- "- \`pnpm test\` — runs \`vitest '"'"'run'"'"'\`" && echo "$idx" | grep -qxF -- "- \`make build\`" && ! echo "$idx" | grep -q "make VAR"'
+check "milestones counted from progress"   'echo "$idx" | grep -qxF -- "- M1: Sign in: 1/2"'
+check "dependencies read from the manifest" 'echo "$idx" | grep -qxF -- "- \`react\` ^19.0.0 — package.json"'
+check "runs read from both merge formats"   'echo "$idx" | grep -q "run \`run-old\`, 1 task" && echo "$idx" | grep -q "run \`run-new\`, 1 task"'
+( cd "$f" && bash "$RUN" docs --check >/dev/null 2>&1 ); rc=$?
+check "a second docs run changes nothing"   '[ "$rc" = 0 ] && [ "$(cd "$f" && bash "$RUN" docs)" = "docs: generated blocks are up to date" ]'
+( cd "$f" && git add -A && git commit -qm "docs" && echo d > NOTES.md && git add -A && git commit -qm "d" )
+doc="$(cd "$f" && bash "$RUN" doctor 2>/dev/null)"
+check "doctor warns about a stale block"    'echo "$doc" | grep -q "^warn generated: out of date: index.md"'
+check "doctor warns about undescribed entries" 'echo "$doc" | grep -q "^warn generated: [0-9]* generated entries still say (describe)"'
+( cd "$f" && printf '# Index\n- `src/` — code\n' > index.md )
+det="$(cd "$f" && bash "$RUN" detect)"
+check "detect suggests generated blocks for a hand-kept index" 'echo "$det" | grep -q "^suggest generated_docs: index.md —"'
+rm -rf "$f"
+
 echo "--- prompt contracts"
 researcher="$HERE/../agents/stack-researcher.md"
 advisor="$HERE/../agents/stack-advisor.md"

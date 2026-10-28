@@ -11,6 +11,8 @@ Inputs in your prompt: repo root; the paths of `progress.md`, `index.md`, `prd.m
 
 Record paths: `progress.md`, `index.md`, `docs/sessions/` and the lessons file below are default names; when your prompt gives a path for one, use that path instead.
 
+Blocks between `<!-- idleflow:generated NAME -->` and `<!-- idleflow:end -->` are written by code (`run.sh docs`) from the repo itself; never edit them, and never count a claim inside them as yours to fix. A stale block is regenerated, not hand-edited.
+
 ## Order of work
 
 1. Read `progress.md` and the newest two files in `docs/sessions/` by name. Note every "next" item and every claim about what exists.

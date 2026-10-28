@@ -14,6 +14,7 @@
 //   gate   <limit> <slack> <numstat-all-file> <numstat-code-file>
 //   guard                                   hook: payload on stdin; exit 2 blocks
 //   detach <cwd> <log> <pidfile> <command>  runs the command in its own session, output to log; writes its pid
+//   entries <file> <key>                    one "name<TAB>value" line per entry of the object at that top-level key
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -308,7 +309,21 @@ function cmdDetach(cwd, log, pidfile, command) {
   proc.unref();
   fs.writeFileSync(pidfile, String(proc.pid));
 }
-const table = { get: cmdGet, set: cmdSet, inc: cmdInc, finish: cmdFinish, own: cmdOwn, gate: cmdGate, guard: cmdGuard, detach: cmdDetach };
+function cmdEntries(file, key) {
+  let obj;
+  try {
+    obj = load(file);
+  } catch {
+    return;
+  }
+  const section = isObj(obj) ? obj[key] : undefined;
+  if (!isObj(section)) return;
+  for (const [name, value] of Object.entries(section)) {
+    const text = typeof value === "string" ? value : JSON.stringify(value);
+    process.stdout.write(`${name}\t${text.replace(/[\t\n]/g, " ")}\n`);
+  }
+}
+const table = { get: cmdGet, set: cmdSet, inc: cmdInc, finish: cmdFinish, own: cmdOwn, gate: cmdGate, guard: cmdGuard, detach: cmdDetach, entries: cmdEntries };
 const [cmd, ...args] = process.argv.slice(2);
 if (!cmd || !(cmd in table)) {
   process.stderr.write(`idleflow.js: unknown subcommand ${JSON.stringify(cmd)}\n`);

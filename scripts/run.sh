@@ -27,6 +27,7 @@
 #   run.sh session-name                   -> the path for a new session note (time-author, numbered or per-person, from conventions)
 #   run.sh behind                         -> commits the upstream has that this branch lacks (fetches first; empty offline)
 #   run.sh team-install                   -> recommends idleflow to teammates: .claude/settings.json plus a CLAUDE.md install note
+#   run.sh docs [--check]                 -> regenerates the generated blocks in the repo's Markdown (--check: exit 1 if stale)
 #   run.sh detect                         -> suggests Repo fit and Records settings from evidence in the repo (read-only)
 #   run.sh repo-gate <base|main|task> [--quick] -> runs the approved gate (or gate_quick) there, times it; 1 failed, 7 unapproved
 #   run.sh preview <task-id> start|stop   -> serves the app from that worktree for screenshots (approved command, localhost only)
@@ -191,6 +192,70 @@ author_slug() { git config user.name 2>/dev/null | tr 'A-Z' 'a-z' | tr -cs 'a-z0
 
 # Sibling by default (<repo>__wt/<task>); `worktrees_in: inside` keeps them in an ignored folder
 # inside the repo, for projects that forbid writing outside their own folder.
+# --- generated doc blocks: text between `<!-- idleflow:generated NAME -->` and `<!-- idleflow:end -->`.
+# Each generator reads only committed files and git history, so every clone writes the same bytes.
+DOC_START_RE='^<!-- idleflow:generated ([a-z-]+) -->$'
+DOC_END='<!-- idleflow:end -->'
+md_code() { printf '%s' "$1" | tr '`' "'"; }
+
+gen_files() { # $1: the block's current text; descriptions written there are kept
+  local e desc
+  while IFS= read -r e; do
+    desc="$(grep -F -- "- \`$e\` — " "$1" 2>/dev/null | head -1 | sed "s/^- \`[^\`]*\` — //" || true)"
+    echo "- \`$e\` — ${desc:-(describe)}"
+  done < <({ "${G[@]}" ls-files || true; } | awk -F/ '{ print (NF > 1) ? $1 "/" : $1 }' | LC_ALL=C sort -u)
+}
+gen_commands() {
+  local pm=npm k v c
+  [ -f pnpm-lock.yaml ] && pm=pnpm; [ -f yarn.lock ] && pm=yarn; { [ -f bun.lock ] || [ -f bun.lockb ]; } && pm=bun
+  if [ -f package.json ]; then
+    while IFS=$'\t' read -r k v; do
+      case "$pm" in npm|bun) c="$pm run $k";; *) c="$pm $k";; esac
+      echo "- \`$c\` — runs \`$(md_code "$v")\`"
+    done < <(idleflow_rt entries package.json scripts | LC_ALL=C sort)
+  fi
+  [ -f Makefile ] && { grep -E '^[A-Za-z0-9][A-Za-z0-9_-]*:([^=]|$)' Makefile || true; } | cut -d: -f1 | LC_ALL=C sort -u | sed 's/.*/- `make &`/'
+  [ -f justfile ] && { grep -E '^[A-Za-z0-9][A-Za-z0-9_-]*( [^:=]*)?:([^=]|$)' justfile || true; } | sed 's/[ :].*//' | LC_ALL=C sort -u | sed 's/.*/- `just &`/'
+  [ -f pyproject.toml ] && awk '/^\[/{s=($0=="[project.scripts]")} s && /^[A-Za-z0-9_.-]+ *=/{sub(/ *=.*/,""); print "- `" $0 "` — console script from pyproject.toml"}' pyproject.toml | LC_ALL=C sort
+  return 0
+}
+gen_milestones() {
+  local progress; progress="$(progress_rel)"
+  [ -f "$progress" ] || return 0
+  awk '/^## /{ m = ($0 ~ /^## Milestones/); next }
+       m && /^### /{ if (title != "") print "- " title ": " d "/" t; title = $0; sub(/^### +/, "", title); sub(/ — .*/, "", title); d = 0; t = 0; next }
+       m && /^- \[x\]/{ d++; t++ } m && /^- \[ \]/{ t++ }
+       END{ if (title != "") print "- " title ": " d "/" t }' "$progress"
+}
+gen_dependencies() {
+  local k v
+  if [ -f package.json ]; then
+    while IFS=$'\t' read -r k v; do echo "- \`$k\` $v — package.json"; done < <(idleflow_rt entries package.json dependencies | LC_ALL=C sort)
+    while IFS=$'\t' read -r k v; do echo "- \`$k\` $v — package.json (dev)"; done < <(idleflow_rt entries package.json devDependencies | LC_ALL=C sort)
+  fi
+  [ -f requirements.txt ] && { grep -vE '^[[:space:]]*(#|-|$)' requirements.txt || true; } | sed 's/[[:space:]]*#.*//' | LC_ALL=C sort | sed 's/.*/- `&` — requirements.txt/'
+  [ -f pyproject.toml ] && awk '/^dependencies *= *\[/{ l = 1; next } l && /\]/{ l = 0 } l { gsub(/[",]/, ""); gsub(/^ +| +$/, ""); if ($0 != "") print "- `" $0 "` — pyproject.toml" }' pyproject.toml | LC_ALL=C sort
+  [ -f Cargo.toml ] && awk '/^\[/{ s = ($0 == "[dependencies]") } s && /^[A-Za-z0-9_-]+ *=/{ n = $0; sub(/ *=.*/, "", n); print "- `" n "` — Cargo.toml" }' Cargo.toml | LC_ALL=C sort
+  [ -f go.mod ] && awk '/^require \(/{ r = 1; next } r && /^\)/{ r = 0 } r && NF >= 2 { print "- `" $1 "` " $2 " — go.mod" } /^require [^(]/{ print "- `" $2 "` " $3 " — go.mod" }' go.mod | LC_ALL=C sort
+  return 0
+}
+gen_runs() { # the last ten idleflow runs merged here, newest first, from both merge-commit formats
+  { "${G[@]}" log --date=short --format='%ad%x09%an%x09%s%x09%(trailers:key=Run,valueonly,separator=)' \
+      --grep='^idleflow: merge ' --grep='^chore(idleflow): merge task ' || true; } |
+    awk -F'\t' '{ id = $4; if (id == "" && match($3, /\(([^)]+)\)$/)) id = substr($3, RSTART + 1, RLENGTH - 2)
+                  if (id == "") next; if (!(id in n)) { order[++k] = id; when[id] = $1; who[id] = $2 } n[id]++ }
+                END { for (i = 1; i <= k && i <= 10; i++) { id = order[i]; print "- " when[id] " " who[id] ": run `" id "`, " n[id] " task(s) merged" } }'
+}
+gen_settings() {
+  local k v
+  for k in mode docs lessons_in progress_file index_file index_rewrite sessions_dir session_names time_log shared_files \
+           worktrees_in worktree_setup commit_format gate gate_quick gate_runs preview preview_url language tone; do
+    v="$(conventions_value "$k")"; [ -n "$v" ] && echo "- \`$k\`: $(md_code "$v")"
+  done
+  [ -f "$PROJECT_CONF" ] && bash "$0" custom list 2>/dev/null | grep -v '^instructions:\|^replaced:' | sed 's/^/- `/; s/=/`: /'
+  return 0
+}
+
 wt_path() {
   if [ "$(conventions_value worktrees_in)" = inside ]; then echo "$IDLE/worktrees/$1"; else echo "${REPO}${SUFFIX}/$1"; fi
 }
@@ -568,6 +633,40 @@ JSON
     fi
     native_path "$REPO/CLAUDE.md"
     ;;
+  docs)
+    # Regenerates every generated block in the repo's Markdown; --check only reports stale ones (exit 1).
+    mode="${1:-write}"; cd "$REPO"
+    stale=(); changed=()
+    files="$({ "${G[@]}" grep -l -e '<!-- idleflow:generated ' -- '*.md' 2>/dev/null || true; } | LC_ALL=C sort -u)"
+    tmp_doc="$(mktemp)"; tmp_block="$(mktemp)"
+    while IFS= read -r f; do
+      [ -n "$f" ] && [ -f "$f" ] || continue
+      : > "$tmp_doc"; name=""
+      while IFS= read -r line || [ -n "$line" ]; do
+        if [ -z "$name" ] && [[ "$line" =~ $DOC_START_RE ]]; then
+          name="${BASH_REMATCH[1]}"; : > "$tmp_block"; printf '%s\n' "$line" >> "$tmp_doc"; continue
+        fi
+        if [ -n "$name" ]; then
+          if [ "$line" = "$DOC_END" ]; then
+            if declare -F "gen_${name//-/_}" >/dev/null; then "gen_${name//-/_}" "$tmp_block" >> "$tmp_doc"
+            else echo "docs: $f: no generator named '$name'; block left as it is" >&2; cat "$tmp_block" >> "$tmp_doc"; fi
+            printf '%s\n' "$line" >> "$tmp_doc"; name=""
+          else printf '%s\n' "$line" >> "$tmp_block"; fi
+          continue
+        fi
+        printf '%s\n' "$line" >> "$tmp_doc"
+      done < "$f"
+      [ -z "$name" ] || { echo "docs: $f: block '$name' has no end marker; file left as it is" >&2; continue; }
+      cmp -s "$tmp_doc" "$f" && continue
+      if [ "$mode" = --check ]; then stale+=("$f"); else cat "$tmp_doc" > "$f"; changed+=("$f"); fi
+    done <<< "$files"
+    rm -f "$tmp_doc" "$tmp_block"
+    if [ "$mode" = --check ]; then
+      [ "${#stale[@]}" -eq 0 ] || { echo "docs: out of date: ${stale[*]} (run.sh docs regenerates them)"; exit 1; }
+      echo "docs: generated blocks are up to date"
+    elif [ "${#changed[@]}" -gt 0 ]; then echo "docs: regenerated ${changed[*]}"
+    else echo "docs: generated blocks are up to date"; fi
+    ;;
   detect)
     # Evidence for the Repo fit and Records settings, one `suggest <key>: <value> — <evidence>` line
     # for each key still unset whose evidence points away from the default. Read-only.
@@ -591,7 +690,7 @@ JSON
         else say session_names numbered "$(ls "$dir" | grep -cE '^s_[0-9]{4}\.md$') notes in ${dir#"$REPO"/} are numbered s_NNNN.md"; fi
       fi
     fi
-    if unset_key index_rewrite && [ -f "$REPO/$(index_rel)" ] && ! grep -q "Rewritten by the idleflow retro" "$REPO/$(index_rel)"; then
+    if unset_key index_rewrite && [ -f "$REPO/$(index_rel)" ] && ! grep -qE "Rewritten by the idleflow retro|idleflow:generated" "$REPO/$(index_rel)"; then
       say index_rewrite no "$(index_rel) was not written by idleflow, so the repo keeps it its own way"
     fi
     if unset_key shared_files; then
@@ -599,6 +698,9 @@ JSON
       grep -qiE '^## \[?unreleased' "$REPO/CHANGELOG.md" 2>/dev/null && shared+=(CHANGELOG.md)
       [ "$(conventions_value index_rewrite)" = no ] && [ -f "$REPO/$(index_rel)" ] && shared+=("$(index_rel)")
       [ "${#shared[@]}" -gt 0 ] && say shared_files "${shared[*]}" "every change adds a line here (an Unreleased changelog section, an index the repo keeps itself)"
+    fi
+    if [ -f "$REPO/$(index_rel)" ] && ! grep -q "idleflow:generated" "$REPO/$(index_rel)"; then
+      say generated_docs "$(index_rel)" "it has no generated blocks, so its file list, commands and dependencies are kept by hand; run.sh docs can keep them from the repo"
     fi
     if unset_key worktrees_in && grep -qiE '(outside|beyond) (of )?(this|the) (folder|directory|repo|repository|project)' "$REPO/CLAUDE.md" 2>/dev/null; then
       say worktrees_in inside "CLAUDE.md forbids working outside this folder"
@@ -902,6 +1004,11 @@ JSON
       esac
     done <<< "$(bash "$0" commands 2>/dev/null || true)"
 
+    gen="$(bash "$0" docs --check 2>/dev/null || true)"
+    case "$gen" in "docs: out of date"*) check_line warn generated "${gen#docs: }" "run.sh docs";; "docs: generated blocks are up to date") check_line ok generated "every generated block matches the repo";; esac
+    undescribed="$({ "${G[@]}" grep -h -F -e '— (describe)' -- '*.md' 2>/dev/null || true; } | grep -c . || true)"
+    [ "${undescribed:-0}" -gt 0 ] && check_line warn generated "$undescribed generated entr$([ "$undescribed" = 1 ] && echo y || echo ies) still say (describe)" "replace each with one line on what it is for"
+
     # Paths the docs name in backticks that no longer exist. Only tokens whose first folder exists in
     # the repo are checked, so a branch (origin/main) or a GitHub name (owner/repo) never counts.
     stale=()
@@ -971,5 +1078,5 @@ JSON
     echo "REPORT_CUSTOMIZATIONS=$(report_preference)"
     ;;
   *)
-    sed -n '2,43p' "$0"; exit 1;;
+    sed -n '2,44p' "$0"; exit 1;;
 esac
