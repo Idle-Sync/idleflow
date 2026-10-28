@@ -190,8 +190,6 @@ person_id() {
 }
 author_slug() { git config user.name 2>/dev/null | tr 'A-Z' 'a-z' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//' | cut -c1-20; }
 
-# Sibling by default (<repo>__wt/<task>); `worktrees_in: inside` keeps them in an ignored folder
-# inside the repo, for projects that forbid writing outside their own folder.
 # --- generated doc blocks: text between `<!-- idleflow:generated NAME -->` and `<!-- idleflow:end -->`.
 # Each generator reads only committed files and git history, so every clone writes the same bytes.
 DOC_START_RE='^<!-- idleflow:generated ([a-z-]+) -->$'
@@ -256,6 +254,8 @@ gen_settings() {
   return 0
 }
 
+# Sibling by default (<repo>__wt/<task>); `worktrees_in: inside` keeps them in an ignored folder
+# inside the repo, for projects that forbid writing outside their own folder.
 wt_path() {
   if [ "$(conventions_value worktrees_in)" = inside ]; then echo "$IDLE/worktrees/$1"; else echo "${REPO}${SUFFIX}/$1"; fi
 }
