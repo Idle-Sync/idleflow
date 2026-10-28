@@ -21,7 +21,11 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/rt.sh"
 # shellcheck source=/dev/null
 source "$HERE/conf.sh"
-idleflow_load_conf "$(git -C "$WT" rev-parse --show-toplevel 2>/dev/null || true)"
+# The project's settings come from the task's base commit: a task must not raise its own limit
+# by editing .idleflow/idleflow.conf in the worktree being gated.
+BASE_CONF="$(mktemp)"; trap 'rm -f "$BASE_CONF"' EXIT
+git -C "$WT" show "$BASE:.idleflow/idleflow.conf" > "$BASE_CONF" 2>/dev/null || : > "$BASE_CONF"
+idleflow_load_conf "" "$BASE_CONF"
 LIMIT="${3:-${DIFF_LIMIT:-1500}}"
 SLACK="${4:-${DIFF_SLACK:-300}}"
 
@@ -43,7 +47,7 @@ git add -A -N . 2>/dev/null || true
 # numstat goes through files, not argv: a big diff would overflow the Windows
 # command-line limit.
 tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
+trap 'rm -rf "$tmp" "$BASE_CONF"' EXIT
 git diff --numstat "$BASE" -- . > "$tmp/all" 2>/dev/null || true
 git diff --numstat "$BASE" -- . ${EXCL[@]+"${EXCL[@]}"} > "$tmp/code" 2>/dev/null || true
 

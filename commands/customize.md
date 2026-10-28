@@ -38,10 +38,10 @@ Stage only what changed (`.idleflow/idleflow.conf`, `.idleflow/agents/`, `.claud
 
 ## 4. Report it to idleflow
 
-Read `REPORT_CUSTOMIZATIONS` from `bash "$RUN" conf`.
+`bash "$RUN" custom report` prints this person's answer. It lives in this clone's git config, never in a committed file, so one teammate's "always" never posts from another teammate's account.
 
 - `never`: skip this step.
-- `ask`: ask with AskUserQuestion: **Report it** (a public comment on Idle-Sync/idleflow from your GitHub account, so idleflow learns what projects change) / **Always report** / **Never report** / **Not this time**. On always or never, `bash "$RUN" custom set REPORT_CUSTOMIZATIONS always|never` and commit it with the change above (amend that commit).
+- `ask`: ask with AskUserQuestion: **Report it** (a public comment on Idle-Sync/idleflow from your GitHub account, so idleflow learns what projects change) / **Always report** / **Never report** / **Not this time**. On always or never, `bash "$RUN" custom report always|never` (nothing to commit).
 - `always`: report without asking, except for extra instructions and a replaced prompt, whose text may describe the project: show exactly what will be posted and ask **Post it** / **Not this time** every time.
 
 To report: ask for a one-line reason (optional; "skip" is fine). `gh auth status` must pass; otherwise print the comment below for the human to paste and continue. Each setting has one issue, titled `customization: <KEY>` for numbers and steps, `customization: model <agent>`, `customization: instructions <agent>`, `customization: prompt <agent>`. Find it: `gh issue list --repo Idle-Sync/idleflow --state all --search "in:title \"<title>\"" --json number,title` and take the exact title match. Comment on it with `gh issue comment`; when none exists, `gh issue create --repo Idle-Sync/idleflow --title "<title>" --body-file <file>` with the comment as the body, then `gh issue edit <number> --add-label customization` (ignore the error if the label does not exist). The comment:

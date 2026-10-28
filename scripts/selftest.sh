@@ -166,6 +166,10 @@ check "gate excludes .md (50+1)"       'echo "$g" | grep -q "\"excluded_total\":
 check "gate.json written"              '[ -f .idleflow/runs/active/tasks/T1/gate.json ]'
 ( cd "$wt" && seq 1 40 > src/big.py )
 check "gate limit override -> audit"   'bash "$RUN" gate T1 10 | grep -q "\"verdict\":\"audit\""'
+( cd "$wt" && mkdir -p .idleflow && printf 'DIFF_LIMIT=100000\n' > .idleflow/idleflow.conf )
+g2="$(bash "$HERE/diff-gate.sh" "$wt" "$(git rev-parse HEAD)" 2>/dev/null)"
+check "gate ignores settings the task wrote"  'echo "$g2" | grep -q "\"limit\":1500"'
+rm -rf "$wt/.idleflow"
 check "gate verdict split past slack"  'bash "$HERE/diff-gate.sh" "$wt" "$(git rev-parse HEAD)" 10 5 | grep -q "\"verdict\":\"split\""'
 check "gate with no exclude list"      'IDLEFLOW_CONF=/nonexistent bash "$HERE/diff-gate.sh" "$wt" "$(git rev-parse HEAD)" | grep -q "\"excluded_total\":0"'
 check "gate rejects a bad base"        '! bash "$HERE/diff-gate.sh" "$wt" deadbeef >/dev/null 2>&1'
@@ -277,6 +281,8 @@ check "a project setting overrides the default" 'echo "$c" | grep -qx "DIFF_LIMI
 check "out-of-range values are refused"   '! bash "$RUN" custom set DEBATE_ROUNDS 5 2>/dev/null && ! bash "$RUN" custom set MODEL_NO_SUCH_AGENT opus 2>/dev/null'
 printf 'touch "%s/pwned"\nDIFF_SLACK=$(touch "%s/pwned")\n' "$m" "$m" >> .idleflow/idleflow.conf
 c="$(bash "$RUN" conf 2>&1)"
+check "catch-all excludes are refused"   '! bash "$RUN" custom set DIFF_EXCLUDE_ADD "**/*" 2>/dev/null && bash "$RUN" custom set DIFF_EXCLUDE_ADD "**/gen/**" >/dev/null && bash "$RUN" custom unset DIFF_EXCLUDE_ADD >/dev/null'
+check "report consent is local, never committed" '[ "$(bash "$RUN" custom report)" = ask ] && bash "$RUN" custom report always >/dev/null && [ "$(git config --local idleflow.reportCustomizations)" = always ] && ! grep -q REPORT .idleflow/idleflow.conf && ! bash "$RUN" custom set REPORT_CUSTOMIZATIONS always 2>/dev/null'
 check "the project file is parsed, never run" 'echo "$c" | grep -q "ignored in .idleflow/idleflow.conf" && [ ! -e "$m/pwned" ] && echo "$c" | grep -qx "DIFF_SLACK=300"'
 doc="$(bash "$RUN" doctor 2>/dev/null)"
 check "doctor lists skipped and kept settings" 'echo "$doc" | grep -q "^warn customizations: lines skipped" && echo "$doc" | grep -q "^ok customizations: DIFF_LIMIT=3000"'
@@ -294,6 +300,10 @@ bash "$RUN" custom merge planner >/dev/null 2>&1
 doc="$(bash "$RUN" doctor 2>/dev/null)"
 check "merge keeps the project's edits"    'grep -q "planner for this repo" .claude/agents/idleflow-planner.md && echo "$doc" | grep -q "^ok agents: replaced planner is current"'
 bash "$RUN" custom restore planner >/dev/null 2>&1
+printf -- '- [r1] SIZE_S_MAX: 150 -> 200 because a; evidence: r1\n- [r2] SIZE_S_MAX: 150 -> 250 because b; evidence: r1 r2\n- [r2] MAX_RETRIES: 1 -> 2 because c; evidence: r2\n- [r2] DIFF_LIMIT: 1500 -> 3000 because d; evidence: r2\n' > .idleflow/runs/config-proposals.md
+printf -- '- declined: MAX_RETRIES -> 2 (r2, today)\n' > .idleflow/suggestions.md
+sug="$(bash "$RUN" doctor 2>/dev/null | grep '^suggest' || true)"
+check "doctor offers the newest open suggestion" '[ "$(echo "$sug" | wc -l | tr -d " ")" = "1" ] && echo "$sug" | grep -q "^suggest SIZE_S_MAX: .*150 -> 250.*fix: /idleflow:customize SIZE_S_MAX 250"'
 a1="$(bash "$RUN" agent planner 2>/dev/null)"
 check "restore brings the built-in back"   '[ ! -e .claude/agents/idleflow-planner.md ] && echo "$a1" | grep -qx "agent: idleflow:planner"'
 printf 'x\n' > .claude/conventions.md
