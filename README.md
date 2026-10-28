@@ -11,7 +11,7 @@ issue ─► explore (Sonnet) ─► classify size, risk, new dependency (Haiku)
       ─► merge in plan order, run suite ─► retro writes ≤1 lesson (Haiku)
 ```
 
-For an empty folder, `/idleflow:init` runs the first session instead: a four-round brainstorm, a **market-research** agent (competitors, what their users complain about, table stakes, a viability verdict, every claim with a URL) into `docs/market-research.md`, the repo's rules (readability mode, whether Claude is co-authored on commits, tagged GitHub releases or not, docs in git or not), stack and library research, a PRD written by the planner and approved by the human, the project docs, the first commit and optionally the GitHub repo. It hands off to `/idleflow:feature "Milestone 1"`.
+For an empty folder, `/idleflow:init` runs the first session instead: a four-round brainstorm, a **market-research** agent (competitors, what their users complain about, table stakes, a viability verdict, every claim with a URL) into `docs/market-research.md`, the repo's rules (readability mode, whether Claude is co-authored on commits, tagged GitHub releases or not, docs in git or not), stack and library research, a PRD written by the planner and approved by the human, the project docs, the first commit and optionally the GitHub repo. It hands off to `/idleflow:feature "Milestone 1"`. For a project that already has code, `/idleflow:setup` does the onboarding part: it maps the code, asks the repo's rules once, records the stack the project already uses rather than proposing a new one, offers tooling, and commits the setup for the team. `/idleflow:doctor` checks a repo's setup and whether a newer idleflow is out at any time.
 
 Around the pipeline, five things that keep a repo honest:
 
@@ -61,6 +61,7 @@ commands/style.md               set or change the readability mode
 commands/skills-feedback.md     open a skill request on github.com/Idle-Sync/skills
 commands/plugin-feedback.md     report a bug or idea about idleflow on github.com/Idle-Sync/idleflow
 commands/endsession.md          end a working session: handoff note with ordered next steps, progress entry, commit
+commands/setup.md               set idleflow up in a project that already has code; fills only the gaps on one already set up
 commands/doctor.md              check the repo's idleflow setup and for a newer release; offers the safe fixes
 agents/                         one file per role; frontmatter sets the model
 hooks/hooks.json                PreToolUse → ownership-guard
