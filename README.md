@@ -61,9 +61,11 @@ commands/style.md               set or change the readability mode
 commands/skills-feedback.md     open a skill request on github.com/Idle-Sync/skills
 commands/plugin-feedback.md     report a bug or idea about idleflow on github.com/Idle-Sync/idleflow
 commands/endsession.md          end a working session: handoff note with ordered next steps, progress entry, commit
+commands/doctor.md              check the repo's idleflow setup and for a newer release; offers the safe fixes
 agents/                         one file per role; frontmatter sets the model
 hooks/hooks.json                PreToolUse → ownership-guard
-scripts/run.sh                  run lifecycle: new / wt / own / get / set / inc / report / gate / merge / snapshot / finish / loc / conf
+scripts/run.sh                  run lifecycle: new / wt / own / get / set / inc / report / gate / merge / snapshot / finish / loc / conf,
+                                plus path / migrate / doctor / update-check
 scripts/diff-gate.sh            counts hand-written code lines vs base, emits JSON verdict
 scripts/ownership-guard.sh      the hook; blocks edits outside a task's globs
 scripts/rt.sh                   picks Python or Node, whichever is installed

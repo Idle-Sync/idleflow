@@ -22,6 +22,8 @@
 #   run.sh conf                           -> prints resolved config values and the runtime in use
 #   run.sh path <conventions|lessons|runs> -> prints where that file or directory lives in this repo
 #   run.sh migrate                        -> moves files a pre-.idleflow/ version kept under .claude/ and commits the move
+#   run.sh doctor                         -> checks the repo's idleflow setup, one "ok|warn|fail <check>: <detail> | fix: <how>" line each
+#   run.sh update-check                   -> prints one line when a newer idleflow is tagged on GitHub, nothing otherwise
 #
 # The active run lives in .idleflow/runs/active/ (a real directory, no symlinks, so it
 # works on Windows). `finish` renames it to .idleflow/runs/<id>/. JSON work is done by
@@ -84,6 +86,21 @@ rewrite_file() { # keeps the file's mode, which mv over a temp file would not
   local f="$1" tmp="$1.idleflow-tmp"
   rewrite_old_paths < "$f" > "$tmp" && cat "$tmp" > "$f" && rm -f "$tmp"
 }
+
+UPDATE_CMD="claude plugin marketplace update idlesync && claude plugin update idleflow@idlesync"
+
+# Releases are the v<semver> tags on GitHub. Empty when offline or when IDLEFLOW_NO_UPDATE_CHECK is set.
+newest_release() {
+  [ -n "${IDLEFLOW_NO_UPDATE_CHECK:-}" ] && return 0
+  GIT_TERMINAL_PROMPT=0 git ls-remote --tags --refs https://github.com/Idle-Sync/idleflow 'v*' 2>/dev/null \
+    | sed -n 's#.*refs/tags/v\([0-9]*\.[0-9]*\.[0-9]*\)$#\1#p' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1
+}
+version_newer() { # version_newer <installed> <candidate>: true when candidate is the higher semver
+  [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)" = "$2" ]
+}
+
+conventions_value() { sed -n "s/^$1: *//p" "$CONVENTIONS" 2>/dev/null | head -1 | tr -d '\r' | sed 's/ *$//'; }
+check_line() { printf '%s %s: %s%s\n' "$1" "$2" "$3" "${4:+ | fix: $4}"; }
 
 wt_path() { echo "${REPO}${SUFFIX}/$1"; }
 
@@ -350,6 +367,66 @@ JSON
       echo "migrate: committed $("${G[@]}" rev-parse --short HEAD)"
     fi
     ;;
+  update-check)
+    latest="$(newest_release)"
+    if [ -n "$latest" ] && version_newer "$(plugin_version)" "$latest"; then
+      echo "idleflow $latest is available (installed $(plugin_version)). Update between sessions: $UPDATE_CMD, then restart Claude Code."
+    fi
+    ;;
+  doctor)
+    rt="$(idleflow_rt_name)"
+    if [ "$rt" = none ]; then check_line fail runtime "no Python >= 3.8 or Node >= 18" "install one, or set IDLEFLOW_RUNTIME"; else check_line ok runtime "$rt"; fi
+
+    installed="$(plugin_version)"; latest="$(newest_release)"
+    if [ -n "${IDLEFLOW_NO_UPDATE_CHECK:-}" ]; then check_line ok update "check skipped (IDLEFLOW_NO_UPDATE_CHECK), installed $installed"
+    elif [ -z "$latest" ]; then check_line warn update "could not read releases from github.com/Idle-Sync/idleflow (installed $installed)"
+    elif version_newer "$installed" "$latest"; then check_line warn update "idleflow $latest is available, installed $installed" "$UPDATE_CMD, then restart Claude Code"
+    else check_line ok update "idleflow $installed is the newest release"; fi
+
+    old=()
+    for f in .claude/conventions.md .claude/lessons.md .claude/runs; do [ -e "$REPO/$f" ] && old+=("$f"); done
+    if [ "${#old[@]}" -gt 0 ]; then check_line fail layout "files from the old layout: ${old[*]}" "run.sh migrate"; else check_line ok layout "idleflow files are in .idleflow/"; fi
+
+    if [ ! -f "$CONVENTIONS" ]; then
+      check_line fail conventions ".idleflow/conventions.md is missing" "/idleflow:setup"
+    else
+      missing=()
+      for k in mode ignore_in docs; do case "$(conventions_value "$k")" in ""|unset) missing+=("$k");; esac; done
+      if [ "$(conventions_value docs)" = yes ]; then
+        case "$(conventions_value docs_in_git)" in ""|unset) missing+=(docs_in_git);; esac
+        [ "$(conventions_value docs_in_git)" = yes ] && case "$(conventions_value lessons_in)" in ""|unset) missing+=(lessons_in);; esac
+      fi
+      if [ "${#missing[@]}" -gt 0 ]; then check_line warn conventions "not answered yet: ${missing[*]}" "/idleflow:setup"; else check_line ok conventions "every setting answered"; fi
+    fi
+
+    lessons="$(lessons_path)"; lessons_rel="${lessons#"$REPO"/}"
+    if [ ! -f "$lessons" ]; then check_line warn lessons "$lessons_rel is missing" "/idleflow:setup"
+    elif [ "$lessons_rel" = docs/lessons.md ] && [ -f "$IDLE/lessons.md" ]; then check_line warn lessons "two lessons files: docs/lessons.md (in use) and .idleflow/lessons.md" "merge .idleflow/lessons.md into docs/lessons.md, then git rm .idleflow/lessons.md"
+    else check_line ok lessons "$lessons_rel"; fi
+
+    for f in .idleflow/conventions.md "$lessons_rel"; do
+      [ -f "$REPO/$f" ] || continue
+      if "${G[@]}" check-ignore -q --no-index -- "$f"; then check_line warn shared "$f is ignored, so the team never sees it" "remove the rule that ignores it"
+      elif ! "${G[@]}" ls-files --error-unmatch -- "$f" >/dev/null 2>&1; then check_line warn shared "$f is not committed yet" "run.sh snapshot"
+      else check_line ok shared "$f is committed"; fi
+    done
+
+    if [ -d "$RUNS" ] && ! "${G[@]}" check-ignore -q --no-index -- .idleflow/runs/x; then check_line warn ignore ".idleflow/runs/ is not ignored" "run.sh ignore .idleflow/runs/"; else check_line ok ignore ".idleflow/runs/ stays out of git"; fi
+
+    worktrees="$("${G[@]}" worktree list | grep '\[idleflow/' || true)"
+    if [ -f "$ACTIVE/run.json" ]; then
+      check_line ok run "run $(idleflow_rt get "$ACTIVE/run.json" id) is active (status $(idleflow_rt get "$ACTIVE/run.json" status))"
+    elif [ -n "$worktrees" ]; then
+      check_line warn worktrees "leftover worktrees with no active run: $(echo "$worktrees" | sed 's#.*\[idleflow/[^/]*/\(.*\)\]#\1#' | tr '\n' ' ')" "run.sh wt rm <task-id> for each"
+    else check_line ok worktrees "none left over"; fi
+
+    if [ "$(conventions_value docs)" = yes ]; then
+      gone=()
+      for f in prd.md progress.md index.md; do [ -f "$REPO/$f" ] || gone+=("$f"); done
+      grep -q '<!-- idleflow start -->' "$REPO/CLAUDE.md" 2>/dev/null || gone+=("CLAUDE.md block")
+      if [ "${#gone[@]}" -gt 0 ]; then check_line warn docs "missing: ${gone[*]}" "/idleflow:setup"; else check_line ok docs "prd.md, progress.md, index.md and the CLAUDE.md block are present"; fi
+    fi
+    ;;
   conf)
     for v in DIFF_LIMIT DIFF_SLACK MAX_IMPLEMENTERS SIZE_M_IMPLEMENTERS DEBATE_ROUNDS MAX_RETRIES SIZE_S_MAX SIZE_M_MAX SIZE_S_OVERRUN LARGE_REPO_LOC; do
       echo "$v=${!v:-}"
@@ -358,5 +435,5 @@ JSON
     echo "PLUGIN_VERSION=$(plugin_version)"
     ;;
   *)
-    sed -n '2,24p' "$0"; exit 1;;
+    sed -n '2,26p' "$0"; exit 1;;
 esac

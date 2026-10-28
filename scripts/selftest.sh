@@ -14,7 +14,7 @@
 # get / set / inc (parity cases), the plugin version check, merge (conflict → 3, unknown branch → 4), wt rm after
 # finish, finish, a runtime given as a full path, a second `new` that parks a
 # leftover run, ignore (info/exclude until conventions say gitignore, no duplicates),
-# path, migrate from the .claude/ layout, and prompt contracts (the stack scan, researcher and R3 agree on research units,
+# path, migrate from the .claude/ layout, doctor, and prompt contracts (the stack scan, researcher and R3 agree on research units,
 # budget and reply counts; setup steps follow the classifier's risk and dependency
 # fields; ignore rules go through run.sh ignore; the `repo` readability mode is
 # offered and enforced). Exit 0 and a final "PASS" line mean everything worked.
@@ -27,6 +27,7 @@ GUARD="$HERE/ownership-guard.sh"
 source "$HERE/rt.sh"
 
 fails=0
+export IDLEFLOW_NO_UPDATE_CHECK=1   # no network in the selftest
 ok()   { echo "  ok    $1"; }
 fail() { echo "  FAIL  $1"; fails=$((fails+1)); }
 check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
@@ -252,6 +253,8 @@ mkdir -p .claude/runs/20260101-x && printf 'mode: repo\n' > .claude/conventions.
 printf '{}' > .claude/settings.json && printf 'Read `.claude/lessons.md` first.\n' > CLAUDE.md && printf '.claude/runs/\n' > .gitignore
 printf '{"id":"x"}\n' > .claude/runs/log.jsonl && printf '.claude-run/\n' >> .git/info/exclude
 git add -A && commit -m old
+doc="$(bash "$RUN" doctor)"
+check "doctor flags the old layout"       'echo "$doc" | grep -q "^fail layout: .*\.claude/lessons\.md.*fix: run.sh migrate"'
 mkdir -p .claude/runs/active
 check "migrate refuses an active old run" '! bash "$RUN" migrate 2>/dev/null && [ -f .claude/lessons.md ]'
 rmdir .claude/runs/active
@@ -261,6 +264,10 @@ check "migrate keeps past runs"           '[ -f .idleflow/runs/log.jsonl ] && [ 
 check "migrate leaves Claude Code files"  '[ -f .claude/settings.json ]'
 check "migrate rewrites old paths"        'grep -qF ".idleflow/lessons.md" CLAUDE.md && grep -qx ".idleflow/runs/" .gitignore && grep -qx ".idleflow-run/" .git/info/exclude'
 check "migrate commits once, cleanly"     'echo "$out" | grep -q "committed" && [ "$(git log -1 --format=%s)" = "chore: move idleflow files to .idleflow/" ] && [ -z "$(git status --porcelain)" ]'
+doc="$(bash "$RUN" doctor)"
+check "doctor passes the new layout"      'echo "$doc" | grep -q "^ok layout" && echo "$doc" | grep -q "^ok shared: .idleflow/lessons.md is committed"'
+check "doctor names unanswered settings"  'echo "$doc" | grep -q "^warn conventions: not answered yet: ignore_in docs"'
+check "update-check is silent offline"    '[ -z "$(bash "$RUN" update-check)" ]'
 check "migrate again is a no-op"          '[ "$(bash "$RUN" migrate)" = "migrate: nothing to move" ]'
 printf 'x\n' > .claude/conventions.md
 check "migrate refuses two copies"        '! bash "$RUN" migrate 2>/dev/null'
