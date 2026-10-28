@@ -23,7 +23,9 @@ Write to `review/<task-id>-correct.md`, reply with only: `correct <task-id>: app
 6. **Concurrency** if the code runs concurrently anywhere: races, double-processing, non-idempotent retries.
 7. **Security** on any input boundary: injection, path traversal, auth checks skipped, secrets logged.
 8. **Tests that lie.** A test that would pass against the old code, that asserts on the mock, or that was weakened to pass.
-9. **Guard workaround.** Any path in `git diff --name-only <base-sha>` outside the task's globs in `ownership.json` (plus `.idleflow-run/**` and the top-level `shared` list, files every task may add its own lines to; fnmatch rules: `*` crosses `/`) → `blocking`, regardless of anything else. `ownership.json` is the authority; the orchestrator may have added a glob after the plan was written.
+9. **Placeholders that look finished.** A path that returns a plausible default (empty result, `0`, `None`, a stub value) where it cannot yet do its job, instead of failing loudly with what is missing → `blocking`: it passes every check while being wrong.
+10. **Mutation sweep**, when the task says `mutation: true`: the report's `mutations:` covers every function or branch the diff changed; spot-check one "caught by" claim by applying that fault yourself and restoring from the text you saved. A survivor with neither a new test nor a reason that no test can tell the versions apart → `major`.
+11. **Guard workaround.** Any path in `git diff --name-only <base-sha>` outside the task's globs in `ownership.json` (plus `.idleflow-run/**` and the top-level `shared` list, files every task may add its own lines to; fnmatch rules: `*` crosses `/`) → `blocking`, regardless of anything else. `ownership.json` is the authority; the orchestrator may have added a glob after the plan was written.
 
 ## Severity
 
@@ -43,6 +45,7 @@ where: <file:line>
 what: <the defect, concretely>
 why_it_matters: <the observable consequence>
 fix: <what the implementer should do; smallest change>
+checkable: <yes — the deterministic check (lint rule, test, script) that would have caught this | no>
 ```
 
 `reject` iff at least one `blocking` finding or two `major`. Style, naming, formatting and readability are never findings here; the conformance reviewer owns them.

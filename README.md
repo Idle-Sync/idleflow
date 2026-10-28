@@ -46,6 +46,9 @@ Around the pipeline, five things that keep a repo honest:
 | Diff gate | 1500 code lines per task (+300 slack); `.md`, `.txt`, lockfiles, generated excluded | `DIFF_LIMIT`, `DIFF_SLACK`, `DIFF_EXCLUDE` |
 | Retry | one per task, on Opus, then stop and ask | `MAX_RETRIES`, steps 5 and 7 of `commands/feature.md` |
 | Tests | `tests_first: true` forced wherever entry points have no tests | planner §3, conformance reviewer §4 |
+| Mutation sweep | implementers break their own change on purpose; a fault no test catches needs a test or a reason | `STEP_MUTATION`, plan `mutation:`, implementer, correctness reviewer |
+| Placeholders | code that cannot do its job yet fails loudly; a plausible default is a blocking finding | implementer, correctness reviewer |
+| Checkable findings | each review finding says whether a deterministic check would have caught it; repeats become a lesson | reviewers, `agents/retro.md` |
 | Lessons | per repo, `.idleflow/lessons.md` or `docs/lessons.md` (`lessons_in:`), ≤1 per run | `agents/retro.md`, `run.sh path lessons` |
 | Metrics | `.idleflow/runs/log.jsonl` only (no OTEL yet) | `scripts/run.sh finish` |
 | Priority | quality > tokens > time | retry on Opus; `opus` allowed per task; critics on Opus |

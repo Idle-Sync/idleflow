@@ -24,6 +24,7 @@ group: 1                      # tasks in the same group run in parallel; groups 
 depends_on: []                # task ids
 model: sonnet | opus
 tests_first: true | false     # true when context.md §4 shows no tests for the entry points
+mutation: true | false        # the implementer proves the tests catch deliberate faults (see STEP_MUTATION)
 estimate_lines: <N>           # hand-written code lines, added+deleted
 owns:                         # globs; no overlap with other tasks in the same group
   - src/path/**

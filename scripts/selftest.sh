@@ -398,6 +398,7 @@ echo "--- customize"
 bash "$RUN" custom set DIFF_LIMIT 3000 >/dev/null
 c="$(bash "$RUN" conf)"
 check "a project setting overrides the default" 'echo "$c" | grep -qx "DIFF_LIMIT=3000"'
+check "STEP_MUTATION is a setting"         'bash "$RUN" custom set STEP_MUTATION on >/dev/null && bash "$RUN" custom unset STEP_MUTATION >/dev/null'
 check "out-of-range values are refused"   '! bash "$RUN" custom set DEBATE_ROUNDS 5 2>/dev/null && ! bash "$RUN" custom set MODEL_NO_SUCH_AGENT opus 2>/dev/null'
 printf 'touch "%s/pwned"\nDIFF_SLACK=$(touch "%s/pwned")\n' "$m" "$m" >> .idleflow/idleflow.conf
 c="$(bash "$RUN" conf 2>&1)"
