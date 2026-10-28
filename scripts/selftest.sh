@@ -14,7 +14,7 @@
 # get / set / inc (parity cases), the plugin version check, merge (conflict → 3, unknown branch → 4), wt rm after
 # finish, finish, a runtime given as a full path, a second `new` that parks a
 # leftover run, ignore (info/exclude until conventions say gitignore, no duplicates),
-# path, migrate from the .claude/ layout, doctor, and prompt contracts (the stack scan, researcher and R3 agree on research units,
+# path, migrate from the .claude/ layout, doctor, customize, and prompt contracts (the stack scan, researcher and R3 agree on research units,
 # budget and reply counts; setup steps follow the classifier's risk and dependency
 # fields; ignore rules go through run.sh ignore; the `repo` readability mode is
 # offered and enforced). Exit 0 and a final "PASS" line mean everything worked.
@@ -269,6 +269,33 @@ check "doctor passes the new layout"      'echo "$doc" | grep -q "^ok layout" &&
 check "doctor names unanswered settings"  'echo "$doc" | grep -q "^warn conventions: not answered yet: ignore_in docs"'
 check "update-check is silent offline"    '[ -z "$(bash "$RUN" update-check)" ]'
 check "migrate again is a no-op"          '[ "$(bash "$RUN" migrate)" = "migrate: nothing to move" ]'
+
+echo "--- customize"
+bash "$RUN" custom set DIFF_LIMIT 3000 >/dev/null
+c="$(bash "$RUN" conf)"
+check "a project setting overrides the default" 'echo "$c" | grep -qx "DIFF_LIMIT=3000"'
+check "out-of-range values are refused"   '! bash "$RUN" custom set DEBATE_ROUNDS 5 2>/dev/null && ! bash "$RUN" custom set MODEL_NO_SUCH_AGENT opus 2>/dev/null'
+printf 'touch "%s/pwned"\nDIFF_SLACK=$(touch "%s/pwned")\n' "$m" "$m" >> .idleflow/idleflow.conf
+c="$(bash "$RUN" conf 2>&1)"
+check "the project file is parsed, never run" 'echo "$c" | grep -q "ignored in .idleflow/idleflow.conf" && [ ! -e "$m/pwned" ] && echo "$c" | grep -qx "DIFF_SLACK=300"'
+doc="$(bash "$RUN" doctor 2>/dev/null)"
+check "doctor lists skipped and kept settings" 'echo "$doc" | grep -q "^warn customizations: lines skipped" && echo "$doc" | grep -q "^ok customizations: DIFF_LIMIT=3000"'
+bash "$RUN" custom set MODEL_REVIEW_CONFORM opus >/dev/null; mkdir -p .idleflow/agents; echo "Also check X." > .idleflow/agents/retro.md
+a1="$(bash "$RUN" agent review-conform 2>/dev/null)"; a2="$(bash "$RUN" agent retro 2>/dev/null)"
+check "agent reports model and instructions" 'echo "$a1" | grep -qx "model: opus" && echo "$a2" | grep -q "^extra: .*\.idleflow/agents/retro\.md"'
+bash "$RUN" custom replace planner >/dev/null 2>&1
+a1="$(bash "$RUN" agent planner 2>/dev/null)"
+check "replace copies the built-in agent"  'grep -q "^name: idleflow-planner" .claude/agents/idleflow-planner.md && echo "$a1" | grep -qx "agent: idleflow-planner"'
+sed -i.bak 's/^You are the planner\./You are the planner for this repo./' .claude/agents/idleflow-planner.md && rm -f .claude/agents/idleflow-planner.md.bak
+printf 'a line an older idleflow had\n' >> .idleflow/agents/planner.base.md
+doc="$(bash "$RUN" doctor 2>/dev/null)"
+check "doctor sees the built-in agent changed" 'echo "$doc" | grep -q "^warn agents: the built-in planner changed"'
+bash "$RUN" custom merge planner >/dev/null 2>&1
+doc="$(bash "$RUN" doctor 2>/dev/null)"
+check "merge keeps the project's edits"    'grep -q "planner for this repo" .claude/agents/idleflow-planner.md && echo "$doc" | grep -q "^ok agents: replaced planner is current"'
+bash "$RUN" custom restore planner >/dev/null 2>&1
+a1="$(bash "$RUN" agent planner 2>/dev/null)"
+check "restore brings the built-in back"   '[ ! -e .claude/agents/idleflow-planner.md ] && echo "$a1" | grep -qx "agent: idleflow:planner"'
 printf 'x\n' > .claude/conventions.md
 check "migrate refuses two copies"        '! bash "$RUN" migrate 2>/dev/null'
 cd "$d"

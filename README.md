@@ -48,6 +48,21 @@ Around the pipeline, five things that keep a repo honest:
 | Pushback | once, with evidence, then the human's call stands | `templates/CLAUDE.md`, planner, both orchestrators |
 | Project docs | on for greenfield; doc-keeper before, retro after every run | `docs:` in conventions.md, `agents/doc-keeper.md`, `agents/retro.md`, `templates/CLAUDE.md` |
 
+## Customizing one project
+
+Every number in `config/idleflow.conf` is a default. `/idleflow:customize` overrides it for one repo in
+`.idleflow/idleflow.conf`, turns a step on or off (`STEP_DEBATE`, `STEP_STACK`, `STEP_LIBRARIES`,
+`STEP_TOOLING`, `STEP_DOC_KEEPER`), sets an agent's model (`MODEL_<AGENT>`), adds instructions to an
+agent (`.idleflow/agents/<agent>.md`), or replaces an agent's prompt (`.claude/agents/idleflow-<agent>.md`,
+with a base copy so `/idleflow:doctor` can merge later plugin updates into it). A replaced agent keeps the
+built-in output contract. Everything is committed, so the team shares it. The project file is parsed, never
+sourced: a key outside the list in `scripts/conf.sh`, or a value out of range, is skipped and reported.
+
+Each customization can be reported as a comment on one issue per setting on Idle-Sync/idleflow
+(`customization: DIFF_LIMIT`, `customization: prompt planner`, ...). The first time, the project answers
+report / always / never; `always` and `never` are saved as `REPORT_CUSTOMIZATIONS`. Instruction text and
+prompt diffs are shown before every post.
+
 ## Layout
 
 ```
@@ -62,6 +77,7 @@ commands/skills-feedback.md     open a skill request on github.com/Idle-Sync/ski
 commands/plugin-feedback.md     report a bug or idea about idleflow on github.com/Idle-Sync/idleflow
 commands/endsession.md          end a working session: handoff note with ordered next steps, progress entry, commit
 commands/setup.md               set idleflow up in a project that already has code; fills only the gaps on one already set up
+commands/customize.md           per-project settings, step toggles, agent models, extra instructions, agent replacement; reports each change
 commands/doctor.md              check the repo's idleflow setup and for a newer release; offers the safe fixes
 agents/                         one file per role; frontmatter sets the model
 hooks/hooks.json                PreToolUse → ownership-guard
@@ -70,6 +86,7 @@ scripts/run.sh                  run lifecycle: new / wt / own / get / set / inc 
 scripts/diff-gate.sh            counts hand-written code lines vs base, emits JSON verdict
 scripts/ownership-guard.sh      the hook; blocks edits outside a task's globs
 scripts/rt.sh                   picks Python or Node, whichever is installed
+scripts/conf.sh                 loads config/idleflow.conf, then a project's .idleflow/idleflow.conf (parsed, never run)
 scripts/idleflow.py             the JSON / gate / guard logic (Python)
 scripts/idleflow.js             the same program in Node; keep the two in sync
 scripts/selftest.sh             end-to-end check of the scripts in a throwaway repo

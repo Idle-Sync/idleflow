@@ -24,6 +24,13 @@
 #   run.sh migrate                        -> moves files a pre-.idleflow/ version kept under .claude/ and commits the move
 #   run.sh doctor                         -> checks the repo's idleflow setup, one "ok|warn|fail <check>: <detail> | fix: <how>" line each
 #   run.sh update-check                   -> prints one line when a newer idleflow is tagged on GitHub, nothing otherwise
+#   run.sh agent <name>                   -> how to spawn that agent here: agent, model, extra instructions, contract
+#   run.sh custom list                    -> this repo's customizations (.idleflow/idleflow.conf, agent instructions, replaced agents)
+#   run.sh custom set <KEY> <value>       -> validates and writes one setting to .idleflow/idleflow.conf
+#   run.sh custom unset <KEY>             -> removes it, so the plugin default applies again
+#   run.sh custom replace <agent>         -> copies the built-in agent to .claude/agents/idleflow-<agent>.md for the project to edit
+#   run.sh custom merge <agent>           -> merges changes the built-in agent got since it was copied into the replacement
+#   run.sh custom restore <agent>         -> back to the built-in agent: removes its replacement, instructions and model
 #
 # The active run lives in .idleflow/runs/active/ (a real directory, no symlinks, so it
 # works on Windows). `finish` renames it to .idleflow/runs/<id>/. JSON work is done by
@@ -34,13 +41,13 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONF="${IDLEFLOW_CONF:-$HERE/../config/idleflow.conf}"
-# shellcheck source=/dev/null
-[ -f "$CONF" ] && source "$CONF"
 # shellcheck source=/dev/null
 source "$HERE/rt.sh"
+# shellcheck source=/dev/null
+source "$HERE/conf.sh"
 
 REPO="$(git rev-parse --show-toplevel)"
+idleflow_load_conf "$REPO"
 IDLE="$REPO/.idleflow"
 CONVENTIONS="$IDLE/conventions.md"
 RUNS="$IDLE/runs"
@@ -101,6 +108,22 @@ version_newer() { # version_newer <installed> <candidate>: true when candidate i
 
 conventions_value() { sed -n "s/^$1: *//p" "$CONVENTIONS" 2>/dev/null | head -1 | tr -d '\r' | sed 's/ *$//'; }
 check_line() { printf '%s %s: %s%s\n' "$1" "$2" "$3" "${4:+ | fix: $4}"; }
+
+PROJECT_CONF="$IDLE/idleflow.conf"
+agent_key() { echo "$1" | tr 'a-z-' 'A-Z_'; }
+known_agent() { [ -n "$1" ] && [ -f "$HERE/../agents/$1.md" ] || { echo "unknown agent '$1'; one of: $(cd "$HERE/../agents" && ls -- *.md | sed 's/\.md$//' | tr '\n' ' ')" >&2; exit 1; }; }
+replacement_path() { echo "$REPO/.claude/agents/idleflow-$1.md"; }
+# The built-in prompt as a replacement starts from it: only the frontmatter name differs, so
+# a three-way merge sees the project's edits and nothing else.
+renamed_agent() { sed "1,/^---\$/s/^name: $1\$/name: idleflow-$1/" "$HERE/../agents/$1.md"; }
+set_project_conf() { # set_project_conf <KEY> [value]: no value removes the key
+  local tmp="$PROJECT_CONF.tmp"
+  mkdir -p "$IDLE"
+  [ -f "$PROJECT_CONF" ] || printf '# This repo'"'"'s idleflow settings, written by /idleflow:customize. Committed; read by scripts/conf.sh.\n' > "$PROJECT_CONF"
+  grep -v "^$1=" "$PROJECT_CONF" > "$tmp" || true
+  [ -z "${2:-}" ] || echo "$1=$2" >> "$tmp"
+  cat "$tmp" > "$PROJECT_CONF" && rm -f "$tmp"
+}
 
 wt_path() { echo "${REPO}${SUFFIX}/$1"; }
 
@@ -367,6 +390,87 @@ JSON
       echo "migrate: committed $("${G[@]}" rev-parse --short HEAD)"
     fi
     ;;
+  agent)
+    a="${1:-}"; known_agent "$a"
+    if [ -f "$(replacement_path "$a")" ]; then
+      echo "agent: idleflow-$a"
+      echo "contract: $(native_path "$HERE/../agents/$a.md")"
+    else
+      echo "agent: idleflow:$a"
+      echo "contract: built in"
+    fi
+    m="MODEL_$(agent_key "$a")"; echo "model: ${!m:-default}"
+    if [ -f "$IDLE/agents/$a.md" ]; then echo "extra: $(native_path "$IDLE/agents/$a.md")"; else echo "extra: none"; fi
+    ;;
+  custom)
+    sub="${1:?list|set|unset|replace|merge|restore}"; shift || true
+    case "$sub" in
+      list)
+        if [ -f "$PROJECT_CONF" ]; then
+          while IFS= read -r line || [ -n "$line" ]; do
+            line="${line%$'\r'}"
+            if [ "${line%%=*}" != "$line" ] && idleflow_conf_valid "${line%%=*}" "${line#*=}"; then echo "$line"; fi
+          done < "$PROJECT_CONF"
+        fi
+        for f in "$IDLE"/agents/*.md; do
+          [ -f "$f" ] || continue
+          case "$f" in *.base.md) continue;; esac
+          echo "instructions: $(basename "$f" .md) (.idleflow/agents/$(basename "$f"))"
+        done
+        for f in "$REPO"/.claude/agents/idleflow-*.md; do
+          if [ -f "$f" ]; then echo "replaced: $(basename "$f" .md | sed 's/^idleflow-//') (.claude/agents/$(basename "$f"))"; fi
+        done
+        ;;
+      set)
+        key="${1:?KEY}"; val="${2:?value}"
+        idleflow_conf_valid "$key" "$val" || { echo "custom set: '$key=$val' is not a setting this project may use (see scripts/conf.sh)" >&2; exit 1; }
+        case "$key" in
+          MODEL_*) known_agent "$(echo "${key#MODEL_}" | tr 'A-Z_' 'a-z-')";;
+          REPLACED_*) echo "custom set: REPLACED_ keys are written by custom replace and custom merge" >&2; exit 1;;
+        esac
+        set_project_conf "$key" "$val"
+        echo "$key=$val"
+        ;;
+      unset)
+        key="${1:?KEY}"
+        [ -f "$PROJECT_CONF" ] && set_project_conf "$key"
+        echo "$key: plugin default"
+        ;;
+      replace)
+        a="${1:-}"; known_agent "$a"; dst="$(replacement_path "$a")"
+        [ -e "$dst" ] && { echo "custom replace: $dst already exists" >&2; exit 1; }
+        mkdir -p "$(dirname "$dst")" "$IDLE/agents"
+        renamed_agent "$a" > "$dst"
+        renamed_agent "$a" > "$IDLE/agents/$a.base.md"
+        set_project_conf "REPLACED_$(agent_key "$a")" "$(plugin_version)"
+        native_path "$dst"
+        ;;
+      merge)
+        a="${1:-}"; known_agent "$a"; dst="$(replacement_path "$a")"; base="$IDLE/agents/$a.base.md"
+        [ -f "$dst" ] && [ -f "$base" ] || { echo "custom merge: $a is not replaced here (no $dst or no $base)" >&2; exit 1; }
+        current="$IDLE/agents/$a.current.tmp"
+        renamed_agent "$a" > "$current"
+        if cmp -s "$current" "$base"; then rm -f "$current"; echo "custom merge: the built-in $a has not changed since it was copied"; exit 0; fi
+        was="$(sed -n "s/^REPLACED_$(agent_key "$a")=//p" "$PROJECT_CONF" 2>/dev/null)"
+        set +e
+        git merge-file -L "this project's $a" -L "idleflow ${was:-before}" -L "idleflow $(plugin_version)" "$dst" "$base" "$current"
+        conflicts=$?
+        set -e
+        [ "$conflicts" -ge 0 ] || { rm -f "$current"; echo "custom merge: git merge-file failed" >&2; exit 1; }
+        mv "$current" "$base"
+        set_project_conf "REPLACED_$(agent_key "$a")" "$(plugin_version)"
+        if [ "$conflicts" -gt 0 ]; then echo "custom merge: $conflicts conflict(s) marked in $(native_path "$dst"); resolve them before the next run" >&2; exit 5; fi
+        echo "custom merge: $a now includes idleflow $(plugin_version)"
+        ;;
+      restore)
+        a="${1:-}"; known_agent "$a"
+        rm -f "$(replacement_path "$a")" "$IDLE/agents/$a.base.md" "$IDLE/agents/$a.md"
+        if [ -f "$PROJECT_CONF" ]; then set_project_conf "REPLACED_$(agent_key "$a")"; set_project_conf "MODEL_$(agent_key "$a")"; fi
+        echo "custom restore: $a is the built-in agent again"
+        ;;
+      *) echo "unknown custom subcommand" >&2; exit 1;;
+    esac
+    ;;
   update-check)
     latest="$(newest_release)"
     if [ -n "$latest" ] && version_newer "$(plugin_version)" "$latest"; then
@@ -420,6 +524,26 @@ JSON
       check_line warn worktrees "leftover worktrees with no active run: $(echo "$worktrees" | sed 's#.*\[idleflow/[^/]*/\(.*\)\]#\1#' | tr '\n' ' ')" "run.sh wt rm <task-id> for each"
     else check_line ok worktrees "none left over"; fi
 
+    if [ -f "$PROJECT_CONF" ]; then
+      bad="$(idleflow_load_conf "$REPO" 2>&1 >/dev/null | sed 's/^\[idleflow\] ignored in .idleflow\/idleflow.conf: //' | tr '\n' ';' || true)"
+      [ -z "$bad" ] || check_line warn customizations "lines skipped in .idleflow/idleflow.conf: ${bad%;}" "/idleflow:customize"
+    fi
+    custom="$(bash "$0" custom list 2>/dev/null | paste -sd ';' - | sed 's/;/; /g')"
+    check_line ok customizations "${custom:-none}"
+    for f in "$REPO"/.claude/agents/idleflow-*.md; do
+      [ -f "$f" ] || continue
+      a="$(basename "$f" .md | sed 's/^idleflow-//')"
+      if [ ! -f "$HERE/../agents/$a.md" ]; then check_line warn agents "$a is replaced but idleflow has no agent by that name any more" "run.sh custom restore $a, or delete $f"
+      elif [ ! -f "$IDLE/agents/$a.base.md" ]; then check_line warn agents "$a is replaced but its base copy is missing, so updates cannot be merged" "run.sh custom restore $a, then replace it again"
+      elif ! cmp -s <(renamed_agent "$a") "$IDLE/agents/$a.base.md"; then check_line warn agents "the built-in $a changed since this project replaced it" "run.sh custom merge $a"
+      else check_line ok agents "replaced $a is current with idleflow $(plugin_version)"; fi
+    done
+    for f in "$IDLE"/agents/*.md; do
+      [ -f "$f" ] || continue
+      case "$f" in *.base.md) continue;; esac
+      [ -f "$HERE/../agents/$(basename "$f")" ] || check_line warn agents "instructions for unknown agent $(basename "$f" .md)" "rename or delete $f"
+    done
+
     if [ "$(conventions_value docs)" = yes ]; then
       gone=()
       for f in prd.md progress.md index.md; do [ -f "$REPO/$f" ] || gone+=("$f"); done
@@ -428,12 +552,12 @@ JSON
     fi
     ;;
   conf)
-    for v in DIFF_LIMIT DIFF_SLACK MAX_IMPLEMENTERS SIZE_M_IMPLEMENTERS DEBATE_ROUNDS MAX_RETRIES SIZE_S_MAX SIZE_M_MAX SIZE_S_OVERRUN LARGE_REPO_LOC; do
+    for v in DIFF_LIMIT DIFF_SLACK MAX_IMPLEMENTERS SIZE_M_IMPLEMENTERS DEBATE_ROUNDS MAX_RETRIES SIZE_S_MAX SIZE_M_MAX SIZE_S_OVERRUN LARGE_REPO_LOC STEP_DEBATE STEP_STACK STEP_LIBRARIES STEP_TOOLING STEP_DOC_KEEPER REPORT_CUSTOMIZATIONS; do
       echo "$v=${!v:-}"
     done
     echo "RUNTIME=$(idleflow_rt_name)"
     echo "PLUGIN_VERSION=$(plugin_version)"
     ;;
   *)
-    sed -n '2,26p' "$0"; exit 1;;
+    sed -n '2,33p' "$0"; exit 1;;
 esac

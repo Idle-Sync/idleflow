@@ -17,11 +17,11 @@ set -euo pipefail
 WT="${1:?worktree path}"
 BASE="${2:?base ref}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONF="${IDLEFLOW_CONF:-$HERE/../config/idleflow.conf}"
-# shellcheck source=/dev/null
-[ -f "$CONF" ] && source "$CONF"
 # shellcheck source=/dev/null
 source "$HERE/rt.sh"
+# shellcheck source=/dev/null
+source "$HERE/conf.sh"
+idleflow_load_conf "$(git -C "$WT" rev-parse --show-toplevel 2>/dev/null || true)"
 LIMIT="${3:-${DIFF_LIMIT:-1500}}"
 SLACK="${4:-${DIFF_SLACK:-300}}"
 
