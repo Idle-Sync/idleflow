@@ -97,7 +97,7 @@ Show the human the PRD's "Must do (v1)" and "Two-year shape" sections and the "M
 
 ```
 git add -A
-git commit -m "init: <project name>"      # add the Co-Authored-By trailer only if co_author_claude is yes
+git commit -m "chore: start <project name>"   # add the Co-Authored-By trailer only if co_author_claude is yes
 ```
 
 `.idleflow/runs/` is ignored (in the file `ignore_in:` names), so `brainstorm.md` and the run files stay local; `docs/` is committed unless the human chose otherwise.
