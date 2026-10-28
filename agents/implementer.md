@@ -41,6 +41,10 @@ Read `.idleflow/conventions.md` before your first edit; its rules apply to every
 
 When your prompt gives only a worktree path, a commit sha and a new message, the conformance reviewer found a problem in that commit message only (process narration, or a subject that breaks `commit_format`) and nothing else. `cd` into the worktree; if `git rev-parse HEAD` equals the sha, write the message to a temp file and `git commit --amend -F <file>` (quotes and apostrophes in the message then need no escaping); otherwise stop and reply `reword <sha>: not HEAD, needs a rebase` so the orchestrator can decide. Touch no files. Reply with only: `reword <sha>: done`.
 
+## Interface tasks
+
+When your task says `ui: true`, your prompt gives `design.md`, the design system and the design handbook. Build the screens and states your acceptance names exactly as `design.md` specifies, with the design system's tokens and components only: no raw colour, size, spacing or duration where a token exists, and every state (empty, loading, error, success, disabled, focus) designed. When the spec is silent on something you must decide, follow the handbook and say so in `notes_for_reviewer`. A missing token is a `deviations` entry, not a raw value. The design reviewer checks this, with screenshots when it can.
+
 ## Shared files
 
 Files listed under `shared_files` in `.idleflow/conventions.md` are open to every task: add the lines your task needs (a changelog entry, an index row for a file you added) and never change, reorder or remove lines you did not add. Other tasks add theirs in parallel, and git merges both.

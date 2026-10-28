@@ -24,6 +24,22 @@ Around the pipeline, five things that keep a repo honest:
 - **It reports its own gaps.** Any agent that finds the plugin lacks an input, step, tool or config knob it needed appends a `plugin_gap:` line to `.idleflow/runs/active/gaps.md` instead of working around it. At the end of a run the orchestrator lists them and asks once whether to open them as issues on Idle-Sync/idleflow from the human's GitHub account; nothing is filed without that yes. On greenfield runs the stack advisor always proposes quality tooling per language (ruff, mypy or pyright, pytest and pre-commit for Python; biome or eslint plus prettier, strict tsc and vitest for TypeScript; gofmt and golangci-lint for Go; rustfmt and clippy for Rust, and so on), grounded by the researcher like every other proposal.
 - **No doc goes stale.** With project docs on (automatic for greenfield), the repo gets `prd.md` (the product), `progress.md` (milestones as checkboxes the retro ticks, plus the log), `index.md`, a `CLAUDE.md` block and `docs/sessions/`. A **doc-keeper** runs before every run, checks each claim in those docs against the code, fixes what is stale and commits. The retro writes a session note and updates progress and index after every run. The generated `CLAUDE.md` makes plain Claude Code sessions follow the same start-and-end protocol, and `/idleflow:endsession` closes a working session with a note whose "Next" lists, in order, what the next session does first: push, CI, release, restarts, open deviations.
 
+## Frontend design, built in
+
+For work a person sees (the classifier reports `ui: true`, or `STEP_DESIGN=on`), the run designs before it plans:
+
+- **`idleflow:designer`** reads idleflow's own design handbook (`procedures/design.md`) and reference data
+  (`procedures/design-data.md`: type pairings, scales, colour recipes, contrast formula, motion values,
+  checklists by screen type). It writes or extends the repo's lasting design system (`docs/design-system.md`,
+  or `.idleflow/design-system.md` without docs): a direction, tokens with measured contrast for light and dark,
+  components. For this run it writes `design.md`: a spec per screen with layout, hierarchy, every state,
+  motion and accessibility. Token work becomes the plan's first task.
+- **Libraries** it would use (an animation library such as GSAP, a component set such as shadcn/ui) go to the
+  library step for research and the human's yes; it never installs anything.
+- **`idleflow:review-design`** reviews every `ui` task against the spec and tokens, checks accessibility and the
+  signs of a generic look, and, when a browser tool is available and the repo has an approved `preview:`
+  command, renders the changed screens at 390 and 1440 px and reviews the images.
+
 ## What it adds over plain Claude Code
 
 | Plain Claude Code | With idleflow |
@@ -47,6 +63,7 @@ Around the pipeline, five things that keep a repo honest:
 | Retry | one per task, on Opus, then stop and ask | `MAX_RETRIES`, steps 5 and 7 of `commands/feature.md` |
 | Tests | `tests_first: true` forced wherever entry points have no tests | planner §3, conformance reviewer §4 |
 | Mutation sweep | implementers break their own change on purpose; a fault no test catches needs a test or a reason | `STEP_MUTATION`, plan `mutation:`, implementer, correctness reviewer |
+| Design | designer before planning and a design reviewer on `ui` tasks; a lasting design system per repo | `STEP_DESIGN`, `agents/designer.md`, `agents/review-design.md`, `procedures/design.md` |
 | Placeholders | code that cannot do its job yet fails loudly; a plausible default is a blocking finding | implementer, correctness reviewer |
 | Checkable findings | each review finding says whether a deterministic check would have caught it; repeats become a lesson | reviewers, `agents/retro.md` |
 | Lessons | per repo, `.idleflow/lessons.md` or `docs/lessons.md` (`lessons_in:`), ≤1 per run | `agents/retro.md`, `run.sh path lessons` |
@@ -127,6 +144,7 @@ prompt diffs are shown before every post.
 .claude-plugin/plugin.json      manifest
 .claude-plugin/marketplace.json lets the repo itself be added as a marketplace
 commands/feature.md             the orchestrator — the run procedure lives here
+procedures/design.md            idleflow's design handbook; design-data.md beside it holds the reference values
 procedures/talking.md           how every command talks to the human: plain language, language and tone settings
 procedures/repo-setup.md        setup steps R1–R6 shared by feature and init (mode, docs, stack, libraries, tooling, snapshot)
 commands/fix.md                 same, bug-biased
