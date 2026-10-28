@@ -64,7 +64,9 @@ Round 1, both in parallel: `idleflow:red-team` → `debate/round-1-red.md` and `
 
 Round 2, both in parallel: same agents, each also given the *other's* round-1 path, writing `round-2-*.md`. Rounds are capped at `DEBATE_ROUNDS`; never run a third.
 
-Then spawn `idleflow:planner` in revision mode with the four debate paths; it rewrites plan.md with a "Debate resolution" section. Re-read plan.md. If any resolution is `deferred to human`, ask now; apply the answer; continue.
+Before the revision, the human decides what gets cut. Read the four debate files and list every cost cut (`C<n>`) still standing after round 2 (not withdrawn) and every red-team finding whose fix the cost critic contested, one line each: the id, what it changes, what it saves (from `saves:`), what it risks (from `risk:` or the red team's `claim:`). Ask with AskUserQuestion, `multiSelect: true`, one option per item (label = id and title; description = saves and risks), at most four options per question and four questions per call; use more calls when there are more items. Selected means accepted. Write the answers to `debate/human.md`, one line per item: `<id>: accepted` or `<id>: rejected`. If the human is not present, skip the question and do not write the file; the planner adjudicates as before. Red-team findings nobody contested are not asked about.
+
+Then spawn `idleflow:planner` in revision mode with the four debate paths and, when it exists, the `debate/human.md` path; it rewrites plan.md with a "Debate resolution" section. Re-read plan.md. If any resolution is `deferred to human`, ask now; apply the answer; continue.
 
 Tell the human: `Plan locked: <N> tasks in <G> groups, est <L> lines. Building.` If there is more than one group, one line per group.
 

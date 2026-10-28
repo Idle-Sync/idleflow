@@ -29,7 +29,7 @@ Around the pipeline, five things that keep a repo honest:
 | Decision | Value | Where |
 |---|---|---|
 | Plan context | Sonnet explores, Fable plans from `context.md` | `agents/explorer.md`, `agents/planner.md` |
-| Debate | asymmetric roles, hard cap 2 rounds, planner adjudicates | `agents/red-team.md`, `agents/cost-critic.md`, `DEBATE_ROUNDS` |
+| Debate | asymmetric roles, hard cap 2 rounds; the human picks which cuts and contested points to accept, the planner adjudicates the rest | `agents/red-team.md`, `agents/cost-critic.md`, `DEBATE_ROUNDS` |
 | Sizing | Haiku reports size, risk and new dependency; size sets implementers and reviewers, risk (or size L) the debate, a new dependency the stack and library research; an S overrun adds the conformance reviewer | `agents/classifier.md`, `SIZE_*` in conf |
 | Fan-out | ≤4 implementers, partitioned by file globs, Sonnet default / Opus when plan says | `MAX_IMPLEMENTERS`, `model:` per task in plan |
 | Diff gate | 1500 code lines per task (+300 slack); `.md`, `.txt`, lockfiles, generated excluded | `DIFF_LIMIT`, `DIFF_SLACK`, `DIFF_EXCLUDE` |
