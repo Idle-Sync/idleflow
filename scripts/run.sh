@@ -22,12 +22,13 @@
 #   run.sh conf                           -> prints resolved config values and the runtime in use
 #   run.sh path <conventions|lessons|runs> -> prints where that file or directory lives in this repo
 #   run.sh migrate                        -> moves files a pre-.idleflow/ version kept under .claude/ and commits the move
-#   run.sh doctor                         -> checks the repo's idleflow setup, one "ok|warn|fail <check>: <detail> | fix: <how>" line each
+#   run.sh doctor                         -> checks the repo's idleflow setup, one "ok|warn|fail|suggest <check>: <detail> | fix: <how>" line each
 #   run.sh update-check                   -> prints one line when a newer idleflow is tagged on GitHub, nothing otherwise
 #   run.sh agent <name>                   -> how to spawn that agent here: agent, model, extra instructions, contract
 #   run.sh custom list                    -> this repo's customizations (.idleflow/idleflow.conf, agent instructions, replaced agents)
 #   run.sh custom set <KEY> <value>       -> validates and writes one setting to .idleflow/idleflow.conf
 #   run.sh custom unset <KEY>             -> removes it, so the plugin default applies again
+#   run.sh custom report [ask|always|never] -> this person's consent to report customizations (local git config, never committed)
 #   run.sh custom replace <agent>         -> copies the built-in agent to .claude/agents/idleflow-<agent>.md for the project to edit
 #   run.sh custom merge <agent>           -> merges changes the built-in agent got since it was copied into the replacement
 #   run.sh custom restore <agent>         -> back to the built-in agent: removes its replacement, instructions and model
@@ -110,6 +111,12 @@ conventions_value() { sed -n "s/^$1: *//p" "$CONVENTIONS" 2>/dev/null | head -1 
 check_line() { printf '%s %s: %s%s\n' "$1" "$2" "$3" "${4:+ | fix: $4}"; }
 
 PROJECT_CONF="$IDLE/idleflow.conf"
+# Consent to post customization reports from one's own GitHub account is personal, so it lives in
+# this clone's git config, never in a committed file a teammate could set for everyone.
+report_preference() {
+  local v; v="$("${G[@]}" config --local --get idleflow.reportCustomizations 2>/dev/null || true)"
+  case "$v" in always|never) echo "$v";; *) echo ask;; esac
+}
 agent_key() { echo "$1" | tr 'a-z-' 'A-Z_'; }
 known_agent() { [ -n "$1" ] && [ -f "$HERE/../agents/$1.md" ] || { echo "unknown agent '$1'; one of: $(cd "$HERE/../agents" && ls -- *.md | sed 's/\.md$//' | tr '\n' ' ')" >&2; exit 1; }; }
 replacement_path() { echo "$REPO/.claude/agents/idleflow-$1.md"; }
@@ -431,6 +438,13 @@ JSON
         set_project_conf "$key" "$val"
         echo "$key=$val"
         ;;
+      report)
+        case "${1:-}" in
+          "") report_preference;;
+          ask|always|never) "${G[@]}" config --local idleflow.reportCustomizations "$1"; echo "$1";;
+          *) echo "custom report: ask, always or never" >&2; exit 1;;
+        esac
+        ;;
       unset)
         key="${1:?KEY}"
         [ -f "$PROJECT_CONF" ] && set_project_conf "$key"
@@ -544,6 +558,18 @@ JSON
       [ -f "$HERE/../agents/$(basename "$f")" ] || check_line warn agents "instructions for unknown agent $(basename "$f" .md)" "rename or delete $f"
     done
 
+    # the retro's suggestions, newest per key, minus those declined or already applied
+    if [ -f "$RUNS/config-proposals.md" ]; then
+      while IFS=$'\t' read -r key val line; do
+        [[ "$key" =~ ^[A-Z][A-Z_]*$ ]] || continue
+        grep -qF -- "- declined: $key -> $val " "$IDLE/suggestions.md" 2>/dev/null && continue
+        [ "${!key:-}" = "$val" ] && continue
+        check_line suggest "$key" "${line#- }" "/idleflow:customize $key $val"
+      done < <(awk 'match($0, /^- \[[^]]*\] [A-Z][A-Z_]*: [^ ]* -> [^ ]* because/) {
+          split($0, w, " "); key = w[3]; sub(/:$/, "", key); last[key] = w[6] "\t" $0; if (!(key in seen)) { seen[key] = 1; order[++n] = key }
+        } END { for (i = 1; i <= n; i++) print order[i] "\t" last[order[i]] }' "$RUNS/config-proposals.md")
+    fi
+
     if [ "$(conventions_value docs)" = yes ]; then
       gone=()
       for f in prd.md progress.md index.md; do [ -f "$REPO/$f" ] || gone+=("$f"); done
@@ -552,12 +578,13 @@ JSON
     fi
     ;;
   conf)
-    for v in DIFF_LIMIT DIFF_SLACK MAX_IMPLEMENTERS SIZE_M_IMPLEMENTERS DEBATE_ROUNDS MAX_RETRIES SIZE_S_MAX SIZE_M_MAX SIZE_S_OVERRUN LARGE_REPO_LOC STEP_DEBATE STEP_STACK STEP_LIBRARIES STEP_TOOLING STEP_DOC_KEEPER REPORT_CUSTOMIZATIONS; do
+    for v in DIFF_LIMIT DIFF_SLACK MAX_IMPLEMENTERS SIZE_M_IMPLEMENTERS DEBATE_ROUNDS MAX_RETRIES SIZE_S_MAX SIZE_M_MAX SIZE_S_OVERRUN LARGE_REPO_LOC STEP_DEBATE STEP_STACK STEP_LIBRARIES STEP_TOOLING STEP_DOC_KEEPER; do
       echo "$v=${!v:-}"
     done
     echo "RUNTIME=$(idleflow_rt_name)"
     echo "PLUGIN_VERSION=$(plugin_version)"
+    echo "REPORT_CUSTOMIZATIONS=$(report_preference)"
     ;;
   *)
-    sed -n '2,33p' "$0"; exit 1;;
+    sed -n '2,34p' "$0"; exit 1;;
 esac

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Config loader. Sourced by run.sh and diff-gate.sh.
 #
-#   idleflow_load_conf <repo-root>   -> the plugin's config/idleflow.conf, then <repo-root>/.idleflow/idleflow.conf on top
+#   idleflow_load_conf <repo-root> [file] -> the plugin's config/idleflow.conf, then <repo-root>/.idleflow/idleflow.conf
+#                                           (or [file], when given) on top
 #   idleflow_conf_valid <key> <value> -> true when the project file may set that key to that value
 #
 # The project file is committed, so it comes from whoever pushed to the repo: it is parsed,
@@ -16,7 +17,7 @@ _idleflow_number_in() { # _idleflow_number_in <value> <min> <max>
 }
 
 idleflow_conf_valid() {
-  local agent_re='^[A-Z][A-Z_]*$' version_re='^[0-9]+\.[0-9]+\.[0-9]+$' globs_re='^[A-Za-z0-9_.*/-]+( [A-Za-z0-9_.*/-]+)*$'
+  local agent_re='^[A-Z][A-Z_]*$' version_re='^[0-9]+\.[0-9]+\.[0-9]+$' globs_re='^[A-Za-z0-9_.*/-]+( [A-Za-z0-9_.*/-]+)*$' glob
   case "$1" in
     DIFF_LIMIT|SIZE_S_MAX|SIZE_M_MAX|SIZE_S_OVERRUN|LARGE_REPO_LOC) _idleflow_number_in "$2" 1 100000000 ;;
     DIFF_SLACK) _idleflow_number_in "$2" 0 100000000 ;;
@@ -27,8 +28,10 @@ idleflow_conf_valid() {
       case "$2" in auto|on|off) ;; *) return 1;; esac ;;
     MODEL_*) [[ "${1#MODEL_}" =~ $agent_re ]] && case "$2" in haiku|sonnet|opus|fable) ;; *) return 1;; esac ;;
     REPLACED_*) [[ "${1#REPLACED_}" =~ $agent_re ]] && [[ "$2" =~ $version_re ]] ;;
-    REPORT_CUSTOMIZATIONS) case "$2" in ask|always|never) ;; *) return 1;; esac ;;
-    DIFF_EXCLUDE_ADD) [[ "$2" =~ $globs_re ]] ;;
+    DIFF_EXCLUDE_ADD)
+      [[ "$2" =~ $globs_re ]] || return 1
+      # a glob with no letter or digit (**/*, **/*.*) would exclude every file from the gate
+      for glob in $(tr ' ' '\n' <<< "$2"); do [[ "$glob" =~ [A-Za-z0-9] ]] || return 1; done ;;
     *) return 1 ;;
   esac
 }
@@ -37,8 +40,8 @@ idleflow_load_conf() {
   local defaults="${IDLEFLOW_CONF:-$_IDLEFLOW_CONF_DIR/../config/idleflow.conf}" project line key val
   # shellcheck source=/dev/null
   [ -f "$defaults" ] && source "$defaults"
-  project="${1:-}/.idleflow/idleflow.conf"
-  [ -n "${1:-}" ] && [ -f "$project" ] || return 0
+  project="${2:-${1:-}/.idleflow/idleflow.conf}"
+  [ -n "${2:-}${1:-}" ] && [ -f "$project" ] || return 0
   while IFS= read -r line || [ -n "$line" ]; do
     line="${line%$'\r'}"
     case "$line" in ""|\#*) continue;; esac

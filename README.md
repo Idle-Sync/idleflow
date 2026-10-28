@@ -60,7 +60,8 @@ sourced: a key outside the list in `scripts/conf.sh`, or a value out of range, i
 
 Each customization can be reported as a comment on one issue per setting on Idle-Sync/idleflow
 (`customization: DIFF_LIMIT`, `customization: prompt planner`, ...). The first time, the project answers
-report / always / never; `always` and `never` are saved as `REPORT_CUSTOMIZATIONS`. Instruction text and
+report / always / never; `always` and `never` are saved per person in the clone's git config
+(`idleflow.reportCustomizations`), never committed, so one teammate's answer never posts from another's account. Instruction text and
 prompt diffs are shown before every post.
 
 ## Layout
@@ -124,7 +125,8 @@ docs/sessions/s_NNNN.md            one note per run or session; ignored or commi
 .idleflow/runs/<id>/                 ignored (.git/info/exclude or .gitignore, asked once); issue, context, plan, debate/, tasks/, review/, run.json
 .idleflow/runs/log.jsonl             one line per finished run — tokens aren't captured yet, but
                                    size, retries, gate trips and review findings are
-.idleflow/runs/config-proposals.md   retro's suggested threshold changes; apply by hand
+.idleflow/runs/config-proposals.md   the retro's customization suggestions, with evidence; offered once at the end of a run
+.idleflow/suggestions.md             suggestions the team declined, so they are not offered again; commit this
 <repo>__wt/<task-id>               sibling directory holding task worktrees during a run
 ```
 
