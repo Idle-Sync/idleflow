@@ -9,7 +9,8 @@ by: <idleflow run <id> | human | Claude Code session>
 - `<path>` — <why>
 
 ## Next
-- <the first thing the next session should do>
+1. <the first thing the next session should do, with its command>
+2. <then this>
 
 ## Open questions
 - <question> — <who can answer>

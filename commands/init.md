@@ -115,7 +115,7 @@ Final message, nothing more:
 
 When R5 installed anything, add a line before `Next:`: restart Claude Code before milestone 1 so agents can use the new tooling.
 
-Then ask: **Start milestone 1 now** / **Stop here**. On "Start", run `${CLAUDE_PLUGIN_ROOT}/commands/feature.md` with that argument.
+Then ask: **Start milestone 1 now** / **End the session** / **Stop here**. On "Start", run `${CLAUDE_PLUGIN_ROOT}/commands/feature.md` with that argument. On "End the session", read `${CLAUDE_PLUGIN_ROOT}/commands/endsession.md` and follow it; the human's answer is its yes.
 
 ---
 
