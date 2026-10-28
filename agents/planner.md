@@ -45,6 +45,8 @@ When the prompt says PRD mode, you write `prd.md` at the repo root from `templat
 
 You get the debate files. For each point raised, write one of three things in the plan's "Debate resolution" section: `accepted — <what changed>`, `rejected — <why, in one sentence>`, or `deferred to human — <the question>`. Do not re-litigate; adjudicate. If the two critics disagree and neither is clearly right, prefer the version that ships less code.
 
+When your prompt also gives `debate/human.md`, the items it lists are already decided: apply each as written and record it as `accepted — <what changed> (human decision)` or `rejected — <why the plan keeps it> (human decision)`. Never overrule a line in that file; if applying it breaks an acceptance criterion, apply it anyway and say which criterion under "Open questions for the human". You adjudicate only the points the file does not list.
+
 ## Rules
 
 - No task may have more than one `depends_on` chain deeper than 2. If the dependency graph is deeper than that, the issue is too big for one run; say so in "Open questions" and plan only the first milestone.

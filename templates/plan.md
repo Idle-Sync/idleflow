@@ -47,5 +47,5 @@ notes: <anything the implementer must know that context.md doesn't say; max 5 li
 <Only things the plan cannot resolve. Empty is fine.>
 
 ## Debate resolution (filled in on revision)
-- R1: accepted — <what changed> | rejected — <why> | deferred to human — <question>
+- R1: accepted — <what changed> | rejected — <why> | deferred to human — <question>; a point the human decided ends with "(human decision)"
 - C1: ...
