@@ -333,6 +333,26 @@ check "a setup that edits tracked files is refused and undone" '[ "$rc" = 6 ] &&
 bash "$RUN" wt rm T7; bash "$RUN" finish done >/dev/null
 rm -rf shared-big; cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"; git add .idleflow/conventions.md && commit -q -m "restore conventions"
 
+echo "--- the repo's gate"
+git add -u && commit -q -m "tidy before the gate"
+cp .idleflow/conventions.md "$d-conv.bak"
+printf 'gate: grep -q x src/keep.py && echo gate-ok\n' >> .idleflow/conventions.md
+git add .idleflow/conventions.md && commit -q -m "gate"
+bash "$RUN" new gated >/dev/null 2>&1
+printf 'dirty\n' >> src/keep.py; bash "$RUN" approve gate >/dev/null
+check "the base gate refuses a dirty checkout" '! bash "$RUN" repo-gate base >/dev/null 2>&1'
+git checkout -q -- src/keep.py; git config --local --unset idleflow.approved-gate
+out="$(bash "$RUN" repo-gate base 2>&1)"; rc=$?
+check "an unapproved gate never runs (exit 7)" '[ "$rc" = 7 ] && [ ! -e .idleflow/runs/active/repo-gate-base.log ]'
+bash "$RUN" approve gate >/dev/null
+out="$(bash "$RUN" repo-gate base 2>/dev/null)"; rc=$?
+check "the gate runs on the base and keeps its output" '[ "$rc" = 0 ] && echo "$out" | grep -q "^repo gate base: exit 0" && grep -q gate-ok .idleflow/runs/active/repo-gate-base.log'
+wg="$(bash "$RUN" wt add T4 2>/dev/null)"; ( cd "$wg" && echo y > src/keep.py )
+out="$(bash "$RUN" repo-gate T4 2>/dev/null)"; rc=$?
+check "a red gate in a task worktree exits 1" '[ "$rc" = 1 ] && echo "$out" | grep -q "^repo gate T4: exit 1" && [ -f .idleflow/runs/active/tasks/T4/repo-gate.log ]'
+bash "$RUN" wt rm T4; bash "$RUN" finish done >/dev/null
+cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"; git add .idleflow/conventions.md && commit -q -m "restore conventions"
+
 echo "--- conventional commits"
 cp .idleflow/conventions.md "$d-conv.bak"
 printf 'commit_format: conventional\n' >> .idleflow/conventions.md
