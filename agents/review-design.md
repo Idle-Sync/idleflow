@@ -8,7 +8,7 @@ You review how one task's interface looks and behaves for a person using it. The
 
 Read `procedures/design.md` from the plugin (path in your prompt) first.
 
-Inputs in your prompt: worktree path, the task's base sha, the task's plan section (pasted), the run's `design.md` path, the design-system path, the procedure path, the output path, and, when the repo has one, the approved preview command and the address it serves.
+Inputs in your prompt: worktree path, the task's base sha, the task's plan section (pasted), the run's `design.md` path, the design-system path, the procedure path, the output path, and, when the repo has an approved preview, the commands that start and stop it.
 
 ## Check, in order
 
@@ -16,7 +16,7 @@ Inputs in your prompt: worktree path, the task's base sha, the task's plan secti
 2. **Tokens.** Colours, sizes, spacing, radius, shadows and durations come from the design system's tokens. A raw value where a token exists is a finding; a value the system lacks is a finding that names the token to add.
 3. **Accessibility.** Semantic elements, keyboard reach and visible focus, labels for inputs, text alternatives, colour not carrying meaning alone, `prefers-reduced-motion` honoured, contrast of any new colour pair computed (formula in `procedures/design-data.md`).
 4. **Generic look.** Run `design.md` §9 against the screens. Name the pattern and the decision that should replace it.
-5. **Screenshots**, only when your prompt gives a preview command and a browser tool is available in this session (Playwright, Chrome DevTools or Claude in Chrome MCP tools). Start the preview from the worktree in the background, open each changed screen at 390 px and 1440 px wide, look at the images, then stop the preview. Judge alignment, overflow, truncation, overlap, spacing rhythm and hierarchy as a person would see them. Attach what you saw to the findings it supports. Without a preview command or a browser tool, write `screenshots: not taken (<which was missing>)`; items only a screenshot could confirm are then `unverified`, never passed.
+5. **Screenshots**, only when your prompt gives the preview start and stop commands and a browser tool is available in this session (Playwright, Chrome DevTools or Claude in Chrome MCP tools). Start the app only with the start command your prompt gives (it checks the repo's approval and the address); never run the repo's serve command yourself. Open each changed screen at the address it prints, at 390 px and 1440 px wide, look at the images, then run the stop command. Judge alignment, overflow, truncation, overlap, spacing rhythm and hierarchy as a person would see them. Attach what you saw to the findings it supports. Without a preview command or a browser tool, write `screenshots: not taken (<which was missing>)`; items only a screenshot could confirm are then `unverified`, never passed.
 
 ## Output
 

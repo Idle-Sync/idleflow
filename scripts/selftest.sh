@@ -384,6 +384,23 @@ check "doctor shows hook advice without a fix it would apply" 'echo "$doc" | gre
 bash "$RUN" custom unset SLOW_GATE_SECONDS >/dev/null; rm -rf .husky; git checkout -q HEAD~1 -- src/keep.py 2>/dev/null || true
 cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"; git add .idleflow/conventions.md && commit -q -m "restore conventions"
 
+echo "--- preview for screenshots"
+cp .idleflow/conventions.md "$d-conv.bak"
+printf 'preview: sleep 30\npreview_url: http://example.com:4173\n' >> .idleflow/conventions.md
+git add .idleflow/conventions.md && commit -q -m "preview"
+bash "$RUN" new preview >/dev/null 2>&1; bash "$RUN" wt add T2 >/dev/null 2>&1
+bash "$RUN" preview T2 start >/dev/null 2>&1; rc=$?
+check "an unapproved preview never runs (exit 7)" '[ "$rc" = 7 ] && [ ! -f .idleflow/runs/active/tasks/T2/preview.pid ]'
+bash "$RUN" approve preview >/dev/null
+check "a preview address off this machine is refused" '! bash "$RUN" preview T2 start >/dev/null 2>&1 && [ ! -f .idleflow/runs/active/tasks/T2/preview.pid ]'
+sed -i.bak 's#^preview_url: .*#preview_url: http://localhost:4173#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
+out="$(bash "$RUN" preview T2 start 2>/dev/null)"; pid="$(cat .idleflow/runs/active/tasks/T2/preview.pid 2>/dev/null)"
+check "an approved preview starts and records its process" 'echo "$out" | grep -q "^preview T2: serving at http://localhost:4173" && kill -0 "$pid" 2>/dev/null'
+bash "$RUN" preview T2 stop >/dev/null; sleep 1
+check "preview stop ends it" '! kill -0 "$pid" 2>/dev/null && [ ! -f .idleflow/runs/active/tasks/T2/preview.pid ]'
+bash "$RUN" wt rm T2; bash "$RUN" finish done >/dev/null
+cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"; git add .idleflow/conventions.md && commit -q -m "restore conventions"
+
 echo "--- conventional commits"
 cp .idleflow/conventions.md "$d-conv.bak"
 printf 'commit_format: conventional\n' >> .idleflow/conventions.md

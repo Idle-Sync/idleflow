@@ -29,6 +29,7 @@
 #   run.sh team-install                   -> recommends idleflow to teammates: .claude/settings.json plus a CLAUDE.md install note
 #   run.sh detect                         -> suggests Repo fit and Records settings from evidence in the repo (read-only)
 #   run.sh repo-gate <base|main|task> [--quick] -> runs the approved gate (or gate_quick) there, times it; 1 failed, 7 unapproved
+#   run.sh preview <task-id> start|stop   -> serves the app from that worktree for screenshots (approved command, localhost only)
 #   run.sh commands                       -> the repo's commands (worktree_setup, gate) as committed, approved or unapproved here
 #   run.sh approve <key>                  -> records this person's approval of that exact committed command (local git config)
 #   run.sh agent <name>                   -> how to spawn that agent here: agent, model, extra instructions, contract
@@ -683,6 +684,28 @@ JSON
     fi
     [ "$rc" -eq 0 ] || exit 1
     ;;
+  preview)
+    # Serves the app from a task worktree for the design reviewer's screenshots, under the same
+    # approval rule as the gate; the address must be on this machine.
+    tid="${1:?task-id}"; act="${2:?start|stop}"; active_id >/dev/null
+    pidf="$ACTIVE/tasks/$tid/preview.pid"
+    if [ "$act" = stop ]; then
+      # the server runs in its own session, so its whole process group goes (dev servers start children)
+      if [ -f "$pidf" ]; then pid="$(cat "$pidf")"; kill -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true; fi
+      rm -f "$pidf"; echo "preview $tid: stopped"; exit 0
+    fi
+    cmd="$(idleflow_rt get "$ACTIVE/run.json" preview 2>/dev/null || true)"
+    case "$cmd" in ""|null) echo "preview: none"; exit 0;; esac
+    command_approved preview "$cmd" || { echo "preview is not approved on this clone; nothing ran. The command is: $cmd" >&2; exit 7; }
+    url="$(conventions_value preview_url)"
+    [[ "$url" =~ ^https?://(localhost|127\.0\.0\.1|\[::1\])(:[0-9]+)?(/[^[:space:]]*)?$ ]] \
+      || { echo "preview_url must be a localhost address (got '$url')" >&2; exit 1; }
+    dir="$(wt_path "$tid")"; [ -d "$dir" ] || { echo "preview: no worktree for $tid" >&2; exit 1; }
+    mkdir -p "$ACTIVE/tasks/$tid"
+    echo "preview ($tid): $cmd" >&2
+    MAIN="$REPO" idleflow_rt detach "$dir" "$ACTIVE/tasks/$tid/preview.log" "$pidf" "$cmd"
+    echo "preview $tid: serving at $url (log: $(native_path "$ACTIVE/tasks/$tid/preview.log"); stop with: run.sh preview $tid stop)"
+    ;;
   commands)
     # every repo command with its committed text and whether this person approved it
     for key in $REPO_COMMANDS; do
@@ -948,5 +971,5 @@ JSON
     echo "REPORT_CUSTOMIZATIONS=$(report_preference)"
     ;;
   *)
-    sed -n '2,42p' "$0"; exit 1;;
+    sed -n '2,43p' "$0"; exit 1;;
 esac
