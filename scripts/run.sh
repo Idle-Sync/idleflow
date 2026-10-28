@@ -3,8 +3,9 @@
 # Everything is plain git + files so a run can be inspected or resumed by hand.
 #
 #   run.sh new <slug>                     -> creates .idleflow/runs/active/ for a new run, prints its <id>
-#   run.sh wt add <task-id> [base-ref]    -> creates worktree <repo>__wt/<task-id> on branch idleflow/<run-id>/<task-id>,
-#                                            records the task's base sha in run.json, prints the worktree path
+#   run.sh wt add <task-id> [base-ref]    -> creates worktree <repo>__wt/<task-id> (or .idleflow/worktrees/<task-id>) on
+#                                            branch idleflow/<run-id>/<task-id>, records the task's base sha, runs the
+#                                            conventions' worktree_setup there (exit 6 on failure), prints the worktree path
 #   run.sh wt rm <task-id>                -> removes the worktree (keeps the branch); works with or without an active run
 #   run.sh wt list                        -> lists idleflow worktrees
 #   run.sh own <task-id> '<globs json>'   -> registers file ownership for the guard hook
@@ -136,7 +137,8 @@ version_newer() { # version_newer <installed> <candidate>: true when candidate i
   [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)" = "$2" ]
 }
 
-conventions_value() { sed -n "s/^$1: *//p" "$CONVENTIONS" 2>/dev/null | head -1 | tr -d '\r' | sed 's/ *$//'; }
+# A missing conventions file or key reads as empty; under set -e a failing lookup must not end the script.
+conventions_value() { { sed -n "s/^$1: *//p" "$CONVENTIONS" 2>/dev/null || true; } | head -1 | tr -d '\r' | sed 's/ *$//'; }
 check_line() { printf '%s %s: %s%s\n' "$1" "$2" "$3" "${4:+ | fix: $4}"; }
 
 PROJECT_CONF="$IDLE/idleflow.conf"
@@ -171,7 +173,34 @@ ensure_union_merge() {
 
 author_slug() { git config user.name 2>/dev/null | tr 'A-Z' 'a-z' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//' | cut -c1-20; }
 
-wt_path() { echo "${REPO}${SUFFIX}/$1"; }
+# Sibling by default (<repo>__wt/<task>); `worktrees_in: inside` keeps them in an ignored folder
+# inside the repo, for projects that forbid writing outside their own folder.
+wt_path() {
+  if [ "$(conventions_value worktrees_in)" = inside ]; then echo "$IDLE/worktrees/$1"; else echo "${REPO}${SUFFIX}/$1"; fi
+}
+
+# The repo's own preparation for a fresh worktree (link shared folders, copy fixtures). It comes
+# from the committed conventions, like the repo's test commands, so it is printed before it runs.
+run_worktree_setup() { # run_worktree_setup <task-id> <worktree>
+  local cmd log
+  cmd="$(conventions_value worktree_setup)"
+  case "$cmd" in ""|unset|none) return 0;; esac
+  log="$ACTIVE/tasks/$1/setup.log"
+  echo "worktree setup ($1): $cmd" >&2
+  if ! (cd "$2" && MAIN="$REPO" WORKTREE="$2" bash -c "$cmd") > "$log" 2>&1; then
+    echo "worktree setup failed for $1 (full output: $(native_path "$log")):" >&2
+    tail -20 "$log" >&2
+    exit 6
+  fi
+  local changed
+  changed="$(git -C "$2" status --porcelain --untracked-files=no)"
+  if [ -n "$changed" ]; then
+    git -C "$2" checkout -q -- .
+    echo "worktree setup for $1 changed tracked files, so they were restored and the worktree is not ready:" >&2
+    echo "$changed" >&2
+    exit 6
+  fi
+}
 
 exclude_file() {
   local f
@@ -252,6 +281,7 @@ JSON
     add_ignore "$(ignore_file)" '.idleflow/runs/'
     # worktree marker dir: excluded locally (shared by all worktrees), never committed or merged
     add_ignore "$(exclude_file)" '.idleflow-run/'
+    add_ignore "$(exclude_file)" '.idleflow/worktrees/'
     echo "$id"
     ;;
   wt)
@@ -266,7 +296,7 @@ JSON
         "${G[@]}" worktree prune
         if [ -d "$p" ]; then
           "${G[@]}" worktree remove --force "$p" 2>/dev/null || true
-          case "$p" in *"$SUFFIX"/*) rm -rf "$p";; esac
+          case "$p" in *"$SUFFIX"/*|*/.idleflow/worktrees/*) rm -rf "$p";; esac
         fi
         mkdir -p "$(dirname "$p")"
         "${G[@]}" worktree add -B "$br" "$p" "$base" >/dev/null
@@ -276,6 +306,7 @@ JSON
         # the task's own base: groups merged earlier move the branch, so gate/review must diff from here, not from the run start
         idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.base_sha" "\"$("${G[@]}" rev-parse "$base")\""
         idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.worktree" "$(json_str "$(native_path "$p")")"
+        run_worktree_setup "$tid" "$p"
         native_path "$p"
         ;;
       rm)
@@ -689,5 +720,5 @@ JSON
     echo "REPORT_CUSTOMIZATIONS=$(report_preference)"
     ;;
   *)
-    sed -n '2,37p' "$0"; exit 1;;
+    sed -n '2,38p' "$0"; exit 1;;
 esac
