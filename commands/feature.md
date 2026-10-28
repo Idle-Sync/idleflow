@@ -24,11 +24,12 @@ Pushback, everywhere in this run: when the human's answer conflicts with the cod
 
 ```
 bash "$RUN" migrate                  # moves files an older idleflow kept under .claude/; a no-op otherwise
+bash "$RUN" update-check             # one line when a newer idleflow is out, nothing otherwise
 bash "$RUN" conf                     # note every value; you pass them to agents
 ID=$(bash "$RUN" new "<short-slug-from-issue>")
 LESSONS=$(bash "$RUN" path lessons)  # .idleflow/lessons.md, or docs/lessons.md under lessons_in: docs
 ```
-If `migrate` exits non-zero, show its message and stop; do not move files by hand. When it moved something, repeat its lines to the human. Ensure `$LESSONS` exists (copy `templates/lessons.md` if not). Run **R1** (readability mode and ignore file) from `procedures/repo-setup.md` if it applies. Tell the human: `Run <ID> started on idleflow <PLUGIN_VERSION> (mode: <mode>). Exploring.`
+If `migrate` exits non-zero, show its message and stop; do not move files by hand. When it moved something, repeat its lines to the human. Repeat an `update-check` line once as it is; never update the plugin during the run. Ensure `$LESSONS` exists (copy `templates/lessons.md` if not). Run **R1** (readability mode and ignore file) from `procedures/repo-setup.md` if it applies. Tell the human: `Run <ID> started on idleflow <PLUGIN_VERSION> (mode: <mode>). Exploring.`
 
 ## 1. Explore (Sonnet)
 
