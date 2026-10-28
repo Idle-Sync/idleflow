@@ -66,7 +66,7 @@ Spawn `idleflow:tooling-advisor` with the project description path, the conventi
 
 Read `tooling.md`. Ask once with AskUserQuestion, `multiSelect: true`, one option per proposal (label = name and kind; description = job, one con, the exact install command or "installed"). Defaults first.
 
-For each accepted item, show the `install:` command and run it exactly as quoted. These commands change only the user's Claude Code setup (`claude plugin install …`, a skill folder under `~/.claude/skills/`), never the repo; that is why this is allowed while installing into the repo is not. If a command fails, show the error and move on. Append accepted items under "Tooling" in conventions: `- <name> (<kind>): <job>`. List any "Skills that do not exist yet" and say each can be requested with `/idleflow:skills-feedback "<line>"`; do not open issues unasked.
+For each accepted item, show the `install:` command and run it exactly as quoted. These commands change only the user's Claude Code setup (`claude plugin install …`, a skill folder under `~/.claude/skills/`), never the repo; that is why this is allowed while installing into the repo is not. If a command fails, show the error and move on. When anything was installed, tell the human that agents in this session cannot use it until Claude Code restarts, and that a restart (not `/reload-plugins` mid-run) is the safe way to pick it up. Append accepted items under "Tooling" in conventions: `- <name> (<kind>): <job>`. List any "Skills that do not exist yet" and say each can be requested with `/idleflow:skills-feedback "<line>"`; do not open issues unasked.
 
 Tell the human: `Tooling: <N> installed, <M> declined, <K> skills to request.`
 

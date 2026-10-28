@@ -113,6 +113,8 @@ Final message, nothing more:
 - the paths created,
 - `Next: /idleflow:feature "Milestone 1: <title from prd.md>"`.
 
+When R5 installed anything, add a line before `Next:`: restart Claude Code before milestone 1 so agents can use the new tooling.
+
 Then ask: **Start milestone 1 now** / **Stop here**. On "Start", run `${CLAUDE_PLUGIN_ROOT}/commands/feature.md` with that argument.
 
 ---

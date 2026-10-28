@@ -21,7 +21,7 @@ Output: `.claude/runs/active/plan.md` using `templates/plan.md`. Reply with only
 
 1. **The ownership map.** Every task lists the file globs it may touch. No two parallel tasks may share a glob, and no task may touch a file another task also needs unless it is in an earlier serial group. If two pieces of work need the same file, they are one task, or the shared piece becomes a serial "interface" task that lands first. The guard hook enforces this mechanically; a sloppy map means implementers get blocked mid-work.
 
-2. **Acceptance criteria per task** that a reviewer can check without reading the implementer's reasoning: observable behaviour, a test name that must pass, a command that must exit 0.
+2. **Acceptance criteria per task** that a reviewer can check without reading the implementer's reasoning: observable behaviour, a test name that must pass, a command that must exit 0. A check that needs a Claude Code plugin or skill also names a repo-local fallback (a test or script in the repo, for example `@axe-core/playwright` for accessibility): plugins installed this session are invisible to agents until Claude Code restarts.
 
 3. **Tests-first marking.** For every task whose entry points have no tests in context.md §4, set `tests_first: true`. The implementer then writes the failing test before the change. This is not optional in repos without coverage — the review layer has nothing else to stand on.
 
