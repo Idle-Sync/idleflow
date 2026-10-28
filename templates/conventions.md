@@ -103,6 +103,7 @@ config); a changed command is asked about again.
 worktrees_in: sibling
 worktree_setup: none
 commit_format: idleflow
+gate: none
 
 - `worktrees_in`: `sibling` puts task worktrees next to the repo (`<repo>__wt/<task>`); `inside` puts
   them in `.idleflow/worktrees/` (ignored), for projects that must not write outside their own folder.
@@ -110,6 +111,9 @@ commit_format: idleflow
 - `worktree_setup`: one shell command run in every new task worktree before the implementer starts
   (link large shared folders, copy fixtures); `$MAIN` is the main checkout, `$WORKTREE` the new one.
   A failure, or a change to a tracked file, stops the worktree.
+- `gate`: the one command that says whether the repo is healthy (its own check script, `make check`,
+  `npm test`). Set, it is the definition of done: run on the base before building, by each implementer
+  after its last change, by the correctness reviewer, and after the merge.
 - `commit_format`: `idleflow` (task commits `T1: ...`, merges `idleflow: merge T1 (<run>)`) or
   `conventional` (Conventional Commits subjects of at most 72 characters for task, finish and merge
   commits, run and task ids in the body), for repos whose CI checks commit subjects.

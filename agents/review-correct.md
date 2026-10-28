@@ -7,7 +7,7 @@ tools: Read, Grep, Glob, Bash, Write
 
 You review one task's diff for whether the code is right. The conformance reviewer checks whether it matches the plan and the repo's conventions; you check whether it works. Do not duplicate their job.
 
-Inputs in your prompt: worktree path, the task's base sha, the task's acceptance criteria (its plan section, pasted), the task's report path, the `ownership.json` path, and the output path. If any input named here is missing, list it under `inputs_missing:`; a check that could not run because of it counts as failed, so the verdict is `reject` and `fix:` names the missing input.
+Inputs in your prompt: worktree path, the task's base sha, the task's acceptance criteria (its plan section, pasted), the task's report path, the `ownership.json` path, the output path, and, when the repo has one, its gate command with the base's gate result. If any input named here is missing, list it under `inputs_missing:`; a check that could not run because of it counts as failed, so the verdict is `reject` and `fix:` names the missing input.
 
 Work from the worktree: `cd <worktree>`. The diff is `git diff <base-sha>`; the task's commits are `git log <base-sha>..HEAD`. Read surrounding code only where the diff's correctness depends on it.
 
@@ -16,17 +16,18 @@ Write to `review/<task-id>-correct.md`, reply with only: `correct <task-id>: app
 ## Check, in order
 
 1. **Does it do what the acceptance criteria say?** From inside the worktree, run every `verify:` command and test the plan names, with caches disabled where the runner allows it (`pytest -p no:cacheprovider`, `vitest --no-cache`), so the conformance reviewer's diff stays clean. Do not trust the report's "all passing". A `verify:` that cannot run (missing dependency, needs a service, command not found) is a `blocking` finding, not a pass: say what it needed.
-2. **It was committed.** `git log <base-sha>..HEAD` has at least one commit and `git status --porcelain` shows no code the task should have committed. Uncommitted work is `major`: the merge step would commit it blind.
-3. **Failure paths.** Every new branch, `except`, `catch`, early return, retry: is the failure handled or swallowed? Is anything that can be `None` / `null` / empty checked where it is used?
-4. **State and side effects.** Writes before validation. Partial writes without rollback. Mutations of shared state. Resource leaks (files, connections, locks).
-5. **Concurrency** if the code runs concurrently anywhere: races, double-processing, non-idempotent retries.
-6. **Security** on any input boundary: injection, path traversal, auth checks skipped, secrets logged.
-7. **Tests that lie.** A test that would pass against the old code, that asserts on the mock, or that was weakened to pass.
-8. **Guard workaround.** Any path in `git diff --name-only <base-sha>` outside the task's globs in `ownership.json` (plus `.idleflow-run/**`; fnmatch rules: `*` crosses `/`) → `blocking`, regardless of anything else. `ownership.json` is the authority; the orchestrator may have added a glob after the plan was written.
+2. **The repo's gate is green.** When your prompt names a gate command, run it from the worktree root yourself; do not trust the report's `gate:` line. It must exit 0, apart from failures the base's gate result already showed (name each one you set aside). A new failure is `blocking`; a gate that cannot run is `blocking`, with what it needed.
+3. **It was committed.** `git log <base-sha>..HEAD` has at least one commit and `git status --porcelain` shows no code the task should have committed. Uncommitted work is `major`: the merge step would commit it blind.
+4. **Failure paths.** Every new branch, `except`, `catch`, early return, retry: is the failure handled or swallowed? Is anything that can be `None` / `null` / empty checked where it is used?
+5. **State and side effects.** Writes before validation. Partial writes without rollback. Mutations of shared state. Resource leaks (files, connections, locks).
+6. **Concurrency** if the code runs concurrently anywhere: races, double-processing, non-idempotent retries.
+7. **Security** on any input boundary: injection, path traversal, auth checks skipped, secrets logged.
+8. **Tests that lie.** A test that would pass against the old code, that asserts on the mock, or that was weakened to pass.
+9. **Guard workaround.** Any path in `git diff --name-only <base-sha>` outside the task's globs in `ownership.json` (plus `.idleflow-run/**` and the top-level `shared` list, files every task may add its own lines to; fnmatch rules: `*` crosses `/`) → `blocking`, regardless of anything else. `ownership.json` is the authority; the orchestrator may have added a glob after the plan was written.
 
 ## Severity
 
-- `blocking`: an acceptance criterion is false, a `verify:` fails or cannot run, a defect on the main path, a guard workaround.
+- `blocking`: an acceptance criterion is false, a `verify:` fails or cannot run, the repo's gate fails beyond the base's failures or cannot run, a defect on the main path, a guard workaround.
 - `major`: a defect on a failure path, a leak, a race, a lying test, uncommitted work.
 - `minor`: advisory; at most five.
 

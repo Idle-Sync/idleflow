@@ -28,6 +28,7 @@
 #   run.sh session-name                   -> the path for a new session note: docs/sessions/s_<YYYYMMDD-HHMM>-<author>.md
 #   run.sh behind                         -> commits the upstream has that this branch lacks (fetches first; empty offline)
 #   run.sh team-install                   -> recommends idleflow to teammates: .claude/settings.json plus a CLAUDE.md install note
+#   run.sh repo-gate <base|main|task-id>  -> runs the repo's approved gate there, keeps its output; exit 1 when it fails, 7 unapproved
 #   run.sh commands                       -> the repo's commands (worktree_setup, gate) as committed, approved or unapproved here
 #   run.sh approve <key>                  -> records this person's approval of that exact committed command (local git config)
 #   run.sh agent <name>                   -> how to spawn that agent here: agent, model, extra instructions, contract
@@ -297,7 +298,7 @@ case "$cmd" in
     base="$("${G[@]}" symbolic-ref --short -q HEAD || echo HEAD)"
     base_sha="$("${G[@]}" rev-parse -q --verify HEAD 2>/dev/null || true)"
     cat > "$ACTIVE/run.json" <<JSON
-{"id":"$id","worktree_setup":$(json_str "$(repo_command worktree_setup)"),"plugin_version":$(json_str "$(plugin_version)"),"by":$(json_str "$(git config user.name || echo unknown)"),"slug":"$safe","base":$(json_str "$base"),"base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"gate_trips":0,"review_findings":0}
+{"id":"$id","worktree_setup":$(json_str "$(repo_command worktree_setup)"),"gate":$(json_str "$(repo_command gate)"),"plugin_version":$(json_str "$(plugin_version)"),"by":$(json_str "$(git config user.name || echo unknown)"),"slug":"$safe","base":$(json_str "$base"),"base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"gate_trips":0,"review_findings":0}
 JSON
     shared="$(shared_files | while IFS= read -r f; do json_str "$f"; echo; done | paste -sd, -)"
     echo "{\"repo\":$(json_str "$(native_path "$REPO")"),\"shared\":[${shared}],\"tasks\":{}}" > "$ACTIVE/ownership.json"
@@ -543,6 +544,30 @@ JSON
     fi
     native_path "$REPO/CLAUDE.md"
     ;;
+  repo-gate)
+    # The repo's own check, the definition of done: on the run's base before building (so earlier
+    # breakage is not blamed on the run), in a task's worktree, or on the main checkout after merge.
+    target="${1:?base|main|<task-id>}"; active_id >/dev/null
+    cmd="$(idleflow_rt get "$ACTIVE/run.json" gate 2>/dev/null || true)"
+    case "$cmd" in ""|null) echo "repo gate: none"; exit 0;; esac
+    command_approved gate "$cmd" || { echo "gate is not approved on this clone; nothing ran. The command is: $cmd" >&2; exit 7; }
+    case "$target" in
+      base|main) dir="$REPO"; log="$ACTIVE/repo-gate-$target.log";;
+      *) dir="$(wt_path "$target")"; log="$ACTIVE/tasks/$target/repo-gate.log"; mkdir -p "$ACTIVE/tasks/$target"
+         [ -d "$dir" ] || { echo "repo-gate: no worktree for $target" >&2; exit 1; };;
+    esac
+    if [ "$target" = base ] && [ -n "$("${G[@]}" status --porcelain --untracked-files=no)" ]; then
+      echo "repo-gate base: the main checkout has uncommitted changes, so it is not the base; commit or stash them first" >&2; exit 1
+    fi
+    echo "repo gate ($target): $cmd" >&2
+    set +e
+    (cd "$dir" && MAIN="$REPO" bash -c "$cmd") > "$log" 2>&1
+    rc=$?
+    set -e
+    echo "repo gate $target: exit $rc (full output: $(native_path "$log"))"
+    tail -15 "$log"
+    [ "$rc" -eq 0 ] || exit 1
+    ;;
   commands)
     # every repo command with its committed text and whether this person approved it
     for key in $REPO_COMMANDS; do
@@ -776,5 +801,5 @@ JSON
     echo "REPORT_CUSTOMIZATIONS=$(report_preference)"
     ;;
   *)
-    sed -n '2,40p' "$0"; exit 1;;
+    sed -n '2,41p' "$0"; exit 1;;
 esac

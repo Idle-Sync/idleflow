@@ -90,6 +90,7 @@ beside it. Every key is optional and missing keys keep the defaults, so older re
 | `progress_file`, `index_file`, `sessions_dir`, `time_log`, `lessons_in: <path>` | Use the records the repo already keeps |
 | `index_rewrite: no` | The retro leaves the index to the repo's own process |
 | `session_names: numbered` | Keep a repo's `s_0001.md` numbering |
+| `gate: <command>` | The repo's own check is the definition of done: run on the base first (old failures are not blamed on the run), by implementers and the correctness reviewer, and after merge. Same approval rule as `worktree_setup` |
 | `commit_format: conventional` | Task, finish and merge commits as Conventional Commits (subject at most 72 characters, ids in the body) |
 | `shared_files: <paths>` | Files every task may add its own lines to (a changelog, an index the repo's checks need a row in), merged by union |
 
