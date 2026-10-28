@@ -288,30 +288,50 @@ sed -i.bak 's#^progress_file: .*#progress_file: ../outside.md#' .idleflow/conven
 check "a path outside the repo falls back"  'p="$(bash "$RUN" path progress 2>/dev/null)"; [ "$p" = "$top/progress.md" ] && bash "$RUN" path progress 2>&1 >/dev/null | grep -q "not a relative path"'
 cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"
 
-echo "--- worktrees inside the repo, with a setup command"
+echo "--- worktrees inside the repo, with an approved setup command"
 cp .idleflow/conventions.md "$d-conv.bak"
 mkdir -p shared-big src && echo data > shared-big/f && echo x > src/keep.py && git add src/keep.py && commit -q -m "add src"
 printf 'worktrees_in: inside\nworktree_setup: ln -s "$MAIN/shared-big" shared-big && touch .setup-ran\n' >> .idleflow/conventions.md
+git add .idleflow/conventions.md && commit -q -m "setup command"
+bash "$RUN" new unapproved >/dev/null 2>&1
+out="$(bash "$RUN" wt add T5 2>&1)"; rc=$?
+check "an unapproved setup command never runs (exit 7)" '[ "$rc" = 7 ] && echo "$out" | grep -q "not approved" && [ ! -e .idleflow/worktrees/T5/.setup-ran ]'
+check "commands lists it as unapproved" 'bash "$RUN" commands | grep -q "^unapproved worktree_setup: ln -s"'
+doc="$(bash "$RUN" doctor 2>/dev/null)"
+check "doctor warns about an unapproved command" 'echo "$doc" | grep -q "^warn commands: not approved by you yet.*fix: read the command, then run.sh approve worktree_setup$"'
+bash "$RUN" wt rm T5; bash "$RUN" finish done >/dev/null
+bash "$RUN" approve worktree_setup >/dev/null
+check "approval is local, never committed" '[ -n "$(git config --local idleflow.approved-worktree-setup)" ] && [ -z "$(git status --porcelain .idleflow)" ]'
+printf 'worktree_setup: touch "$MAIN/pwned"\n' > "$scratch/edit" && sed -i.bak "s#^worktree_setup: .*#$(cat "$scratch/edit" | sed 's/[&#]/\\&/g')#" .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
 bash "$RUN" new inside >/dev/null 2>&1
 wi="$(bash "$RUN" wt add T9 2>/dev/null)"; wi_rc=$?
-check "an inside worktree lives in .idleflow/worktrees" '[ "$wi_rc" = 0 ] && [ "$wi" = "$(native "$(git rev-parse --show-toplevel)")/.idleflow/worktrees/T9" ] && [ -d "$wi/src" ]'
-check "the setup command ran in the worktree" '[ -f "$wi/.setup-ran" ] && [ -f "$wi/shared-big/f" ]'
+check "a working-tree edit to the command changes nothing" '[ "$wi_rc" = 0 ] && [ ! -e pwned ] && [ -f "$wi/.setup-ran" ]'
+git checkout -q -- .idleflow/conventions.md
+check "an inside worktree lives in .idleflow/worktrees" '[ "$wi" = "$(native "$(git rev-parse --show-toplevel)")/.idleflow/worktrees/T9" ] && [ -d "$wi/src" ]'
+check "the setup command ran in the worktree" '[ -f "$wi/shared-big/f" ]'
 bash "$RUN" own T9 '["src/**"]' >/dev/null; bash "$RUN" set tasks.T9.status '"building"'
 check "guard: an owned file in an inside worktree is allowed" '[ "$(guard_rc "$wi/src/keep.py" "$wi")" = "0" ]'
 check "guard: an unowned file in an inside worktree is blocked" '[ "$(guard_rc "$wi/other.py" "$wi")" = "2" ]'
-check "guard: the main checkout stays blocked while building" '[ "$(guard_rc "$PWD/src/keep.py" "$PWD")" = "2" ]'
+check "guard: the main checkout stays blocked while building" '[ "$(guard_rc "$PWD/src/keep.py" "$PWD")" = "2" ] && [ "$(guard_rc "$PWD/.idleflow/conventions.md" "$PWD")" = "2" ]'
 st="$(git status --porcelain --untracked-files=all)"
 check "inside worktrees do not dirty the main checkout" '! echo "$st" | grep -q "\.idleflow/worktrees"'
-bash "$RUN" set tasks.T9.status '"approved"'; bash "$RUN" wt rm T9
+bash "$RUN" set tasks.T9.status '"approved"'; bash "$RUN" wt rm T9; bash "$RUN" finish done >/dev/null
 sed -i.bak 's#^worktree_setup: .*#worktree_setup: echo boom; exit 3#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
+git add .idleflow/conventions.md && commit -q -m "failing setup"
+bash "$RUN" new failing >/dev/null 2>&1
+out="$(bash "$RUN" wt add T8 2>&1)"; rc=$?
+check "a changed command needs approval again" '[ "$rc" = 7 ]'
+bash "$RUN" approve worktree_setup >/dev/null; bash "$RUN" wt rm T8
 out="$(bash "$RUN" wt add T8 2>&1)"; rc=$?
 check "a failing setup stops wt add (exit 6)" '[ "$rc" = 6 ] && echo "$out" | grep -q "worktree setup failed for T8" && echo "$out" | grep -q boom'
-bash "$RUN" wt rm T8
+bash "$RUN" wt rm T8; bash "$RUN" finish done >/dev/null
 sed -i.bak 's#^worktree_setup: .*#worktree_setup: echo changed >> src/keep.py#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
+git add .idleflow/conventions.md && commit -q -m "editing setup"; bash "$RUN" approve worktree_setup >/dev/null
+bash "$RUN" new editing >/dev/null 2>&1
 out="$(bash "$RUN" wt add T7 2>&1)"; rc=$?
 check "a setup that edits tracked files is refused and undone" '[ "$rc" = 6 ] && echo "$out" | grep -q "changed tracked files" && [ "$(cat .idleflow/worktrees/T7/src/keep.py)" = x ]'
 bash "$RUN" wt rm T7; bash "$RUN" finish done >/dev/null
-rm -rf shared-big; cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"
+rm -rf shared-big; cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"; git add .idleflow/conventions.md && commit -q -m "restore conventions"
 
 echo "--- conventional commits"
 cp .idleflow/conventions.md "$d-conv.bak"
@@ -320,7 +340,8 @@ bash "$RUN" new conventional-commits-with-a-long-slug-name >/dev/null 2>&1
 wc6="$(bash "$RUN" wt add T6 2>/dev/null)"
 ( cd "$wc6" && echo y >> src/keep.py )
 bash "$RUN" set tasks.T6.status '"approved"'; bash "$RUN" merge T6 >/dev/null 2>&1
-subjects="$(git log -2 --format=%s)"; bodies="$(git log -2 --format=%b)"
+# the merge and its second parent by name: commits made in the same second sort either way in git log
+subjects="$(git log -1 --format=%s HEAD; git log -1 --format=%s HEAD^2)"; bodies="$(git log -1 --format=%b HEAD; git log -1 --format=%b HEAD^2)"
 cc_re='^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([A-Za-z0-9_./-]+\))?!?: [^ ]'
 check "merge and finish commits are Conventional Commits" '[ "$(echo "$subjects" | grep -Ec "$cc_re")" = 2 ] && [ "$(echo "$subjects" | awk "length > 72" | wc -l | tr -d " ")" = 0 ]'
 check "the run id moves to the commit body" '[ "$(echo "$bodies" | grep -c "^Run: ")" = 2 ]'
