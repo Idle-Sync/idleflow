@@ -385,6 +385,12 @@ bash "$RUN" team-install >/dev/null
 check "team-install adds the CLAUDE.md note once" '[ "$(grep -c "idleflow install start" CLAUDE.md)" = "1" ] && grep -q "claude plugin install idleflow@idlesync" CLAUDE.md && grep -qF ".idleflow/lessons.md" CLAUDE.md'
 check "team-install refuses broken JSON"  '! bash "$RUN" team-install 2>/dev/null && [ "$(cat .claude/settings.json)" = "{bad" ]'
 printf '{}' > .claude/settings.json
+doc="$(bash "$RUN" doctor 2>/dev/null)"
+check "doctor's path check ignores the install note" 'echo "$doc" | grep -q "^ok paths"'
+printf '# Index\n- `src/keep.py` code\n- `src/gone.py` removed\n- `origin/main` a branch\n```\nsrc/in-a-code-block.py\n```\n' > index.md
+doc="$(bash "$RUN" doctor 2>/dev/null)"
+check "doctor finds a path the docs name that is gone" 'echo "$doc" | grep -q "^warn paths: 1 path(s) the docs name do not exist: index.md: src/gone.py |"'
+rm -f index.md
 printf '# P\n## Must do (v1)\n- a — done when: b\n## Milestones\n1. one\n' > prd.md; printf '# Progress\n<!-- progress start -->\n' > progress.md
 doc="$(bash "$RUN" doctor 2>/dev/null)"
 check "doctor finds milestones still in prd.md" 'echo "$doc" | grep -q "^warn milestones: milestones are still in prd.md"'
