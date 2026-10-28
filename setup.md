@@ -1,5 +1,7 @@
 # idleflow — global setup
 
+This installs the plugin on a machine. To set idleflow up inside one project, run `/idleflow:setup` in that project (existing code) or `/idleflow:init` (empty folder).
+
 This file is written for Claude Code to execute. Open a Claude Code session anywhere (the home directory is fine) and say:
 
 > Read setup.md in this folder and set idleflow up globally for me. Ask before anything destructive.
