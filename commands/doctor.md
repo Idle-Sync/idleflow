@@ -4,6 +4,8 @@ argument-hint: ""
 allowed-tools: Bash, Read, Edit, AskUserQuestion
 ---
 
+How you talk to the human (plain language, `language:` and `tone:` from conventions): `${CLAUDE_PLUGIN_ROOT}/procedures/talking.md`; read it now.
+
 You check and report first; you change nothing until the human picks a fix.
 
 ```

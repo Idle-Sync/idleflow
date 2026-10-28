@@ -4,6 +4,8 @@ argument-hint: [anything the next session must know]
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob, AskUserQuestion
 ---
 
+How you talk to the human (plain language, `language:` and `tone:` from conventions): `${CLAUDE_PLUGIN_ROOT}/procedures/talking.md`; read it now.
+
 You write the handoff for the next session. You do not change code, start a run, push, tag or deploy; you record what is left so the next session can do it.
 
 Plugin root: `${CLAUDE_PLUGIN_ROOT}`.

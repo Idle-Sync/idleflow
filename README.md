@@ -119,6 +119,7 @@ prompt diffs are shown before every post.
 .claude-plugin/plugin.json      manifest
 .claude-plugin/marketplace.json lets the repo itself be added as a marketplace
 commands/feature.md             the orchestrator — the run procedure lives here
+procedures/talking.md           how every command talks to the human: plain language, language and tone settings
 procedures/repo-setup.md        setup steps R1–R6 shared by feature and init (mode, docs, stack, libraries, tooling, snapshot)
 commands/fix.md                 same, bug-biased
 commands/init.md                first session for an empty folder: brainstorm, market research, rules, PRD, first commit

@@ -4,6 +4,8 @@ argument-hint: [repo|balanced|explicit|idiomatic]
 allowed-tools: Read, Write, Edit, Bash, AskUserQuestion
 ---
 
+How you talk to the human (plain language, `language:` and `tone:` from conventions): `${CLAUDE_PLUGIN_ROOT}/procedures/talking.md`; read it now.
+
 Plugin root: `${CLAUDE_PLUGIN_ROOT}`.
 
 0. `bash "${CLAUDE_PLUGIN_ROOT}/scripts/run.sh" migrate` (moves files an older idleflow kept under `.claude/`; a no-op otherwise). If it exits non-zero, show its message and stop.

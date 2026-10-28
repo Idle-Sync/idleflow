@@ -93,6 +93,16 @@ shared_files: none
   or an index the repo's checks require a row in for each new file. No task owns them, they merge by
   union, and a task changes only the lines it adds.
 
+## Talking to the human
+
+language: auto
+tone: plain
+
+How idleflow talks to the human (`procedures/talking.md` in the plugin). `language`: `auto` replies
+in the language the human writes in, or a language name to always use it; files, commits and code keep
+the repo's language. `tone`: `plain` (direct, no filler), `friendly` (plain, warmer), `terse` (fewest
+words). Internal ids (T2, R3, C1) are never shown on their own in any tone.
+
 ## Repo fit
 
 How idleflow fits a repo that already has its own rules. Unset or missing lines keep idleflow's

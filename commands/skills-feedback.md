@@ -4,6 +4,8 @@ argument-hint: <what you need the skill to do>
 allowed-tools: Bash, Read, Glob, Edit, AskUserQuestion
 ---
 
+How you talk to the human (plain language, `language:` and `tone:` from conventions): `${CLAUDE_PLUGIN_ROOT}/procedures/talking.md`; read it now.
+
 Need: $ARGUMENTS
 
 1. `gh auth status` must succeed. If `gh` is missing or logged out, say so, print the issue draft from step 3 so it can be pasted at https://github.com/Idle-Sync/skills/issues/new, and stop.
