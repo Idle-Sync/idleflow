@@ -61,6 +61,16 @@ docs_in_git: unset
 `yes` commits `docs/` so everyone shares the research and session notes. `no` adds `docs/` to
 `.gitignore` so they stay local to this machine. Asked once, the first time docs are turned on.
 
+## Ignore rules
+
+ignore_in: gitignore
+
+Where idleflow writes its own ignore rules (`.idleflow/runs/`, a local `docs/`). `exclude` uses
+`.git/info/exclude`: local to this clone, so nothing about idleflow appears in a committed file.
+`gitignore` uses `.gitignore`: shared with every clone and visible to everyone who reads the repo.
+Until it is answered, rules go to `.git/info/exclude`. A stack's own entries (`node_modules/`,
+`.venv/`, `dist/`, `.env`) always go in `.gitignore`, because every clone needs them.
+
 ## Pushback
 
 Agents question a decision when the evidence says it is wrong: the conflict in one sentence,

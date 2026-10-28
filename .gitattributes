@@ -5,3 +5,7 @@
 *.md text eol=lf
 *.json text eol=lf
 *.conf text eol=lf
+.idleflow/lessons.md merge=union
+docs/lessons.md merge=union
+progress.md merge=union
+.idleflow/suggestions.md merge=union
