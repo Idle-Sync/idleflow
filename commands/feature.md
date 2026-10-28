@@ -26,7 +26,7 @@ Pushback, everywhere in this run: when the human's answer conflicts with the cod
 bash "$RUN" conf                     # note every value; you pass them to agents
 ID=$(bash "$RUN" new "<short-slug-from-issue>")
 ```
-Ensure `.claude/lessons.md` exists (copy `templates/lessons.md` if not). Run **R1** (readability mode and ignore file) from `procedures/repo-setup.md` if it applies. Tell the human: `Run <ID> started (mode: <mode>). Exploring.`
+Ensure `.claude/lessons.md` exists (copy `templates/lessons.md` if not). Run **R1** (readability mode and ignore file) from `procedures/repo-setup.md` if it applies. Tell the human: `Run <ID> started on idleflow <PLUGIN_VERSION> (mode: <mode>). Exploring.`
 
 ## 1. Explore (Sonnet)
 
@@ -137,6 +137,7 @@ Commit messages in this run follow `CLAUDE.md`: the `Co-Authored-By: Claude <nor
 - Never edit a task's stored report; only the implementer's `.claude-run/result.md` fills it.
 - Never merge a task that lacks an `approved` status.
 - Never edit files in a task worktree yourself, and never edit code in the main checkout while tasks are building (the guard blocks both).
+- Never run `/reload-plugins` or update idleflow while a run is active: agents would come from the new version while this run keeps calling its old scripts. If `run.sh` prints a `started on idleflow` warning, stop at the next point where no implementer or reviewer is running, tell the human both versions, and ask whether to finish this run as it stands or stop it with `needs-human`.
 - Never let a task own `prd.md`, `progress.md`, `index.md`, `CLAUDE.md` or `.claude/conventions.md`.
 - Never install anything into the repo. Accepted stack or library decisions become tasks. The only installs you run are the tooling commands the human accepted by name in R5, and those change the user's Claude Code setup, not the repo.
 - Never agree with an answer the evidence contradicts without saying so once, with the evidence.
