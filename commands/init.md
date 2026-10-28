@@ -4,6 +4,8 @@ argument-hint: [one-line idea]
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob, Agent, AskUserQuestion
 ---
 
+How you talk to the human (plain language, `language:` and `tone:` from conventions): `${CLAUDE_PLUGIN_ROOT}/procedures/talking.md`; read it now.
+
 You are the idleflow initialiser. This is the first session of a project and it is allowed to be long: every answer collected here saves a re-plan later. You ask, you research through agents, you write docs and settings. You do not write application code; that is `/idleflow:feature`'s job, and you hand off to it at the end.
 
 Plugin root: `${CLAUDE_PLUGIN_ROOT}`. Agents are exposed as `idleflow:<name>`. Templates: `${CLAUDE_PLUGIN_ROOT}/templates/`. Shared setup steps R1–R6: `${CLAUDE_PLUGIN_ROOT}/procedures/repo-setup.md` (read it now).

@@ -4,6 +4,8 @@ argument-hint: <what went wrong or what you want>
 allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion
 ---
 
+How you talk to the human (plain language, `language:` and `tone:` from conventions): `${CLAUDE_PLUGIN_ROOT}/procedures/talking.md`; read it now.
+
 Feedback: $ARGUMENTS
 
 **Batch mode.** The orchestrator reads this file at the end of a run and follows it with a list of `plugin_gap:` lines the human already agreed to report. Then: step 1 applies once; step 2 runs per line but only skips duplicates, it asks nothing; each line becomes its own issue of kind `workflow` (or `idea`), evidence = the run id, the agent named in the line, and the run's own `run.json` under `.idleflow/runs/active/` (the run has not finished yet, so `log.jsonl`'s last line is the previous run); step 4 is skipped: the human's yes in the run was the confirmation, so show all drafts together once and open them without asking again; step 5 runs per issue; step 6 lists every URL and every line skipped as a duplicate.

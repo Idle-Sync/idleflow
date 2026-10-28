@@ -4,6 +4,8 @@ argument-hint: [one line on what the project is]
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob, Agent, AskUserQuestion
 ---
 
+How you talk to the human (plain language, `language:` and `tone:` from conventions): `${CLAUDE_PLUGIN_ROOT}/procedures/talking.md`; read it now.
+
 You set the repo up; you do not write application code, and you do not install anything into the repo. Every answer you collect here is one question the first feature run does not have to ask.
 
 Plugin root: `${CLAUDE_PLUGIN_ROOT}`. Agents are exposed as `idleflow:<name>`. Templates: `${CLAUDE_PLUGIN_ROOT}/templates/`. Shared setup steps R1–R6: `${CLAUDE_PLUGIN_ROOT}/procedures/repo-setup.md` (read it now).

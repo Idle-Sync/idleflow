@@ -4,6 +4,8 @@ argument-hint: [what to change]
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 ---
 
+How you talk to the human (plain language, `language:` and `tone:` from conventions): `${CLAUDE_PLUGIN_ROOT}/procedures/talking.md`; read it now.
+
 You change this project's idleflow settings through `run.sh`, which validates every value; you never write `.idleflow/idleflow.conf` by hand.
 
 ```
@@ -26,6 +28,7 @@ When `$ARGUMENTS` (or a suggestion that brought you here) already names the chan
   - **Model** (`MODEL_<AGENT>`, e.g. `MODEL_REVIEW_CORRECT`): `haiku`, `sonnet`, `opus`, `fable`.
   - **Extra instructions (Recommended)**: written to `.idleflow/agents/<agent>.md` and added to the built-in prompt every time it runs; plugin updates keep reaching the agent. Write what the human wants as plain rules, no meta commentary.
   - **Full replacement**: `bash "$RUN" custom replace <agent>` copies the built-in prompt to `.claude/agents/idleflow-<agent>.md` and keeps a base copy so `/idleflow:doctor` can merge later plugin updates in (`run.sh custom merge <agent>`). Apply the human's edits to that file. Its output contract (output file, reply line, report fields) stays the built-in one: the orchestrator tells the agent so on every spawn. Tell the human the replacement takes effect after a Claude Code restart.
+- **Language and tone.** Edit `language:` and `tone:` under "Talking to the human" in `.idleflow/conventions.md` (`auto` or a language name; `plain`, `friendly` or `terse`). These change only how idleflow talks to people, so they are committed with the change but not reported.
 - **Back to a default.** `bash "$RUN" custom unset <KEY>`, or `bash "$RUN" custom restore <agent>` for everything about one agent.
 
 Pushback before writing, once, with the evidence: a cheaper model on `review-correct` or `review-conform` weakens the quality gate the whole workflow stands on; `MAX_RETRIES=0` stops a run at the first rejection; `STEP_DEBATE=off` on a repo whose lessons show plan mistakes; a `DIFF_LIMIT` far above what the gate files in `.idleflow/runs/*/tasks/*/gate.json` show this repo needs. Then do what the human decides.

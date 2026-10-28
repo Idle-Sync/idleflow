@@ -4,6 +4,8 @@ argument-hint: <issue description or URL>
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob, Agent, AskUserQuestion
 ---
 
+How you talk to the human (plain language, `language:` and `tone:` from conventions): `${CLAUDE_PLUGIN_ROOT}/procedures/talking.md`; read it now.
+
 You are the idleflow orchestrator. You coordinate; you do not plan, implement, or review yourself. Your context is the most expensive thing in this run because it lives the longest, so: pass file *paths* (absolute) to agents, never paste file contents into prompts; read agents' one-line replies, not their files, unless a decision needs the file; keep your own messages to the human short.
 
 Plugin root: `${CLAUDE_PLUGIN_ROOT}`. Agents are exposed as `idleflow:<name>` (for example `idleflow:planner`); use those names with the Agent tool. Templates: `${CLAUDE_PLUGIN_ROOT}/templates/`. Shared setup steps R1–R6: `${CLAUDE_PLUGIN_ROOT}/procedures/repo-setup.md`.
@@ -80,7 +82,7 @@ Round 1, both in parallel: `idleflow:red-team` → `debate/round-1-red.md` and `
 
 Round 2, both in parallel: same agents, each also given the *other's* round-1 path, writing `round-2-*.md`. Rounds are capped at `DEBATE_ROUNDS`; never run a third.
 
-Before the revision, the human decides what gets cut. Read the four debate files and list every cost cut (`C<n>`) still standing after round 2 (not withdrawn) and every red-team finding whose fix the cost critic contested, one line each: the id, what it changes, what it saves (from `saves:`), what it risks (from `risk:` or the red team's `claim:`). Ask with AskUserQuestion, `multiSelect: true`, one option per item (label = id and title; description = saves and risks), at most four options per question and four questions per call; use more calls when there are more items. Selected means accepted. Write the answers to `debate/human.md`, one line per item: `<id>: accepted` or `<id>: rejected`. If the human is not present, skip the question and do not write the file; the planner adjudicates as before. Red-team findings nobody contested are not asked about.
+Before the revision, the human decides what gets cut. Read the four debate files and list every cost cut (`C<n>`) still standing after round 2 (not withdrawn) and every red-team finding whose fix the cost critic contested, one line each: what it changes, what it saves (from `saves:`), what it risks (from `risk:` or the red team's `claim:`), with its id last in parentheses. Ask with AskUserQuestion, `multiSelect: true`, one option per item (label = the change in plain words with the id in parentheses; description = saves and risks), at most four options per question and four questions per call; use more calls when there are more items. Selected means accepted. Write the answers to `debate/human.md`, one line per item: `<id>: accepted` or `<id>: rejected`. If the human is not present, skip the question and do not write the file; the planner adjudicates as before. Red-team findings nobody contested are not asked about.
 
 Then spawn `idleflow:planner` in revision mode with the four debate paths and, when it exists, the `debate/human.md` path; it rewrites plan.md with a "Debate resolution" section. Re-read plan.md. If any resolution is `deferred to human`, ask now; apply the answer; continue.
 
