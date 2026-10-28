@@ -97,6 +97,12 @@ beside it. Every key is optional and missing keys keep the defaults, so older re
 | `commit_format: conventional` | Task, finish and merge commits as Conventional Commits (subject at most 72 characters, ids in the body) |
 | `shared_files: <paths>` | Files every task may add its own lines to (a changelog, an index the repo's checks need a row in), merged by union |
 
+`/idleflow:setup` finds what a repo already has with `run.sh detect` (the share of Conventional Commits
+subjects, existing lessons, progress and numbered session files, an Unreleased changelog section, an
+index idleflow did not write, a rule against writing outside the folder, check scripts and make, just
+or npm targets) and asks about each setting the evidence points to; `/idleflow:doctor` lists the same
+suggestions until they are answered. A repo already on idleflow changes nothing until someone says yes.
+
 ## Customizing one project
 
 Every number in `config/idleflow.conf` is a default. `/idleflow:customize` overrides it for one repo in
