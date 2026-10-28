@@ -140,7 +140,8 @@ commands/doctor.md              check the repo's idleflow setup and for a newer 
 agents/                         one file per role; frontmatter sets the model
 hooks/hooks.json                PreToolUse → ownership-guard
 scripts/run.sh                  run lifecycle: new / wt / own / get / set / inc / report / gate / merge / snapshot / finish / loc / conf,
-                                plus path / migrate / doctor / update-check
+                                plus path / migrate / doctor / update-check / detect / repo-gate / commands / approve /
+                                session-name / behind / team-install / custom / agent (`bash scripts/run.sh` lists them)
 scripts/diff-gate.sh            counts hand-written code lines vs base, emits JSON verdict
 scripts/ownership-guard.sh      the hook; blocks edits outside a task's globs
 scripts/rt.sh                   picks Python or Node, whichever is installed
@@ -150,7 +151,7 @@ scripts/idleflow.js             the same program in Node; keep the two in sync
 scripts/selftest.sh             end-to-end check of the scripts in a throwaway repo
 config/idleflow.conf            every number the workflow uses
 templates/                      plan.md, context.md, lessons.md, conventions.md, prd.md, progress.md, install-note.md,
-                                index.md, session.md, CLAUDE.md
+                                index.md, session.md, time-log.md, CLAUDE.md
 setup.md                        global install, written for Claude Code to execute
 PUBLISHING.md                   validate, push to GitHub, install elsewhere, release updates
 ```
