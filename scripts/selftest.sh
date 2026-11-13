@@ -47,6 +47,9 @@ d="$(mktemp -d)"; d="$(cd "$d" && pwd)"
 cleanup() { cd / ; rm -rf "$d" "${d}__wt" "$d.link" "${d}__wt.link" "$d-mig" 2>/dev/null || true; }
 trap cleanup EXIT
 
+echo "--- git missing"
+nogit_rc="$(env PATH=/nonexistent "$BASH" -c 'set -e; source "$1"; git status >/dev/null 2>&1 || exit $?' _ "$HERE/conf.sh"; echo $?)"
+check "without git the wrapper fails with 127, not a loop" '[ "$nogit_rc" = 127 ]'
 echo "--- new on a repo with no commits (what /idleflow:init does)"
 cd "$d" && git init -q && git config user.name "Human" && git config user.email "human@example.com"
 id0="$(bash "$RUN" new 'fix "quoted" thing' 2>/dev/null)"

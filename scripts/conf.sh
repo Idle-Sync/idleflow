@@ -19,9 +19,11 @@ _IDLEFLOW_CONF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # (the gate, worktree_setup) are not affected either.
 # The real git, called by its path: under bash 3.2 (macOS) a failing `command git` inside a function
 # exits a `set -e` script even where the caller tests it (`if git ...`, `git ... || ...`).
-_IDLEFLOW_GIT="$(type -P git || echo git)"
+_IDLEFLOW_GIT="$(type -P git || true)"
 git() {
   local i=1 sub=""
+  [ -n "$_IDLEFLOW_GIT" ] || _IDLEFLOW_GIT="$(type -P git || true)"
+  [ -n "$_IDLEFLOW_GIT" ] || { echo "git: command not found" >&2; return 127; }
   while [ "$i" -le "$#" ]; do
     case "${!i}" in
       -C|-c) i=$((i + 2));;
