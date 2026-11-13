@@ -470,6 +470,7 @@ bash "$RUN" wt add TA >/dev/null 2>&1
 check "a re-added task keeps its port"         '[ "$(bash "$RUN" get tasks.TA.port)" = 4400 ]'
 out="$(bash "$RUN" exec TA -- sh -c 'echo "$IDLEFLOW_TASK $IDLEFLOW_PORT"; echo "$TMPDIR"; pwd')"
 check "exec runs in the worktree with the task's port and temp folder" '[ "$(echo "$out" | sed -n 1p)" = "TA 4400" ] && echo "$out" | sed -n 2p | grep -q "/tasks/TA/tmp$" && [ "$(echo "$out" | sed -n 3p)" = "$(cd "$wa" && pwd)" ]'
+check "exec runs the command without the agent's markers" '[ "$(CLAUDECODE=1 CLAUDE_CODE=1 AI_AGENT=claude CLAUDE_CODE_ENTRYPOINT=cli bash "$RUN" exec TA -- sh -c "echo \${CLAUDECODE-none} \${CLAUDE_CODE-none} \${AI_AGENT-none} \${CLAUDE_CODE_ENTRYPOINT-none}")" = "none none none none" ]'
 check "exec passes the command's exit code"    'bash "$RUN" exec TA -- sh -c "exit 3"; [ $? = 3 ]'
 inside="$(cd "$wa" && bash "$RUN" exec TA -- sh -c 'echo "$IDLEFLOW_PORT"')"
 check "exec works from inside the task worktree" "[ '$inside' = 4400 ]"
@@ -478,7 +479,7 @@ bash "$RUN" wt rm TA; bash "$RUN" wt rm TB; bash "$RUN" finish done >/dev/null
 echo "--- the repo's gate"
 git add -u && commit -q -m "tidy before the gate"
 cp .idleflow/conventions.md "$d-conv.bak"
-printf 'gate: grep -q x src/keep.py && echo gate-ok\n' >> .idleflow/conventions.md
+printf 'gate: grep -q x src/keep.py && echo "gate-ok${CLAUDECODE:+ under an agent}"\n' >> .idleflow/conventions.md
 git add .idleflow/conventions.md && commit -q -m "gate"
 bash "$RUN" new gated >/dev/null 2>&1
 printf 'dirty\n' >> src/keep.py; bash "$RUN" approve gate >/dev/null
@@ -487,8 +488,8 @@ git checkout -q -- src/keep.py; git config --local --unset idleflow.approved-gat
 out="$(bash "$RUN" repo-gate base 2>&1)"; rc=$?
 check "an unapproved gate never runs (exit 7)" '[ "$rc" = 7 ] && [ ! -e .idleflow/runs/active/repo-gate-base.log ]'
 bash "$RUN" approve gate >/dev/null
-out="$(bash "$RUN" repo-gate base 2>/dev/null)"; rc=$?
-check "the gate runs on the base and keeps its output" '[ "$rc" = 0 ] && echo "$out" | grep -q "^repo gate base: exit 0" && grep -q gate-ok .idleflow/runs/active/repo-gate-base.log'
+out="$(CLAUDECODE=1 bash "$RUN" repo-gate base 2>/dev/null)"; rc=$?
+check "the gate runs on the base and keeps its output" '[ "$rc" = 0 ] && echo "$out" | grep -q "^repo gate base: exit 0" && grep -qx gate-ok .idleflow/runs/active/repo-gate-base.log'
 wg="$(bash "$RUN" wt add T4 2>/dev/null)"; ( cd "$wg" && echo y > src/keep.py )
 out="$(bash "$RUN" repo-gate T4 2>/dev/null)"; rc=$?
 check "a red gate in a task worktree exits 1" '[ "$rc" = 1 ] && echo "$out" | grep -q "^repo gate T4: exit 1" && [ -f .idleflow/runs/active/tasks/T4/repo-gate.log ]'
