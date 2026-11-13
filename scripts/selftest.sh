@@ -44,7 +44,7 @@ commit() { git -c user.name=t -c user.email=t@t commit -q "$@"; }
 
 echo "runtime: $(idleflow_rt_name)"
 d="$(mktemp -d)"; d="$(cd "$d" && pwd)"
-cleanup() { cd / ; rm -rf "$d" "${d}__wt" "$d.link" "${d}__wt.link" "$d-mig" 2>/dev/null || true; }
+cleanup() { cd / ; rm -rf "$d" "${d}__wt" "$d.link" "${d}__wt.link" "$d-mig" "$d-human" "${d}-human__wt" "$d-stray" 2>/dev/null || true; }
 trap cleanup EXIT
 
 echo "--- new on a repo with no commits (what /idleflow:init does)"
