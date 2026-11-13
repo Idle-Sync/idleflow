@@ -589,6 +589,12 @@ check "an edited base checkout is made again before it runs" '[ -z "$(git -C "$b
 echo 0000000 > .idleflow/runs/active/tasks/_base-TA/ready; touch "$base_ta/marker"
 bash "$RUN" exec TA --base -- true >/dev/null 2>&1
 check "a base checkout ready for another sha is made again" '[ ! -e "$base_ta/marker" ] && [ "$(cat .idleflow/runs/active/tasks/_base-TA/ready)" = "$(bash "$RUN" get tasks.TA.base_sha)" ]'
+mkdir -p .idleflow/runs/active/tasks/_base-TA/lock && echo 999999 > .idleflow/runs/active/tasks/_base-TA/lock/pid
+check "a lock left by a dead exec --base is taken over" 'bash "$RUN" exec TA --base -- true >/dev/null 2>&1 && [ ! -d .idleflow/runs/active/tasks/_base-TA/lock ]'
+git worktree remove --force "$base_ta"; mkdir -p "$base_ta" && echo leftover > "$base_ta/leftover"
+out="$(bash "$RUN" exec TA --base -- echo ran 2>&1)"; rc=$?
+check "a base path that cannot be made again runs nothing" '[ "$rc" != 0 ] && ! echo "$out" | grep -qx ran && echo "$out" | grep -q "is not a clean checkout"'
+rm "$base_ta/leftover"; rmdir "$base_ta"
 bash "$RUN" exec TB --base -- true >/dev/null 2>&1
 base_tb="$(git worktree list --porcelain | sed -n 's/^worktree \(.*_base-TB\)$/\1/p')"
 bash "$RUN" exec TB -- sleep 60 >/dev/null 2> "$scratch/job.err"

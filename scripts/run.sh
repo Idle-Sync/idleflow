@@ -536,16 +536,27 @@ await_job() { # await_job <task-id> <job>: the command's output and exit code, 7
 # file is made again, so a proof never runs on a half-set-up or edited base. It is registered with no
 # owned globs, so the guard refuses every edit in it. `wt rm` and `wt add` remove it.
 base_worktree() { # base_worktree <task-id>: prints its path; exits as worktree_setup does (6, 7) when that fails
-  local tid="$1" base p d rc n=0
+  local tid="$1" base p d rc n=0 holder jd
   base="$(task_base "$tid")" || return 1
   p="$(wt_path "_base-$tid")"; d="$ACTIVE/tasks/_base-$tid"
   mkdir -p "$d" "$(dirname "$p")"
-  # one creator at a time: a second first use waits instead of running in a half-made checkout
+  # one creator at a time: a second first use waits instead of running in a half-made checkout; a
+  # lock whose holder has died (killed mid-setup) is taken over
   until mkdir "$d/lock" 2>/dev/null; do
-    n=$((n + 1)); [ "$n" -lt 600 ] || { echo "exec --base: $d/lock is held; remove it if no exec --base of $tid is running" >&2; return 1; }
+    holder="$(cat "$d/lock/pid" 2>/dev/null || true)"
+    if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then rm -f "$d/lock/pid"; rmdir "$d/lock" 2>/dev/null || true; continue; fi
+    n=$((n + 1)); [ "$n" -lt 180 ] || { echo "exec --base: another exec --base of $tid is still making its base checkout; try again" >&2; return 1; }
     sleep 0.5
   done
+  echo "$$" > "$d/lock/pid"
   if [ -d "$p" ] && { [ "$(cat "$d/ready" 2>/dev/null)" != "$base" ] || [ -n "$(git -C "$p" status --porcelain --untracked-files=no 2>/dev/null)" ]; }; then
+    # a base job still running there would lose its checkout mid-run
+    for jd in "$ACTIVE/tasks/$tid/jobs"/*/; do
+      [ -d "$jd" ] || continue
+      case "$(cat "${jd}checkout" 2>/dev/null)" in base*) job_ended "${jd%/}" || {
+        rm -f "$d/lock/pid"; rmdir "$d/lock"; echo "exec --base: job $(basename "$jd") of $tid still runs in the base checkout; wait for it or stop it first" >&2; return 1; };;
+      esac
+    done
     rm -f "$d/ready"; "${G[@]}" worktree remove --force "$p" 2>/dev/null || true
   fi
   if [ ! -d "$p" ]; then
@@ -560,11 +571,17 @@ base_worktree() { # base_worktree <task-id>: prints its path; exits as worktree_
     rc=0; ( run_worktree_setup "_base-$tid" "$p" ) >&2 || rc=$?
     if [ "$rc" -ne 0 ]; then
       "${G[@]}" worktree remove --force "$p" 2>/dev/null || true
-      rmdir "$d/lock"; return "$rc"
+      rm -f "$d/lock/pid"; rmdir "$d/lock"; return "$rc"
     fi
     echo "$base" > "$d/ready"
   fi
-  rmdir "$d/lock"
+  rm -f "$d/lock/pid"; rmdir "$d/lock"
+  # never run in a checkout that could not be made again: it is a proof only when it is the base
+  if [ "$(cat "$d/ready" 2>/dev/null)" != "$base" ] || [ "$(git -C "$p" rev-parse HEAD 2>/dev/null)" != "$base" ] \
+     || [ -n "$(git -C "$p" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+    echo "exec --base: $(native_path "$p") is not a clean checkout of $base and could not be made again; remove it (git worktree remove --force)" >&2
+    return 1
+  fi
   echo "$p"
 }
 
