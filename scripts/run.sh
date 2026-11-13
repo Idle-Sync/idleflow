@@ -192,9 +192,23 @@ set_project_conf() { # set_project_conf <KEY> [value]: no value removes the key
 # Several people (or parallel tasks) add to these files at the same spot (new lessons at the end,
 # new progress entries at the top); git's built-in union driver keeps both sides instead of conflicting.
 union_merge_files() { { lessons_rel; progress_rel; echo .idleflow/suggestions.md; time_log_rel; shared_files; } 2>/dev/null | awk '!seen[$0]++'; }
-ensure_union_merge() {
+# Only files git tracks ever merge, so an ignored record (kept local) needs no rule.
+union_merge_targets() {
   local f
-  while IFS= read -r f; do add_ignore "$REPO/.gitattributes" "$f merge=union"; done < <(union_merge_files)
+  while IFS= read -r f; do "${G[@]}" check-ignore -q --no-index -- "$f" || echo "$f"; done < <(union_merge_files)
+}
+# idleflow's merge rules go where its ignore rules go (ignore_in): the committed .gitattributes,
+# or .git/info/attributes when nothing about idleflow may appear in a committed file.
+attributes_file() {
+  if grep -q '^ignore_in: *gitignore' "$CONVENTIONS" 2>/dev/null; then
+    echo "$REPO/.gitattributes"
+  else
+    local f; f="$(exclude_file)"; echo "${f%/exclude}/attributes"
+  fi
+}
+ensure_union_merge() {
+  local f attrs; attrs="$(attributes_file)"
+  while IFS= read -r f; do add_ignore "$attrs" "$f merge=union"; done < <(union_merge_targets)
 }
 
 # Who is writing, for per-person session folders: idleflow.person in git config (set it to name the
@@ -1048,7 +1062,8 @@ JSON
     else check_line ok team "one contributor so far (run.sh team-install when others join)"; fi
     union_missing=""
     # only files that exist yet: a log no run has written cannot conflict, and snapshot adds its rule anyway
-    while IFS= read -r f; do [ -e "$REPO/$f" ] || continue; grep -qxF "$f merge=union" "$REPO/.gitattributes" 2>/dev/null || union_missing="$union_missing $f"; done < <(union_merge_files)
+    attrs="$(attributes_file)"
+    while IFS= read -r f; do [ -e "$REPO/$f" ] || continue; grep -qxF "$f merge=union" "$attrs" 2>/dev/null || union_missing="$union_missing $f"; done < <(union_merge_targets)
     if [ -n "$union_missing" ]; then check_line warn merges "no union merge for:$union_missing, so concurrent entries conflict" "run.sh snapshot"; else check_line ok merges "lessons, progress and suggestions merge without conflicts"; fi
 
     while IFS= read -r line; do

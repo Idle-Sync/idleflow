@@ -145,9 +145,10 @@ preview_url: none
 
 ignore_in: unset
 
-Where idleflow writes its own ignore rules (`.idleflow/runs/`, a local `docs/`). `exclude` uses
-`.git/info/exclude`: local to this clone, so nothing about idleflow appears in a committed file.
-`gitignore` uses `.gitignore`: shared with every clone and visible to everyone who reads the repo.
+Where idleflow writes its own ignore rules (`.idleflow/runs/`, a local `docs/`) and the
+`merge=union` rules for its records. `exclude` uses `.git/info/exclude` and `.git/info/attributes`:
+local to this clone, so nothing about idleflow appears in a committed file. `gitignore` uses
+`.gitignore` and `.gitattributes`: shared with every clone and visible to everyone who reads the repo.
 Until it is answered, rules go to `.git/info/exclude`. A stack's own entries (`node_modules/`,
 `.venv/`, `dist/`, `.env`) always go in `.gitignore`, because every clone needs them.
 

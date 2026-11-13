@@ -466,8 +466,23 @@ check "session notes are named by time and author" 'bash "$RUN" session-name | g
 mkdir -p docs/sessions && touch "$(bash "$RUN" session-name)"
 check "a second note in the same minute gets a suffix" 'bash "$RUN" session-name | grep -q -- "-human-2\.md$"'
 rm -rf docs
+cp .idleflow/conventions.md "$d-conv.bak"
+sed -i.bak '/^ignore_in:/d' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak; printf 'ignore_in: gitignore\n' >> .idleflow/conventions.md
 bash "$RUN" snapshot >/dev/null
 check "snapshot sets union merges for shared logs" 'grep -qx ".idleflow/lessons.md merge=union" .gitattributes && grep -qx "progress.md merge=union" .gitattributes && git ls-files --error-unmatch .gitattributes >/dev/null 2>&1'
+# ignore_in: exclude keeps idleflow out of committed files, merge rules included
+cp .gitattributes "$d-attrs.bak"
+sed -i.bak 's#^ignore_in: .*#ignore_in: exclude#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
+git add .idleflow/conventions.md && commit -q -m "local rules"
+attrs="$(git rev-parse --git-common-dir)/info/attributes"; rm -f "$attrs"
+printf '.idleflow/suggestions.md\n' >> .git/info/exclude
+bash "$RUN" snapshot >/dev/null
+check "local merge rules go to .git/info/attributes" 'grep -qx "progress.md merge=union" "$attrs" && grep -qx ".idleflow/lessons.md merge=union" "$attrs" && cmp -s .gitattributes "$d-attrs.bak" && git diff --quiet HEAD -- .gitattributes'
+check "an ignored record gets no merge rule"          '! grep -q "suggestions.md" "$attrs"'
+doc="$(bash "$RUN" doctor 2>/dev/null)"
+check "doctor reads the local merge rules"            'echo "$doc" | grep -q "^ok merges"'
+grep -vxF '.idleflow/suggestions.md' .git/info/exclude > "$scratch/exclude"; cp "$scratch/exclude" .git/info/exclude; rm -f "$attrs"
+cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak" "$d-attrs.bak"; git add .idleflow/conventions.md && commit -q -m "shared rules again"
 printf '{"permissions":{"allow":["Bash(ls)"]}}' > .claude/settings.json
 bash "$RUN" team-install >/dev/null
 check "team-install recommends idleflow, keeps the rest" '[ "$(idleflow_rt get .claude/settings.json enabledPlugins.idleflow@idlesync)" = "true" ] && [ "$(idleflow_rt get .claude/settings.json extraKnownMarketplaces.idlesync.source.repo)" = "Idle-Sync/idleflow" ] && grep -q "Bash(ls)" .claude/settings.json'
