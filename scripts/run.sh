@@ -17,7 +17,7 @@
 #   run.sh report <task-id>               -> copies the task's .idleflow-run/result.md into the run dir as report.md, prints its path
 #   run.sh gate <task-id> [limit]         -> runs diff-gate against the task's own base, writes tasks/<id>/gate.json, prints it;
 #                                            refreshes the run's report.md when the worktree copy is newer
-#   run.sh merge <task-id> [title]        -> merges the task branch into the current branch (no-ff); exit 3 on conflict, 4 otherwise
+#   run.sh merge <task-id>                -> merges the task branch into the current branch (no-ff); exit 3 on conflict, 4 otherwise
 #   run.sh ignore <pattern>               -> adds the pattern to the ignore file `ignore_in:` names, prints that file
 #   run.sh snapshot                       -> commits the repo-level docs the orchestrator writes (conventions, CLAUDE.md, prd, ...)
 #   run.sh finish [status]                -> logs the run to .idleflow/runs/log.jsonl, renames active/ to <id>/
@@ -78,6 +78,12 @@ native_path() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; els
 json_str() { printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')"; }
 
 plugin_version() { idleflow_rt get "$HERE/../.claude-plugin/plugin.json" version 2>/dev/null || echo unknown; }
+
+# the title in the plan's "### <task-id>: <title>" heading, empty when there is none
+plan_title() { # plan_title <task-id>
+  [ -f "$ACTIVE/plan.md" ] || return 0
+  H="### $1:" awk 'index($0, ENVIRON["H"]) == 1 { print substr($0, length(ENVIRON["H"]) + 1); exit }' "$ACTIVE/plan.md" | tr -d '\r'
+}
 
 active_id() {
   [ -f "$ACTIVE/run.json" ] || { echo "no active run (run.sh new <slug> first)" >&2; exit 1; }
@@ -575,8 +581,10 @@ JSON
     ;;
   merge)
     tid="${1:?task-id}"; id="$(active_id)"
-    # the task's title from the plan says what the merge brings; one line, ids go in the body
-    title="$(printf '%s' "${2:-}" | tr '\n\r\t' '   ' | sed 's/  */ /g; s/^ //; s/ $//')"; [ -n "$title" ] || title="task $tid"
+    # The task's title says what the merge brings. It is read here from the plan, never passed on a
+    # command line: a title with `code` or $name in it would be expanded by the shell that runs the
+    # command. One line; the ids go in the body.
+    title="$(plan_title "$tid" | tr '\n\r\t' '   ' | sed 's/  */ /g; s/^ //; s/ $//')"; [ -n "$title" ] || title="task $tid"
     br="idleflow/$id/$tid"; p="$(wt_path "$tid")"
     # the "never merge an unapproved task" rule, enforced here and not only in the prompt
     st="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$tid.status" 2>/dev/null || true)"

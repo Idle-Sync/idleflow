@@ -481,7 +481,8 @@ printf 'commit_format: conventional\n' >> .idleflow/conventions.md
 bash "$RUN" new conventional-commits-with-a-long-slug-name >/dev/null 2>&1
 wc6="$(bash "$RUN" wt add T6 2>/dev/null)"
 ( cd "$wc6" && echo y >> src/keep.py && git add src/keep.py && commit -m "fix: keep y" )
-bash "$RUN" set tasks.T6.status '"approved"'; bash "$RUN" merge T6 "keep the y line" >/dev/null 2>&1
+printf '## Tasks\n\n### T6: keep the y line\n' > .idleflow/runs/active/plan.md
+bash "$RUN" set tasks.T6.status '"approved"'; bash "$RUN" merge T6 >/dev/null 2>&1
 subjects="$(git log -1 --format=%s HEAD)"; bodies="$(git log -1 --format=%b HEAD)"
 cc_re='^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([A-Za-z0-9_./-]+\))?!?: [^ ]'
 check "the merge commit is a Conventional Commit" '[ "$(echo "$subjects" | grep -Ec "$cc_re")" = 1 ] && [ "$(echo "$subjects" | awk "length > 72" | wc -l | tr -d " ")" = 0 ]'
@@ -493,9 +494,11 @@ bash "$RUN" new plain-subjects >/dev/null 2>&1
 wc7="$(bash "$RUN" wt add T7 2>/dev/null)"
 ( cd "$wc7" && echo z >> src/keep.py && git add src/keep.py && commit -m "Keep the z line" )
 git config merge.log true
-bash "$RUN" set tasks.T7.status '"approved"'; bash "$RUN" merge T7 "Keep the z line" >/dev/null 2>&1
+# the title comes from the plan, so backticks and $ in it reach the subject as written
+printf '%s\n' '### T70: Not this one' '### T7: Keep the `z` line, not $(z) or $HOME' > .idleflow/runs/active/plan.md
+bash "$RUN" set tasks.T7.status '"approved"'; bash "$RUN" merge T7 >/dev/null 2>&1
 git config --unset merge.log
-check "a plain merge is a plain sentence with the ids in the body" '[ "$(git log -1 --format=%s HEAD)" = "Merge Keep the z line" ] && git log -1 --format=%b HEAD | grep -qx "Task: T7" && git log -1 --format=%b HEAD | grep -q "^Run: "'
+check "a plain merge is a plain sentence with the ids in the body" '[ "$(git log -1 --format=%s HEAD)" = "Merge Keep the \`z\` line, not \$(z) or \$HOME" ] && git log -1 --format=%b HEAD | grep -qx "Task: T7" && git log -1 --format=%b HEAD | grep -q "^Run: "'
 check "the ids stay trailers when merge.log is set" '[ "$(git log -1 --format="%(trailers:key=Run,valueonly,separator=)" HEAD)" = "$(bash "$RUN" get id)" ]'
 long="$(printf "é%.0s" $(seq 1 80))"
 check "a long title is cut by characters, never inside one" '[ "$(LC_ALL=C idleflow_rt clip 72 "Merge $long")" = "Merge $(printf "é%.0s" $(seq 1 63))..." ]'
