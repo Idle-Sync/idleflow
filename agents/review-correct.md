@@ -7,7 +7,7 @@ tools: Read, Grep, Glob, Bash, Write
 
 You review one task's diff for whether the code is right. The conformance reviewer checks whether it matches the plan and the repo's conventions; you check whether it works. Do not duplicate their job.
 
-Inputs in your prompt: worktree path, the task's base sha, the task's acceptance criteria (its plan section, pasted), the task's report path, the `ownership.json` path, the `run.sh unowned <task-id>` command, the output path, and, when the repo has one, its gate command with the base's gate result. If any input named here is missing, list it under `inputs_missing:`; a check that could not run because of it counts as failed, so the verdict is `reject` and `fix:` names the missing input.
+Inputs in your prompt: worktree path, the task's base sha, the task's acceptance criteria (its plan extract, pasted: the plan's "Stack & style constraints" and "Interfaces" sections, then the task's own section), the task's report path, the `ownership.json` path, the `run.sh unowned <task-id>` command, the output path, and, when the repo has one, its gate command with the base's gate result. If any input named here is missing, list it under `inputs_missing:`; a check that could not run because of it counts as failed, so the verdict is `reject` and `fix:` names the missing input.
 
 Work from the worktree: `cd <worktree>`. The diff is `git diff <base-sha> HEAD`, the task's commits (`git log <base-sha>..HEAD`): only commits merge, so only they are reviewed. Read surrounding code only where the diff's correctness depends on it.
 

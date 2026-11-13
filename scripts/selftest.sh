@@ -535,6 +535,16 @@ check "preview stop ends it" '! kill -0 "$pid" 2>/dev/null && [ ! -f .idleflow/r
 bash "$RUN" wt rm T2; bash "$RUN" finish done >/dev/null
 cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"; git add .idleflow/conventions.md && commit -q -m "restore conventions"
 
+echo "--- plan extract"
+bash "$RUN" new extract >/dev/null 2>&1
+printf '%s\n' '# Plan: x' '## Goal' 'goal text' '## Stack & style constraints' 'mode: repo' '## Interfaces (serial, land first)' 'report(msg) prints "saved"' \
+  '## Tasks' '### T1: first' 'owns: [a]' '### T10: tenth' 'owns: [b]' '### T2: second' 'owns: [c]' '## Merge order' 'T1, T2' > .idleflow/runs/active/plan.md
+bash "$RUN" extract T1 > "$scratch/extract.txt"
+check "extract gives the shared sections and the task's own" '[ "$(cat "$scratch/extract.txt")" = "$(printf "%s\n" "## Stack & style constraints" "mode: repo" "## Interfaces (serial, land first)" "report(msg) prints \"saved\"" "### T1: first" "owns: [a]")" ]'
+check "extract leaves other tasks and sections out" '! grep -q "T10\|T2\|goal text\|Merge order" "$scratch/extract.txt"'
+check "extract refuses a task the plan does not have" '! bash "$RUN" extract T3 2>/dev/null'
+bash "$RUN" finish "done" >/dev/null
+
 echo "--- conventional commits"
 cp .idleflow/conventions.md "$d-conv.bak"
 printf 'commit_format: conventional\n' >> .idleflow/conventions.md

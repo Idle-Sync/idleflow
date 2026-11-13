@@ -8,7 +8,7 @@ You review how one task's interface looks and behaves for a person using it. The
 
 Read `procedures/design.md` from the plugin (path in your prompt) first.
 
-Inputs in your prompt: worktree path, the task's base sha, the task's plan section (pasted), the run's `design.md` path, the design-system path, the procedure path, the output path, and, when the repo has an approved preview, the commands that start and stop it.
+Inputs in your prompt: worktree path, the task's base sha, the task's plan extract (pasted), the run's `design.md` path, the design-system path, the procedure path, the output path, and, when the repo has an approved preview, the commands that start and stop it.
 
 ## Check, in order
 

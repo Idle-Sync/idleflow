@@ -16,6 +16,8 @@
 #   run.sh get <key>                      -> prints a value from run.json (dotted keys ok)
 #   run.sh set <key> <json>               -> sets a value in run.json (dotted keys ok)
 #   run.sh inc <key> [n]                  -> adds n (default 1) to a counter in run.json
+#   run.sh extract <task-id>              -> the task's plan extract: the plan's Stack & style constraints and Interfaces
+#                                            sections, then the task's own ### <task-id>: section
 #   run.sh report <task-id>               -> copies the task's .idleflow-run/result.md into the run dir as report.md, prints its path
 #   run.sh gate <task-id> [limit]         -> runs diff-gate against the task's own base, writes tasks/<id>/gate.json, prints it;
 #                                            refreshes the run's report.md when the worktree copy is newer
@@ -614,6 +616,18 @@ JSON
   inc)
     key="${1:?key}"; n="${2:-1}"; active_id >/dev/null
     idleflow_rt inc "$ACTIVE/run.json" "$key" "$n"
+    ;;
+  extract)
+    # What every agent working on one task reads of the plan: the sections every task is written
+    # against, then the task's own section. Other tasks' sections stay out.
+    tid="${1:?task-id}"; check_task_id "$tid"; active_id >/dev/null
+    [ -f "$ACTIVE/plan.md" ] || { echo "extract: no plan.md in the active run" >&2; exit 1; }
+    out="$(H="### $tid:" awk '
+      /^## / { shared = (index($0, "## Stack & style constraints") == 1 || index($0, "## Interfaces") == 1); task = 0 }
+      /^### / { task = (index($0, ENVIRON["H"]) == 1); if (task) found = 1 }
+      shared || task { print }
+      END { if (!found) exit 3 }' "$ACTIVE/plan.md" | tr -d '\r')" || { echo "extract: plan.md has no '### $tid:' section" >&2; exit 1; }
+    printf '%s\n' "$out"
     ;;
   report)
     tid="${1:?task-id}"; check_task_id "$tid"; active_id >/dev/null
