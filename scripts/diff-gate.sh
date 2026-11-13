@@ -50,6 +50,6 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp" "$BASE_CONF"' EXIT
 git diff --numstat "$BASE" HEAD -- . > "$tmp/all" 2>/dev/null || true
 git diff --numstat "$BASE" HEAD -- . ${EXCL[@]+"${EXCL[@]}"} > "$tmp/code" 2>/dev/null || true
-git -c core.quotePath=false status --porcelain -- . ':(exclude).idleflow-run' 2>/dev/null | cut -c4- > "$tmp/uncommitted" || true
+git status --porcelain -- . ':(exclude).idleflow-run' 2>/dev/null | cut -c4- > "$tmp/uncommitted" || true
 
 idleflow_rt gate "$LIMIT" "$SLACK" "$tmp/all" "$tmp/code" "$tmp/uncommitted"

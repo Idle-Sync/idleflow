@@ -152,6 +152,16 @@ git -C "$wt" add pages other.txt && git -C "$wt" -c user.name=t -c user.email=t@
 touch "$wt/setup-output.txt"
 check "unowned lists only what the task may not change" '[ "$(bash "$RUN" unowned T1 | paste -sd, -)" = "other.txt,pages/s.astro" ]'
 git -C "$wt" reset -q --hard HEAD~1 && rm -f "$wt/setup-output.txt"
+bash "$RUN" own T1 '["src/**","tests/**","docs/café.md","src/café.py"]'
+mkdir -p "$wt/docs" && echo x > "$wt/docs/café.md" && echo y > "$wt/src/café.py" && ( cd "$wt" && git add docs/café.md src/café.py && commit -m "T1: café" )
+check "unowned reads non-ASCII paths as the guard does" '[ -z "$(bash "$RUN" unowned T1)" ]'
+check "the gate names non-ASCII files as they are"      'bash "$RUN" gate T1 | grep -q "\"src/café.py\""'
+( cd "$wt" && git reset -q --hard HEAD~1 )
+hk="$(git rev-parse --git-common-dir)/hooks"; mkdir -p "$hk"; printf '#!/bin/sh\necho "${GIT_CONFIG_PARAMETERS:-}" >> "%s"\n' "$scratch/hook.env" > "$hk/pre-commit"; chmod +x "$hk/pre-commit"; : > "$scratch/hook.env"
+echo hooked > hooked.txt; git add hooked.txt; bash "$RUN" snapshot >/dev/null 2>&1; commit -m hooked >/dev/null 2>&1 || true
+( cd "$wt" && echo h > src/hook.txt && git add src/hook.txt && bash -c 'source "$0"; git commit -q -m "T1: hook"' "$HERE/conf.sh" )
+check "the repo's hooks keep the repo's git settings" '[ -s "$scratch/hook.env" ] && ! grep -q quotePath "$scratch/hook.env"'
+rm -f "$hk/pre-commit"; ( cd "$wt" && git reset -q --hard HEAD~1 )
 check "unowned fails on an unknown task"        '! bash "$RUN" unowned T9 >/dev/null 2>&1'
 bash "$RUN" own T1 '["src/**","tests/**"]'
 check "allows outside any repo"           '[ "$(guard_rc "/nowhere/x.txt" "/nowhere")" = "0" ]'
@@ -604,6 +614,8 @@ check "doctor warns about undescribed entries" 'echo "$doc" | grep -q "^warn gen
 ( cd "$f" && printf '# Index\n- `src/` — code\n' > index.md )
 det="$(cd "$f" && bash "$RUN" detect)"
 check "detect suggests generated blocks for a hand-kept index" 'echo "$det" | grep -q "^suggest generated_docs: index.md —"'
+( cd "$f" && git checkout -q -- index.md 2>/dev/null; printf '# Index\n<!-- idleflow:generated files -->\n<!-- idleflow:end -->\n' > index.md && echo x > é.txt && git add -A && git commit -qm "é" && bash "$RUN" docs >/dev/null )
+check "the files block names non-ASCII files as they are" 'grep -qxF -- "- \`é.txt\` — (describe)" "$f/index.md"'
 rm -rf "$f"
 
 echo "--- a first run fills Commands and can propose the gate"
