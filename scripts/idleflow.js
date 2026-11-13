@@ -15,6 +15,7 @@
 //   guard                                   hook: payload on stdin; exit 2 blocks
 //   detach <cwd> <log> <pidfile> <command>  runs the command in its own session, output to log; writes its pid
 //   entries <file> <key>                    one "name<TAB>value" line per entry of the object at that top-level key
+//   clip   <n> <text>                       the text cut to at most n characters (not bytes), "..." marking a cut
 //   unowned <file> <task-id>                NUL-separated paths on stdin; prints those the task may not change
 "use strict";
 const fs = require("fs");
@@ -344,7 +345,12 @@ function cmdUnowned(p, tid) {
     if (rel && !globMatch(WIN ? rel.toLowerCase() : rel, allowed)) process.stdout.write(rel + "\n");
   }
 }
-const table = { get: cmdGet, set: cmdSet, inc: cmdInc, finish: cmdFinish, own: cmdOwn, gate: cmdGate, guard: cmdGuard, detach: cmdDetach, entries: cmdEntries, unowned: cmdUnowned };
+function cmdClip(n, text) {
+  n = parseInt(n, 10);
+  const chars = Array.from(text); // code points, as Python counts them
+  console.log(chars.length <= n ? text : chars.slice(0, n - 3).join("") + "...");
+}
+const table = { get: cmdGet, set: cmdSet, inc: cmdInc, finish: cmdFinish, own: cmdOwn, gate: cmdGate, guard: cmdGuard, detach: cmdDetach, entries: cmdEntries, unowned: cmdUnowned, clip: cmdClip };
 const [cmd, ...args] = process.argv.slice(2);
 if (!cmd || !(cmd in table)) {
   process.stderr.write(`idleflow.js: unknown subcommand ${JSON.stringify(cmd)}\n`);

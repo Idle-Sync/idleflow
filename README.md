@@ -136,6 +136,7 @@ beside it. Every key is optional and missing keys keep the defaults, so older re
 | `gate: <command>` | The repo's own check is the definition of done: run on the base first (old failures are not blamed on the run), by implementers and the correctness reviewer, and after merge. Same approval rule as `worktree_setup` |
 | `gate_runs: once` + `gate_quick: <command>` | For a slow gate (over `SLOW_GATE_SECONDS`, 120 by default): a quick check per task and the full gate once after merge, the base checked only if it fails. `repo-gate` times every run; `detect` suggests this and points out commit or push hooks that run the tests every time (idleflow never edits hooks) |
 | `commit_format: conventional` | Task and merge commits as Conventional Commits (subject at most 72 characters, ids in the body) |
+| `commit_format: plain` | Task and merge commits as plain sentences with no prefix (merges `Merge <task title>`, ids in the body) |
 | `shared_files: <paths>` | Files every task may add its own lines to (a changelog, an index the repo's checks need a row in), merged by union |
 
 `/idleflow:setup` finds what a repo already has with `run.sh detect` (the share of Conventional Commits

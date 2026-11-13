@@ -492,8 +492,13 @@ sed -i.bak 's/^commit_format: .*/commit_format: plain/' .idleflow/conventions.md
 bash "$RUN" new plain-subjects >/dev/null 2>&1
 wc7="$(bash "$RUN" wt add T7 2>/dev/null)"
 ( cd "$wc7" && echo z >> src/keep.py && git add src/keep.py && commit -m "Keep the z line" )
+git config merge.log true
 bash "$RUN" set tasks.T7.status '"approved"'; bash "$RUN" merge T7 "Keep the z line" >/dev/null 2>&1
+git config --unset merge.log
 check "a plain merge is a plain sentence with the ids in the body" '[ "$(git log -1 --format=%s HEAD)" = "Merge Keep the z line" ] && git log -1 --format=%b HEAD | grep -qx "Task: T7" && git log -1 --format=%b HEAD | grep -q "^Run: "'
+check "the ids stay trailers when merge.log is set" '[ "$(git log -1 --format="%(trailers:key=Run,valueonly,separator=)" HEAD)" = "$(bash "$RUN" get id)" ]'
+long="$(printf "é%.0s" $(seq 1 80))"
+check "a long title is cut by characters, never inside one" '[ "$(LC_ALL=C idleflow_rt clip 72 "Merge $long")" = "Merge $(printf "é%.0s" $(seq 1 63))..." ]'
 bash "$RUN" wt rm T7; bash "$RUN" finish done >/dev/null
 cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"
 

@@ -584,9 +584,11 @@ JSON
     # The subject follows the repo's style and says what merged; only the `idleflow` format, the
     # tool's own, names it. `conventional` repos often check every subject in CI (at most 72
     # characters), so ids live in the body, as trailers every format carries (gen_runs reads them).
+    # --no-log: a merge.log setting would append a shortlog after them, and they would stop being
+    # the message's trailers.
     case "$(conventions_value commit_format)" in
-      conventional) subject="chore: merge $title"; [ "${#subject}" -le 72 ] || subject="${subject:0:69}...";;
-      plain) subject="Merge $title"; [ "${#subject}" -le 72 ] || subject="${subject:0:69}...";;
+      conventional) subject="$(idleflow_rt clip 72 "chore: merge $title")";;
+      plain) subject="$(idleflow_rt clip 72 "Merge $title")";;
       *) subject="idleflow: merge $tid ($id)";;
     esac
     merge_msg=(-m "$subject" -m "Run: $id
@@ -598,7 +600,7 @@ Task: $tid")
       left="${left% }"
       [ -z "$left" ] || echo "merge $tid: uncommitted in the worktree, not merged: $left" >&2
     fi
-    if "${G[@]}" ${IDENTITY[@]+"${IDENTITY[@]}"} merge --no-ff -q "${merge_msg[@]}" "$br"; then
+    if "${G[@]}" ${IDENTITY[@]+"${IDENTITY[@]}"} merge --no-ff --no-log -q "${merge_msg[@]}" "$br"; then
       idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.t_merge" "$(date +%s)"
       echo "merged $tid"
     elif [ -f "$("${G[@]}" rev-parse --absolute-git-dir)/MERGE_HEAD" ]; then
