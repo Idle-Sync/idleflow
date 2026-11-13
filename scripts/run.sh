@@ -11,9 +11,8 @@
 #   run.sh skip <key>                     -> this run goes without a repo command (gate, gate_quick, worktree_setup, preview)
 #   run.sh unowned <task-id>              -> paths the task's commits change (base..HEAD, what merges) that its globs,
 #                                            .idleflow-run/** and shared_files do not cover; matched as the guard matches
-#   run.sh uses <task-id> '<names json>'  -> the shared resources (conventions shared_resources) the task's commands use
-#   run.sh exec <task-id> -- <command...> -> runs a command in the task's worktree with its own port (IDLEFLOW_PORT), its
-#                                            own temp folder (IDLEFLOW_TMP, TMPDIR) and the locks of the resources it uses
+#   run.sh exec <task-id> -- <command...> -> runs a command in the task's worktree with its own port (IDLEFLOW_PORT) and
+#                                            its own temp folder (IDLEFLOW_TMP, TMPDIR)
 #   run.sh get <key>                      -> prints a value from run.json (dotted keys ok)
 #   run.sh set <key> <json>               -> sets a value in run.json (dotted keys ok)
 #   run.sh inc <key> [n]                  -> adds n (default 1) to a counter in run.json
@@ -337,55 +336,9 @@ command_approved() { # command_approved <key> <command>
 }
 
 # A worktree isolates files. What a task's commands share at run time is handled here: each task
-# gets its own port and temp folder, and a resource the repo names in shared_resources (a local
-# database, a container stack) is used by one command at a time across tasks.
-lock_dir() { local d; d="$("${G[@]}" rev-parse --git-common-dir)/idleflow-locks"; case "$d" in /*|?:*) ;; *) d="$REPO/$d";; esac; echo "$d"; }
-shared_resource_ok() { # shared_resource_ok <name>
-  [[ "$1" =~ ^[A-Za-z0-9_-]+$ ]] && [ "$1" != none ] || return 1
-  local r list; read -ra list <<< "$(conventions_value shared_resources)"
-  for r in "${list[@]}"; do [ "$r" = "$1" ] && return 0; done
-  return 1
-}
-HELD_LOCKS=()
-# a lock is removed only by the process that holds it
-release_locks() {
-  local l
-  for l in ${HELD_LOCKS[@]+"${HELD_LOCKS[@]}"}; do
-    case "$(cat "$l/holder" 2>/dev/null || true)" in "$$ "*) rm -rf "$l";; esac
-  done
-  HELD_LOCKS=()
-}
-# A lock is stale when its holder process is gone (a killed agent shell), or when it has no holder
-# a minute after it was made (killed between mkdir and writing the holder).
-lock_stale() { # lock_stale <lock> <holder line read earlier>
-  if [ -n "$2" ]; then
-    if kill -0 "${2%% *}" 2>/dev/null; then return 1; fi
-    return 0
-  fi
-  [ -n "$(find "$1" -maxdepth 0 -mmin +1 2>/dev/null)" ]
-}
-acquire_lock() { # acquire_lock <resource> <task-id>; waits for the task that holds it
-  local l holder said=""; l="$(lock_dir)/$1.lock"
-  mkdir -p "$(lock_dir)" || { echo "[idleflow] cannot create $(lock_dir)" >&2; return 1; }
-  until mkdir "$l" 2>/dev/null; do
-    holder="$(cat "$l/holder" 2>/dev/null || true)"
-    # Taking a stale lock over is check-then-act, so waiters do it one at a time, and only if the
-    # lock still has the holder they judged stale: a waiter acting on an old read never removes
-    # a lock someone took in the meantime.
-    if lock_stale "$l" "$holder" && mkdir "$l.takeover" 2>/dev/null; then
-      if [ "$(cat "$l/holder" 2>/dev/null || true)" = "$holder" ] && lock_stale "$l" "$holder"; then rm -rf "$l"; fi
-      rmdir "$l.takeover"; continue
-    fi
-    # a waiter killed inside the takeover leaves its mutex; it is stale after a minute too
-    [ -z "$(find "$l.takeover" -maxdepth 0 -mmin +1 2>/dev/null)" ] || rmdir "$l.takeover" 2>/dev/null || true
-    [ -n "$said" ] || { echo "[idleflow] $2 waits for $1 (held by ${holder#* })" >&2; said=1; }
-    sleep 1
-  done
-  echo "$$ $2" > "$l/holder"; HELD_LOCKS+=("$l")
-}
+# gets its own port and temp folder.
 task_port() { idleflow_rt get "$ACTIVE/run.json" "tasks.$1.port" 2>/dev/null || true; }
 task_tmp() { echo "$ACTIVE/tasks/$1/tmp"; }
-task_uses() { { idleflow_rt get "$ACTIVE/run.json" "tasks.$1.uses" 2>/dev/null || true; } | tr -d '[]" ' | tr ',' '\n' | grep . | LC_ALL=C sort -u || true; }
 # The lowest PORT_BASE + n no other task of this run holds; a task keeps its port when re-added.
 allocate_port() { # allocate_port <task-id>
   local mine used n=0; mine="$(task_port "$1")"
@@ -394,18 +347,12 @@ allocate_port() { # allocate_port <task-id>
   while printf '%s\n' "$used" | grep -qx "$(( ${PORT_BASE:-4400} + n ))"; do n=$((n + 1)); done
   echo $(( ${PORT_BASE:-4400} + n ))
 }
-# Runs a command for a task: in its worktree, with its port, temp folder and resource locks.
+# Runs a command for a task: in its worktree, with its port and temp folder.
 in_task() { # in_task <task-id> <dir> <command...>
-  local tid="$1" dir="$2" port tmp r rc=0; shift 2
+  local tid="$1" dir="$2" port tmp rc=0; shift 2
   port="$(task_port "$tid")"; tmp="$(task_tmp "$tid")"; mkdir -p "$tmp"
-  trap release_locks EXIT
-  while IFS= read -r r; do
-    [ -n "$r" ] || continue
-    acquire_lock "$r" "$tid" || { release_locks; return 1; }
-  done < <(task_uses "$tid")
   # the caller decides what a failure means; errexit is left as the caller set it
   (cd "$dir" && MAIN="$REPO" IDLEFLOW_TASK="$tid" IDLEFLOW_PORT="$port" IDLEFLOW_TMP="$tmp" TMPDIR="$tmp" "$@") || rc=$?
-  release_locks
   return "$rc"
 }
 
@@ -614,13 +561,6 @@ JSON
     # only the task's commits merge, so only they are checked; --no-renames: a rename changes the
     # old path too, and the task must own both
     git -C "$p" diff --no-renames --name-only "$base" HEAD | sort -u | idleflow_rt unowned "$ACTIVE/ownership.json" "$tid"
-    ;;
-  uses)
-    tid="${1:?task-id}"; names="${2:?json array}"; active_id >/dev/null
-    for r in $(printf '%s' "$names" | tr -d '[]" ' | tr ',' ' '); do
-      shared_resource_ok "$r" || { echo "uses: '$r' is not in shared_resources in conventions" >&2; exit 1; }
-    done
-    idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.uses" "$names"
     ;;
   exec)
     tid="${1:?task-id}"; shift; [ "${1:-}" = -- ] && shift

@@ -125,7 +125,6 @@ gate_quick: none
 gate_runs: every-task
 preview: none
 preview_url: none
-shared_resources: none
 
 - `worktrees_in`: `sibling` puts task worktrees next to the repo (`<repo>__wt/<task>`); `inside` puts
   them in `.idleflow/worktrees/` (ignored), for projects that must not write outside their own folder.
@@ -136,13 +135,6 @@ shared_resources: none
   or `venv` into a worktree: an install there rewrites or empties the main checkout's copy, and a
   Python editable install runs the main checkout's code. `wt add` refuses such a link.
   A failure, or a change to a tracked file, stops the worktree.
-- `shared_resources`: space-separated names of things on this machine that only one task's commands may use at a
-  time, such as `integration-db` or `docker-stack` (a database the tests fill and empty, a container
-  stack that runs out of memory when started twice). A task lists the ones it uses (`uses:` in the
-  plan), and `run.sh exec` and the task's gate hold a lock on each while they run (a preview server runs
-  detached and holds none). `none`
-  when parallel tasks share nothing. Ports and temp folders need no entry: every task gets its own
-  (`IDLEFLOW_PORT`, `IDLEFLOW_TMP`).
 - `gate`: the one command that says whether the repo is healthy (its own check script, `make check`,
   `npm test`). Set, it is the definition of done: run on the base before building, by each implementer
   after its last change, by the correctness reviewer, and after the merge.
