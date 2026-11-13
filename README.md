@@ -133,7 +133,7 @@ beside it. Every key is optional and missing keys keep the defaults, so older re
 | `session_names: numbered` | Keep a repo's `s_0001.md` numbering (two writers can collide) |
 | `gate: <command>` | The repo's own check is the definition of done: run on the base first (old failures are not blamed on the run), by implementers and the correctness reviewer, and after merge. Same approval rule as `worktree_setup` |
 | `gate_runs: once` + `gate_quick: <command>` | For a slow gate (over `SLOW_GATE_SECONDS`, 120 by default): a quick check per task and the full gate once after merge, the base checked only if it fails. `repo-gate` times every run; `detect` suggests this and points out commit or push hooks that run the tests every time (idleflow never edits hooks) |
-| `commit_format: conventional` | Task, finish and merge commits as Conventional Commits (subject at most 72 characters, ids in the body) |
+| `commit_format: conventional` | Task and merge commits as Conventional Commits (subject at most 72 characters, ids in the body) |
 | `shared_files: <paths>` | Files every task may add its own lines to (a changelog, an index the repo's checks need a row in), merged by union |
 
 `/idleflow:setup` finds what a repo already has with `run.sh detect` (the share of Conventional Commits
@@ -240,6 +240,6 @@ Older Claude Code: `claude plugin marketplace add Idle-Sync/idleflow` then `clau
 
 - Token counts per phase aren't captured; `/cost` after a run is the stopgap. OTEL export is planned.
 - `${CLAUDE_PLUGIN_ROOT}` in command files assumes plugin install; Option B in setup.md rewrites it.
-- Ownership globs use fnmatch rules (`*` crosses `/`); `src/**` is the usual shape. Diff-gate excludes use git pathspec globs and are all `**/`-prefixed so they match at any depth.
+- In ownership globs `*` and `?` are the only wildcards and both cross `/`; every other character is literal, so `src/pages/[slug].astro` names that file. `src/**` is the usual shape. The guard hook and both reviewers (through `run.sh unowned`) use the same matcher. Diff-gate excludes use git pathspec globs and are all `**/`-prefixed so they match at any depth.
 - `model: fable` in agent frontmatter depends on account access; setup.md step 3 checks and falls back.
 - The orchestrator is a prompt, not code. It will occasionally drift. The "Rules you never break" block at the bottom of `commands/feature.md` is the first thing to tighten when it does.

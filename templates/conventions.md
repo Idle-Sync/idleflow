@@ -138,7 +138,7 @@ preview_url: none
   reviewer starts it in a task's worktree only through `run.sh preview`, to take screenshots at phone and
   desktop widths when a browser tool is available. Same approval rule as `gate`.
 - `commit_format`: `idleflow` (task commits `T1: ...`, merges `idleflow: merge T1 (<run>)`) or
-  `conventional` (Conventional Commits subjects of at most 72 characters for task, finish and merge
+  `conventional` (Conventional Commits subjects of at most 72 characters for task and merge
   commits, run and task ids in the body), for repos whose CI checks commit subjects.
 
 ## Ignore rules
