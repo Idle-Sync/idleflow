@@ -142,8 +142,9 @@ preview_url: unset
 - `gate_runs`: `every-task` runs the gate on the base, for each task and after the merge; `once` (for a
   gate slower than `SLOW_GATE_SECONDS`) runs `gate_quick` for each task and the full gate once after the
   merge, checking the base only if that fails. `gate_quick` follows the same approval rule as `gate`.
-- `preview` and `preview_url`: the command that serves the app from a checkout (`npm run dev -- --port 4173`)
-  and the address it serves, which must be on this machine (`http://localhost:<port>`). The design
+- `preview` and `preview_url`: the command that serves the app from a checkout (`npm run dev -- --port "$IDLEFLOW_PORT"`)
+  and the address it serves, which must be on this machine (`http://localhost:${IDLEFLOW_PORT}`, so two
+  tasks' previews never share a port; `${IDLEFLOW_PORT}` is replaced with the task's port). The design
   reviewer starts it in a task's worktree only through `run.sh preview`, to take screenshots at phone and
   desktop widths when a browser tool is available. Same approval rule as `gate`.
 - `commit_format`: `idleflow` (task commits `T1: ...`, merges `idleflow: merge T1 (<run>)`) or
