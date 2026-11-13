@@ -465,6 +465,8 @@ check "a changed command needs approval again" '[ "$rc" = 7 ]'
 bash "$RUN" approve worktree_setup >/dev/null; bash "$RUN" wt rm T8
 out="$(bash "$RUN" wt add T8 2>&1)"; rc=$?
 check "a failing setup stops wt add (exit 6)" '[ "$rc" = 6 ] && echo "$out" | grep -q "worktree setup failed for T8" && echo "$out" | grep -q boom'
+out="$(bash "$RUN" exec T8 --base -- echo ran 2>&1)"; rc=$?; out2="$(bash "$RUN" exec T8 --base -- echo ran 2>&1)"; rc2=$?
+check "a base checkout whose setup fails exits 6 each time and runs nothing" '[ "$rc" = 6 ] && [ "$rc2" = 6 ] && ! printf "%s\n%s\n" "$out" "$out2" | grep -qx ran && [ ! -d .idleflow/worktrees/_base-T8 ]'
 bash "$RUN" wt rm T8; bash "$RUN" finish done >/dev/null
 sed -i.bak 's#^worktree_setup: .*#worktree_setup: echo changed >> src/keep.py#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
 git add .idleflow/conventions.md && commit -q -m "editing setup"; bash "$RUN" approve worktree_setup >/dev/null
@@ -576,6 +578,16 @@ kill "$other" 2>/dev/null
 for _ in 1 2 3; do out="$(bash "$RUN" exec TA --base -- sh -c 'git rev-parse HEAD; test -e only-in-task.txt && echo has || echo lacks' 2>/dev/null)"; rc=$?; [ "$rc" = 75 ] || break; done
 check "exec --base runs on the task's base commit, not its work" '[ "$(echo "$out" | sed -n 1p)" = "$(bash "$RUN" get tasks.TA.base_sha)" ] && [ "$(echo "$out" | sed -n 2p)" = lacks ] && [ -f "$wa/only-in-task.txt" ]'
 check "exec --base keeps the job under the task and passes the exit code" 'bash "$RUN" exec TA --limit 30 --base -- sh -c "exit 5" 2>/dev/null; [ $? = 5 ]'
+jb="$(ls -d .idleflow/runs/active/tasks/TA/jobs/*/ | sort -t/ -k7 -n | tail -n1)"
+check "a job records what ran and on which checkout" '[ "$(cat "${jb}checkout")" = "base $(bash "$RUN" get tasks.TA.base_sha)" ] && grep -qF "exit" "${jb}command" && bash "$RUN" exec TA -- true 2>/dev/null && [ "$(cat "$(ls -d .idleflow/runs/active/tasks/TA/jobs/*/ | sort -t/ -k7 -n | tail -n1)checkout")" = task ]'
+base_ta="$(git worktree list --porcelain | sed -n 's/^worktree \(.*_base-TA\)$/\1/p')"
+check "guard: nothing in the base checkout can be edited" '[ "$(guard_rc "$base_ta/src/code.py" "$base_ta")" = "2" ] && [ "$(guard_rc "$base_ta/new.txt" "$base_ta")" = "2" ]'
+echo stray > "$base_ta/stray-untracked"; first_file="$(git -C "$base_ta" ls-files | head -n1)"; echo edited >> "$base_ta/$first_file"
+bash "$RUN" exec TA --base -- true >/dev/null 2>&1
+check "an edited base checkout is made again before it runs" '[ -z "$(git -C "$base_ta" status --porcelain --untracked-files=no)" ] && [ ! -e "$base_ta/stray-untracked" ]'
+echo 0000000 > .idleflow/runs/active/tasks/_base-TA/ready; touch "$base_ta/marker"
+bash "$RUN" exec TA --base -- true >/dev/null 2>&1
+check "a base checkout ready for another sha is made again" '[ ! -e "$base_ta/marker" ] && [ "$(cat .idleflow/runs/active/tasks/_base-TA/ready)" = "$(bash "$RUN" get tasks.TA.base_sha)" ]'
 bash "$RUN" exec TB --base -- true >/dev/null 2>&1
 base_tb="$(git worktree list --porcelain | sed -n 's/^worktree \(.*_base-TB\)$/\1/p')"
 bash "$RUN" exec TB -- sleep 60 >/dev/null 2> "$scratch/job.err"
