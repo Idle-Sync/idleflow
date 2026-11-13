@@ -276,14 +276,20 @@ gen_files() { # $1: the block's current text; descriptions written there are kep
              case "$e" in */*) printf '%s\n' "${e%%/*}/";; *) printf '%s\n' "$e";; esac
            done | LC_ALL=C sort -u)
 }
+# The JavaScript install a folder's lockfile pins, as "<command><TAB><lockfile>"; nothing without one.
+# The index's command list and detect's worktree_setup proposal both take it from here.
+node_install() { # node_install <folder>
+  if [ -f "$1/pnpm-lock.yaml" ]; then printf 'pnpm install --frozen-lockfile\tpnpm-lock.yaml\n'
+  elif [ -f "$1/yarn.lock" ]; then printf 'yarn install --frozen-lockfile\tyarn.lock\n'
+  elif [ -f "$1/bun.lock" ] || [ -f "$1/bun.lockb" ]; then printf 'bun install --frozen-lockfile\tbun lockfile\n'
+  elif [ -f "$1/package-lock.json" ]; then printf 'npm ci\tpackage-lock.json\n'; fi
+}
 gen_commands() {
-  local pm=npm k v c
+  local pm=npm k v c ni lock
   [ -f pnpm-lock.yaml ] && pm=pnpm; [ -f yarn.lock ] && pm=yarn; { [ -f bun.lock ] || [ -f bun.lockb ]; } && pm=bun
   # first the install a fresh clone runs, as its lockfile pins it
-  if [ -f pnpm-lock.yaml ]; then echo "- \`pnpm install --frozen-lockfile\` — install (pnpm-lock.yaml)"
-  elif [ -f yarn.lock ]; then echo "- \`yarn install --frozen-lockfile\` — install (yarn.lock)"
-  elif [ -f bun.lock ] || [ -f bun.lockb ]; then echo "- \`bun install --frozen-lockfile\` — install (bun lockfile)"
-  elif [ -f package-lock.json ]; then echo "- \`npm ci\` — install (package-lock.json)"; fi
+  IFS=$'\t' read -r ni lock < <(node_install .) || true
+  [ -z "$ni" ] || echo "- \`$ni\` — install ($lock)"
   if [ -f uv.lock ]; then echo "- \`uv sync --frozen\` — install (uv.lock)"
   elif [ -f poetry.lock ]; then echo "- \`poetry install\` — install (poetry.lock)"
   elif [ -f requirements.txt ]; then echo "- \`pip install -r requirements.txt\` — install (requirements.txt)"; fi
@@ -1025,7 +1031,14 @@ Task: $tid")
         elif [ -f "$REPO/requirements.txt" ]; then env_cmd="$VENV_CMD -r requirements.txt"
         fi
       fi
-      [ -n "$env_cmd" ] && say worktree_setup "$env_cmd" "the main checkout has .venv/ and a task worktree starts without one; borrowing the main one runs the main checkout's code in subprocesses"
+      # node_modules the same way: linking the main checkout's is refused, so the worktree installs
+      # its own from the lockfile
+      node_cmd=""; [ ! -d "$REPO/node_modules" ] || { IFS=$'\t' read -r node_cmd _ < <(node_install "$REPO") || true; }
+      why=""
+      [ -z "$env_cmd" ] || why="the main checkout has .venv/ and a task worktree starts without one; borrowing the main one runs the main checkout's code in subprocesses"
+      [ -z "$node_cmd" ] || why="${why:+$why; }the main checkout has node_modules/ and a task worktree starts without one; linking the main one lets an install there rewrite it"
+      env_cmd="${env_cmd:+$env_cmd${node_cmd:+ && }}$node_cmd"
+      [ -n "$env_cmd" ] && say worktree_setup "$env_cmd" "$why"
     fi
     if unset_key preview; then
       for t in dev start preview; do
