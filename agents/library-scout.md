@@ -17,7 +17,7 @@ Inputs in your prompt: the issue path, `context.md` path, `.idleflow/conventions
    - official docs or README (the only acceptable source for an install command; quote it exactly),
    - the repository (last release or commit, licence, open-issue health, maintained within the last 12 months),
    - one independent source (a comparison, registry download numbers, a survey, a well-known engineering blog; not the vendor's own marketing).
-   Prefer sources from the last 18 months. If the sources disagree, write both. Reach each source the way the plugin's `procedures/research-sources.md` (path in your prompt) says: `gh api` and the registries' JSON for repository and release facts, and its rule for a source you cannot reach.
+   Prefer sources from the last 18 months. If the sources disagree, write both. Reach each source the way the plugin's `procedures/research-sources.md` (path in your prompt) says: GitHub's REST API and the registries' JSON for repository and release facts, and its rule for a source you cannot reach.
 4. **Write `docs/research/<capability>.md`** for each researched capability (create the directory if needed; one file per capability, named in plain words: `canvas-animation.md`, `date-handling.md`):
 
 ```
