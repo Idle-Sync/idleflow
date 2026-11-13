@@ -67,25 +67,13 @@ source "$HERE/rt.sh"
 source "$HERE/conf.sh"
 
 # The run lives in the checkout it was started from, which may itself be a linked worktree. Only
-# from inside one of the run's task worktrees (an agent's `run.sh exec`) does it live elsewhere: in
-# the checkout whose active run made that worktree. git names both: the task worktree is on branch
-# idleflow/<run>/<task>, and the run's checkout is the one in `git worktree list` whose active run
-# has that id. No file in the task worktree is trusted for this, since a committed one could point
-# anywhere.
+# from inside one of the run's task worktrees (an agent's `run.sh exec`) does it live elsewhere:
+# `wt add` records each task worktree in this clone's git config, keyed by the worktree's own path,
+# with the checkout of the run that made it. No file in a worktree is trusted for this, and the
+# branch is not needed (a task worktree may be on a detached HEAD).
 REPO="$(git rev-parse --show-toplevel)"
-_branch="$(git symbolic-ref --short -q HEAD || true)"
-case "$_branch" in
-  idleflow/*/*)
-    _run_id="${_branch#idleflow/}"; _run_id="${_run_id%%/*}"
-    while IFS= read -r _line; do
-      case "$_line" in
-        ("worktree "*)
-          _wt="${_line#worktree }"; _rj="$_wt/.idleflow/runs/active/run.json"
-          if [ -f "$_rj" ] && [ "$(idleflow_rt get "$_rj" id 2>/dev/null || true)" = "$_run_id" ]; then REPO="$_wt"; break; fi;;
-      esac
-    done < <(git worktree list --porcelain)
-    ;;
-esac
+_run_checkout="$(git config --local --get "idleflow.worktree.$REPO.checkout" 2>/dev/null || true)"
+if [ -n "$_run_checkout" ] && [ -f "$_run_checkout/.idleflow/runs/active/run.json" ]; then REPO="$_run_checkout"; fi
 idleflow_load_conf "$REPO"
 IDLE="$REPO/.idleflow"
 CONVENTIONS="$IDLE/conventions.md"
@@ -635,6 +623,7 @@ JSON
         fi
         mkdir -p "$(dirname "$p")"
         "${G[@]}" worktree add -B "$br" "$p" "$base" >/dev/null
+        "${G[@]}" config --local "idleflow.worktree.$("${G[@]}" -C "$p" rev-parse --show-toplevel).checkout" "$REPO"
         mkdir -p "$p/.idleflow-run" "$ACTIVE/tasks/$tid"
         echo "$tid" > "$p/.idleflow-run/task-id"
         native_path "$REPO" > "$p/.idleflow-run/repo"   # lets the guard hook find the ownership map from inside the worktree
@@ -655,6 +644,9 @@ JSON
         tid="${1:?task-id}"; check_task_id "$tid"; p="$(wt_path "$tid")"
         # the task's jobs go with its worktree
         for jd in "$ACTIVE/tasks/$tid/jobs"/*/; do [ -d "$jd" ] && stop_job "${jd%/}"; done
+        if [ -d "$p" ]; then
+          "${G[@]}" config --local --remove-section "idleflow.worktree.$("${G[@]}" -C "$p" rev-parse --show-toplevel)" 2>/dev/null || true
+        fi
         "${G[@]}" worktree remove --force "$p" 2>/dev/null || true
         "${G[@]}" worktree prune
         ;;
