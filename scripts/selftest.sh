@@ -689,7 +689,19 @@ out="$(bash "$RUN" preview T2 start 2>/dev/null)"; pid="$(cat .idleflow/runs/act
 check "an approved preview starts and records its process" 'echo "$out" | grep -q "^preview T2: serving at http://localhost:4173" && kill -0 "$pid" 2>/dev/null'
 bash "$RUN" preview T2 stop >/dev/null; sleep 1
 check "preview stop ends it" '! kill -0 "$pid" 2>/dev/null && [ ! -f .idleflow/runs/active/tasks/T2/preview.pid ]'
-bash "$RUN" wt rm T2; bash "$RUN" finish done >/dev/null
+check "preview main is refused while tasks preview their worktrees" '! bash "$RUN" preview main start >/dev/null 2>&1 && [ ! -f .idleflow/runs/active/tasks/main/preview.pid ]'
+printf 'preview_in: main\n' >> .idleflow/conventions.md
+check "under preview_in: main a task preview is refused" '! bash "$RUN" preview T2 start >/dev/null 2>&1 && [ ! -f .idleflow/runs/active/tasks/T2/preview.pid ]'
+sed -i.bak 's#^preview: .*#preview: pwd > "$IDLEFLOW_TMP/where"; sleep 30#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
+git add .idleflow/conventions.md && commit -q -m "preview from main"; bash "$RUN" approve preview >/dev/null
+bash "$RUN" wt rm T2; bash "$RUN" finish done >/dev/null; bash "$RUN" new previewmain >/dev/null 2>&1
+out="$(bash "$RUN" preview main start 2>/dev/null)"; pid="$(cat .idleflow/runs/active/tasks/main/preview.pid 2>/dev/null)"; sleep 1
+check "under preview_in: main the main checkout is served" 'echo "$out" | grep -q "^preview main: serving at http://localhost:4173" && kill -0 "$pid" 2>/dev/null && [ "$(cat .idleflow/runs/active/tasks/main/tmp/where 2>/dev/null)" = "$(pwd -P)" ]'
+bash "$RUN" preview main stop >/dev/null; sleep 1
+check "preview main stop ends it" '! kill -0 "$pid" 2>/dev/null'
+check "main and merged are not task ids" '! bash "$RUN" wt add main 2>/dev/null && ! bash "$RUN" wt add merged 2>/dev/null'
+check "findings reads the browser check after merge" 'printf "### D1. A label   severity: minor\n" > .idleflow/runs/active/review/merged-design.md && [ "$(bash "$RUN" findings merged)" = "merged: D1. A label   severity: minor (review/merged-design.md)" ]'
+bash "$RUN" finish "done" >/dev/null
 cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"; git add .idleflow/conventions.md && commit -q -m "restore conventions"
 
 echo "--- plan extract"

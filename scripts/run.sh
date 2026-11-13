@@ -49,7 +49,8 @@
 #   run.sh docs [--check]                 -> regenerates the generated blocks in the repo's Markdown (--check: exit 1 if stale)
 #   run.sh detect                         -> suggests Repo fit and Records settings from evidence in the repo (read-only)
 #   run.sh repo-gate <base|main|task> [--quick] -> runs the approved gate (or gate_quick) there, times it; 1 failed, 7 unapproved
-#   run.sh preview <task-id> start|stop   -> serves the app from that worktree for screenshots (approved command, localhost only)
+#   run.sh preview <task-id|main> start|stop -> serves the app from that worktree, or with preview_in: main from the main
+#                                            checkout after the merge, for screenshots (approved command, localhost only)
 #   run.sh commands                       -> the repo's commands (worktree_setup, gate) as committed, approved or unapproved here
 #   run.sh approve <key>                  -> records this person's approval of that exact committed command (local git config)
 #   run.sh agent <name>                   -> how to spawn that agent here: agent, model, extra instructions, contract
@@ -349,7 +350,7 @@ gen_runs() { # the last ten idleflow runs merged here, newest first: merge commi
 gen_settings() {
   local k v
   for k in mode docs lessons_in progress_file index_file index_rewrite sessions_dir session_names time_log shared_files generated_docs \
-           worktrees_in worktree_setup commit_format gate gate_quick gate_runs preview preview_url language tone; do
+           worktrees_in worktree_setup commit_format gate gate_quick gate_runs preview preview_url preview_in language tone; do
     v="$(conventions_value "$k")"; [ -n "$v" ] && echo "- \`$k\`: $(md_code "$v")"
   done
   [ -f "$PROJECT_CONF" ] && bash "$0" custom list 2>/dev/null | grep -v '^instructions:\|^replaced:' | sed 's/^/- `/; s/=/`: /'
@@ -368,6 +369,8 @@ check_task_id() { # check_task_id <id>
     echo "not a task id: '$t' (one name such as T1, with no path or git ref characters)" >&2
     exit 1
   fi
+  # `main` (run.sh preview main) and `merged` (the browser check after merge) name run-wide records
+  case "$t" in main|merged) echo "not a task id: '$t' is reserved" >&2; exit 1;; esac
 }
 
 # Sibling by default (<repo>__wt/<task>); `worktrees_in: inside` keeps them in an ignored folder
@@ -939,7 +942,7 @@ JSON
     [ "$#" -gt 0 ] || { echo "usage: run.sh findings <task-id>..." >&2; exit 1; }
     active_id >/dev/null
     for tid in "$@"; do
-      check_task_id "$tid"
+      [ "$tid" = merged ] || check_task_id "$tid"
       for kind in correct conform design; do
         name="$tid-$kind.md"; f="$ACTIVE/review/$name"
         [ -f "$f" ] || continue
@@ -1332,7 +1335,16 @@ Task: $tid")
   preview)
     # Serves the app from a task worktree for the design reviewer's screenshots, under the same
     # approval rule as the gate; the address must be on this machine.
-    tid="${1:?task-id}"; check_task_id "$tid"; act="${2:?start|stop}"; active_id >/dev/null
+    # `preview_in: main` is for a repo whose app runs only from the main checkout (a dev stack whose
+    # containers mount it): a task cannot be previewed before its merge, so `main` is served instead,
+    # after the merge, and a task preview is refused rather than showing the main checkout as the task.
+    tid="${1:?task-id or main}"; act="${2:?start|stop}"; active_id >/dev/null
+    [ "$tid" = main ] || check_task_id "$tid"
+    where="$(conventions_value preview_in)"; case "$where" in ""|unset) where=worktree;; esac
+    if [ "$act" = start ]; then
+      if [ "$where" = main ] && [ "$tid" != main ]; then echo "preview: this repo serves its app only from the main checkout (preview_in: main); preview main after the merge" >&2; exit 1; fi
+      if [ "$where" != main ] && [ "$tid" = main ]; then echo "preview main: this repo previews each task's worktree (preview_in: $where)" >&2; exit 1; fi
+    fi
     pidf="$ACTIVE/tasks/$tid/preview.pid"
     if [ "$act" = stop ]; then
       # the server runs in its own session, so its whole process group goes (dev servers start children)
@@ -1342,11 +1354,12 @@ Task: $tid")
     cmd="$(idleflow_rt get "$ACTIVE/run.json" preview 2>/dev/null || true)"
     case "$cmd" in ""|null) echo "preview: none"; exit 0;; esac
     command_approved preview "$cmd" || { echo "preview is not approved on this clone; nothing ran. The command is: $cmd" >&2; exit 7; }
-    url="$(conventions_value preview_url)"; port="$(task_port "$tid")"
+    url="$(conventions_value preview_url)"
+    if [ "$tid" = main ]; then port="${PORT_BASE:-4400}"; else port="$(task_port "$tid")"; fi
     url="${url//\$\{IDLEFLOW_PORT\}/$port}"
     [[ "$url" =~ ^https?://(localhost|127\.0\.0\.1|\[::1\])(:[0-9]+)?(/[^[:space:]]*)?$ ]] \
       || { echo "preview_url must be a localhost address (got '$url')" >&2; exit 1; }
-    dir="$(wt_path "$tid")"; [ -d "$dir" ] || { echo "preview: no worktree for $tid" >&2; exit 1; }
+    if [ "$tid" = main ]; then dir="$REPO"; else dir="$(wt_path "$tid")"; [ -d "$dir" ] || { echo "preview: no worktree for $tid" >&2; exit 1; }; fi
     mkdir -p "$ACTIVE/tasks/$tid"
     echo "preview ($tid): $cmd" >&2
     mkdir -p "$(task_tmp "$tid")"
