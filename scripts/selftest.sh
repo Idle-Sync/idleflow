@@ -230,6 +230,7 @@ check "the kill guard gives up on a run of 99999 '(' within its time" "[ $kg_rc 
 check "the kill guard is a Bash hook" 'grep -q "kill-guard.sh" "$HERE/../hooks/hooks.json" && idleflow_rt get "$HERE/../hooks/hooks.json" hooks.PreToolUse | grep -q "\"matcher\":\"Bash\""'
 check "every agent that runs commands has the process rule" '( for a in "$HERE"/../agents/*.md; do case "$a" in */classifier.md) continue;; esac; grep -q "Never end processes by name or pattern" "$a" || exit 1; done )'
 check "the agents that judge the plan get the issue" '( for a in planner red-team cost-critic; do grep -q "issue.md" "$HERE/../agents/$a.md" || exit 1; done ) && grep -q "Spawn \`idleflow:planner\` with: the issue path" "$HERE/../commands/feature.md" && grep -q "each with the issue, plan.md and context.md paths" "$HERE/../commands/feature.md"'
+check "agents that run suites wait on long checks as jobs" '( for a in implementer implementer-hard review-correct; do grep -q "run.sh>\" wait <task-id> <n>" "$HERE/../agents/$a.md" && grep -q "Never start it again while it runs" "$HERE/../agents/$a.md" || exit 1; done )'
 
 echo "--- report / gate"
 check "report fails when none written"  '! bash "$RUN" report T1 2>/dev/null'
@@ -478,6 +479,33 @@ check "exec runs the command without the agent's markers" '[ "$(CLAUDECODE=1 CLA
 check "exec passes the command's exit code"    'bash "$RUN" exec TA -- sh -c "exit 3"; [ $? = 3 ]'
 inside="$(cd "$wa" && bash "$RUN" exec TA -- sh -c 'echo "$IDLEFLOW_PORT"')"
 check "exec works from inside the task worktree" "[ '$inside' = 4400 ]"
+[ ! -f .idleflow/idleflow.conf ] || cp .idleflow/idleflow.conf "$scratch/conf.bak"
+printf 'EXEC_WAIT_SECONDS=1\n' >> .idleflow/idleflow.conf
+bash "$RUN" exec TA -- sh -c 'sleep 3; echo slow-done; exit 4' > "$scratch/job.out" 2> "$scratch/job.err"; rc=$?
+check "exec returns 75 and names the job while a command runs on" '[ "$rc" = 75 ] && n="$(sed -n "1s/^\[idleflow\] job \([0-9]*\) of TA started$/\1/p" "$scratch/job.err")" && [ -n "$n" ] && grep -q "job $n of TA is still running" "$scratch/job.err"'
+job="$(sed -n 's/.*job \([0-9]*\) of TA is still running.*/\1/p' "$scratch/job.err")"
+for _ in 1 2 3 4 5; do bash "$RUN" wait TA "$job" > "$scratch/job.out" 2>/dev/null; rc=$?; [ "$rc" = 75 ] || break; done
+check "wait gives the same job's output and exit code when it ends" '[ "$rc" = 4 ] && grep -qx slow-done "$scratch/job.out"'
+bash "$RUN" exec TA -- sh -c 'sleep 60 & echo "$!" > child.pid; wait' >/dev/null 2> "$scratch/job.err"
+job="$(sed -n 's/.*job \([0-9]*\) of TA is still running.*/\1/p' "$scratch/job.err")"
+bash "$RUN" stop TA "$job" >/dev/null
+check "stop ends the job and the processes it started" '! kill -0 "$(cat "$wa/child.pid")" 2>/dev/null && ! bash "$RUN" wait TA "$job" >/dev/null 2>&1'
+bash "$RUN" exec TA -- sh -c 'sleep 30 >/dev/null 2>&1 &' >/dev/null 2> "$scratch/job.err"; rc=$?
+job="$(sed -n 's/.*job \([0-9]*\) of TA started.*/\1/p' "$scratch/job.err")"
+check "a job that leaves a process behind ends with its code and says so" '[ "$rc" = 0 ] && grep -q "job $job of TA ended, but processes it started still run" "$scratch/job.err" && bash "$RUN" stop TA "$job" >/dev/null && [ -f .idleflow/runs/active/tasks/TA/jobs/$job/ended ]'
+sleep 300 >/dev/null 2>&1 & other=$!
+echo "$other" > ".idleflow/runs/active/tasks/TA/jobs/$job/pid"
+check "an ended job is never signalled again" 'bash "$RUN" stop TA "$job" >/dev/null && kill -0 "$other" 2>/dev/null'
+bash "$RUN" exec TA -- true >/dev/null 2> "$scratch/job.err"
+job="$(sed -n 's/.*job \([0-9]*\) of TA started.*/\1/p' "$scratch/job.err")"; rm -f ".idleflow/runs/active/tasks/TA/jobs/$job/ended"
+echo "$other" > ".idleflow/runs/active/tasks/TA/jobs/$job/pid"
+check "a finished job whose pid was reused is never signalled" 'bash "$RUN" stop TA "$job" >/dev/null && kill -0 "$other" 2>/dev/null'
+kill "$other" 2>/dev/null
+bash "$RUN" exec TB -- sleep 60 >/dev/null 2> "$scratch/job.err"
+job="$(sed -n 's/.*job \([0-9]*\) of TB is still running.*/\1/p' "$scratch/job.err")"
+bash "$RUN" wt rm TB
+check "wt rm stops the task's jobs" '[ "$(cat .idleflow/runs/active/tasks/TB/jobs/$job/status)" = 143 ] && ! kill -0 "$(cat .idleflow/runs/active/tasks/TB/jobs/$job/pid)" 2>/dev/null'
+rm -f .idleflow/idleflow.conf "$wa/child.pid"; [ ! -f "$scratch/conf.bak" ] || mv "$scratch/conf.bak" .idleflow/idleflow.conf
 bash "$RUN" wt rm TA; bash "$RUN" wt rm TB; bash "$RUN" finish done >/dev/null
 
 echo "--- the repo's gate"
