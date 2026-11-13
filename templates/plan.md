@@ -47,7 +47,8 @@ notes: <anything the implementer must know that context.md doesn't say; max 5 li
 <The one command that runs the suite / smoke test. Required.>
 
 ## Open questions for the human
-<Only things the plan cannot resolve. Empty is fine.>
+<Only things the plan cannot resolve. Empty is fine. One line each, numbered, with what the plan assumes until answered:>
+- Q1: <question> (default: <the answer the plan is written for>)
 
 ## Debate resolution (filled in on revision)
 - R1: accepted — <what changed> | rejected — <why> | deferred to human — <question>; a point the human decided ends with "(human decision)"

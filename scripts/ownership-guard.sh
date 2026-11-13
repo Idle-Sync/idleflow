@@ -18,7 +18,7 @@
 #
 # Files outside any listed worktree are allowed (the orchestrator edits plan.md etc.
 # in the main checkout). Files inside a worktree must match one of that task's globs
-# (fnmatch style: `*` also crosses `/`). A missing or unparsable map allows
+# (`*` and `?` are the only wildcards and also cross `/`; brackets are literal). A missing or unparsable map allows
 # everything, and so does a missing runtime — the guard must never brick a session.
 #
 # The check itself lives in idleflow.py / idleflow.js (`guard` subcommand); rt.sh picks

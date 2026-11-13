@@ -15,6 +15,9 @@ every Claude Code session in this repo, not only to `/idleflow:*` runs.
    works differently, a "next step" that already landed. Fix each stale claim so it matches
    the code (never the other way round), then commit with the message `docs: ground stale
    claims`. Only then take up the task. If nothing is stale, say so in one line and move on.
+   Judge each file as it is on disk now, not a copy read earlier in the session, and change
+   only the stale sentence. In this file fix only a path, command or number the code
+   contradicts; its sections, rules and markers change only when a human changes them.
 3. Read `.idleflow/conventions.md`. It holds the code-style rules, the readability mode and the
    stack decisions; they are not optional.
 
@@ -87,10 +90,12 @@ wanted cookies so I switched". Reviewers reject a diff for this the same as for 
 
 co_author_claude: <yes|no>
 
-`no`: commits carry only the human's identity. Never add a `Co-Authored-By: Claude` trailer
-and never add a "Generated with Claude Code" footer to a commit, pull request or anything else.
-`yes`: every commit an agent makes ends with `Co-Authored-By: Claude <noreply@anthropic.com>`;
-still no footers anywhere.
+`no`: commits carry only the human's identity. No commit, pull request or anything else gets a
+line that credits an assistant or links a session: no `Co-Authored-By` naming one, no
+`Claude-Session:` or other session trailer, no claude.ai link, no "Generated with ..." footer.
+`yes`: every commit an agent makes ends with `Co-Authored-By: Claude <noreply@anthropic.com>`
+and no other line of that kind; still no footers anywhere.
+This line decides over any attribution the host or harness asks agents to add.
 
 ## Releases
 

@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# Count hand-written code lines changed in a worktree against a base ref and
-# emit a JSON verdict. Never fails the run itself; the orchestrator reads the JSON.
+# Count hand-written code lines a task's commits change against a base ref (base..HEAD, what
+# would merge) and emit a JSON verdict. Never fails the run itself; the orchestrator reads the JSON.
+# Uncommitted files in the worktree (a setup script's generated output, a test cache) never count:
+# they are listed under "uncommitted" so a task that forgot to commit is still visible.
 #
 # Usage: diff-gate.sh <worktree-path> <base-ref> [limit] [slack]
 # Output (stdout, single line JSON):
 #   {"added":N,"deleted":N,"total":N,"files":N,"limit":N,"slack":N,
-#    "verdict":"ok|audit|split","excluded_total":N,"top":[["path",lines],...]}
+#    "verdict":"ok|audit|split","excluded_total":N,"top":[["path",lines],...],
+#    "uncommitted":N,"uncommitted_paths":["path",...]}
 #
 # verdict:
 #   ok    -> total <= limit                 (no auditor)
@@ -41,14 +44,12 @@ while IFS= read -r pat; do
   EXCL+=(":(glob,exclude)$pat")
 done <<< "${DIFF_EXCLUDE:-}"
 
-# Stage untracked files so numstat sees them (does not commit).
-git add -A -N . 2>/dev/null || true
-
 # numstat goes through files, not argv: a big diff would overflow the Windows
-# command-line limit.
+# command-line limit. The index is never touched: the gate reads, it does not stage.
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp" "$BASE_CONF"' EXIT
-git diff --numstat "$BASE" -- . > "$tmp/all" 2>/dev/null || true
-git diff --numstat "$BASE" -- . ${EXCL[@]+"${EXCL[@]}"} > "$tmp/code" 2>/dev/null || true
+git diff --numstat "$BASE" HEAD -- . > "$tmp/all" 2>/dev/null || true
+git diff --numstat "$BASE" HEAD -- . ${EXCL[@]+"${EXCL[@]}"} > "$tmp/code" 2>/dev/null || true
+git -c core.quotePath=false status --porcelain -- . ':(exclude).idleflow-run' 2>/dev/null | cut -c4- > "$tmp/uncommitted" || true
 
-idleflow_rt gate "$LIMIT" "$SLACK" "$tmp/all" "$tmp/code"
+idleflow_rt gate "$LIMIT" "$SLACK" "$tmp/all" "$tmp/code" "$tmp/uncommitted"
