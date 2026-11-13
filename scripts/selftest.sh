@@ -45,7 +45,7 @@ commit() { git -c user.name=t -c user.email=t@t commit -q "$@"; }
 
 echo "runtime: $(idleflow_rt_name)"
 d="$(mktemp -d)"; d="$(cd "$d" && pwd)"
-cleanup() { cd / ; rm -rf "$d" "${d}__wt" "$d.link" "${d}__wt.link" "$d-mig" "$d-human" "${d}-human__wt" "$d-stray" 2>/dev/null || true; }
+cleanup() { cd / ; rm -rf "$d" "${d}__wt" "$d.link" "${d}__wt.link" "$d-mig" "$d-human" "${d}-human__wt" "$d-stray" "$d-pin" 2>/dev/null || true; }
 trap cleanup EXIT
 
 echo "--- new on a repo with no commits (what /idleflow:init does)"
@@ -235,7 +235,21 @@ check "tests that use changed code reach the plan's ownership" 'grep -q "grep th
 check "the session template and CLAUDE.md block follow a relocated sessions folder" 'grep -q "path progress|index|sessions\`)" "$HERE/../commands/feature.md" && grep -q "the sessions folder," "$HERE/../agents/retro.md" && grep -q "\`TEMPLATE.md\` in the sessions folder your prompt names" "$HERE/../agents/retro.md" && ! grep -q "fill \`docs/sessions/TEMPLATE.md\`" "$HERE/../agents/retro.md" && grep -q "repo-relative paths \`bash \"\$RUN\" path --relative progress|index|sessions\`" "$HERE/../procedures/repo-setup.md" && grep -q "the sessions folder (\`bash \"\$RUN\" path sessions\`), \`.idleflow/conventions.md\`" "$HERE/../commands/feature.md"'
 check "only Claude Code configuration under .claude/ is protected, and the planner knows the list" 'for f in agents/planner.md commands/feature.md; do grep -q "\`.claude/settings.json\`, \`.claude/settings.local.json\`, \`.claude/agents/\`" "$HERE/../$f" || exit 1; done && ! grep -q "under \`.idleflow/\` or \`.claude/\`" "$HERE/../commands/feature.md" && grep -q "tracked skills and commands" "$HERE/../agents/planner.md"'
 check "doc-keeper's Bash write ban leaves its gaps.md append allowed" 'grep -q "never change a doc or any other tracked file through Bash" "$HERE/../agents/doc-keeper.md" && grep -q "The one write Bash may make is the single-line append to the run.s \`gaps.md\`" "$HERE/../agents/doc-keeper.md" && ! grep -q "never write a file through Bash" "$HERE/../agents/doc-keeper.md"'
-check "every CI action is pinned to a commit" '! grep -hE "^[[:space:]]*-?[[:space:]]*uses:" "$HERE"/../.github/workflows/*.yml | grep -vE "uses: [^@[:space:]]+@[0-9a-f]{40}( |$)" | grep -q . && [ -f "$HERE/../.github/dependabot.yml" ]'
+# unpinned_actions <workflows dir>: prints each uses: line that is not pinned; exit 2 when there is no workflow.
+# Pinned: a 40-hex commit, a docker image by sha256 digest, or a local ./ action (fixed by the checkout).
+unpinned_actions() {
+  local f files=()
+  for f in "$1"/*.yml "$1"/*.yaml; do [ -f "$f" ] && files+=("$f"); done
+  [ "${#files[@]}" -gt 0 ] || return 2
+  grep -hE '(^|[{,])[[:space:]]*-?[[:space:]]*uses:' "${files[@]}" \
+    | grep -vE '^[[:space:]]*-?[[:space:]]*uses:[[:space:]]*["'\'']?([^@[:space:]"'\'']+@[0-9a-f]{40}|docker://[^@[:space:]"'\'']+@sha256:[0-9a-f]{64}|\./[^[:space:]"'\'']*)["'\'']?[[:space:]]*(#.*)?$' || true
+}
+pin="$d-pin"; mkdir -p "$pin/a" "$pin/b" "$pin/c" "$pin/none"
+printf '    steps:\n      - uses: a/b@%s # v1\n      - uses: ./.github/actions/x\n      - uses: docker://alpine@sha256:%s\n' "$(printf '%040d' 0 | tr 0 a)" "$(printf '%064d' 0 | tr 0 b)" > "$pin/a/ok.yml"
+printf '      - uses: a/b@v4\n' > "$pin/b/late.yaml"
+printf '      - {uses: a/b@v4}\n      - uses: a/b@v4 # uses: a/b@%s\n' "$(printf '%040d' 0 | tr 0 a)" > "$pin/c/sly.yml"
+check "every CI action is pinned to a commit, and Dependabot bumps them" '[ -z "$(unpinned_actions "$HERE/../.github/workflows")" ] && grep -q "package-ecosystem: github-actions" "$HERE/../.github/dependabot.yml"'
+check "the pin check reads .yaml, flow and commented forms, and needs a workflow" '[ -z "$(unpinned_actions "$pin/a")" ] && [ -n "$(unpinned_actions "$pin/b")" ] && [ "$(unpinned_actions "$pin/c" | grep -c .)" = 2 ] && { unpinned_actions "$pin/none"; [ $? = 2 ]; }'
 check "the agents that judge the plan get the issue" '( for a in planner red-team cost-critic; do grep -q "issue.md" "$HERE/../agents/$a.md" || exit 1; done ) && grep -q "Spawn \`idleflow:planner\` with: the issue path" "$HERE/../commands/feature.md" && grep -q "each with the issue, plan.md and context.md paths" "$HERE/../commands/feature.md"'
 check "agents that run suites wait on long checks as jobs" '( for a in implementer implementer-hard review-correct; do grep -q "run.sh>\" wait <task-id> <n>" "$HERE/../agents/$a.md" && grep -q "Never start it again while it runs" "$HERE/../agents/$a.md" || exit 1; done )'
 
