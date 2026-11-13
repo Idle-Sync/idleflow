@@ -21,6 +21,7 @@
 - Config: lives in <where> (see `path`)
 - Migrations: <how> (see `path`)
 - Tests: runner `<cmd>`; single test: `<cmd>`
+- Test shared state: <what the suite shares beyond one process (a database, a lock file, a fixed port)>, reset with `<cmd>` (see `path`) | none
 - Install: `<frozen-lockfile command, through corepack when the package manager is pinned>` (see `path`) | none
 
 ## 6. Prior art

@@ -517,6 +517,12 @@ bash "$RUN" exec TA -- sh -c 'sleep 60 & echo "$!" > child.pid; wait' >/dev/null
 job="$(sed -n 's/.*job \([0-9]*\) of TA is still running.*/\1/p' "$scratch/job.err")"
 bash "$RUN" stop TA "$job" >/dev/null
 check "stop ends the job and the processes it started" '! kill -0 "$(cat "$wa/child.pid")" 2>/dev/null && ! bash "$RUN" wait TA "$job" >/dev/null 2>&1'
+bash "$RUN" exec TA --limit 2 -- sh -c 'sleep 60 & echo "$!" > child.pid; wait' >/dev/null 2> "$scratch/job.err"
+job="$(sed -n 's/.*job \([0-9]*\) of TA is still running.*/\1/p' "$scratch/job.err")"
+for _ in 1 2 3 4 5; do bash "$RUN" wait TA "$job" >/dev/null 2> "$scratch/job.err"; rc=$?; [ "$rc" = 75 ] || break; done
+check "a job past its --limit is stopped with what it started and exits 124" '[ "$rc" = 124 ] && grep -q "passed its limit of 2 s" "$scratch/job.err" && ! kill -0 "$(cat "$wa/child.pid")" 2>/dev/null && [ "$(cat .idleflow/runs/active/tasks/TA/jobs/$job/status)" = 124 ]'
+check "a job within its --limit passes its exit code" 'bash "$RUN" exec TA --limit 30 -- sh -c "exit 3" 2>/dev/null; [ $? = 3 ]'
+check "exec refuses a --limit that is not whole seconds" '! bash "$RUN" exec TA --limit 0 -- true 2>/dev/null && ! bash "$RUN" exec TA --limit 1.5 -- true 2>/dev/null && ! bash "$RUN" exec TA --limit -- true 2>/dev/null'
 bash "$RUN" exec TA -- sh -c 'sleep 30 >/dev/null 2>&1 &' >/dev/null 2> "$scratch/job.err"; rc=$?
 job="$(sed -n 's/.*job \([0-9]*\) of TA started.*/\1/p' "$scratch/job.err")"
 check "a job that leaves a process behind ends with its code and says so" '[ "$rc" = 0 ] && grep -q "job $job of TA ended, but processes it started still run" "$scratch/job.err" && bash "$RUN" stop TA "$job" >/dev/null && [ -f .idleflow/runs/active/tasks/TA/jobs/$job/ended ]'
