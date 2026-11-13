@@ -192,6 +192,8 @@ scripts/conf.sh                 loads config/idleflow.conf, then a project's .id
 scripts/idleflow.py             the JSON / gate / guard logic (Python)
 scripts/idleflow.js             the same program in Node; keep the two in sync
 scripts/selftest.sh             end-to-end check of the scripts in a throwaway repo
+scripts/shellcheck-new.sh       fails only on shellcheck findings a change adds over a base commit
+.github/workflows/checks.yml    CI: selftest on both runtimes, plugin validate, new shellcheck findings
 config/idleflow.conf            every number the workflow uses
 templates/                      plan.md, context.md, lessons.md, conventions.md, prd.md, progress.md, install-note.md,
                                 index.md, session.md, time-log.md, CLAUDE.md
@@ -212,7 +214,12 @@ Windows; paths in every form (`D:\x`, `D:/x`, `/d/x`) are normalised before comp
 bash scripts/selftest.sh                      # exercises every script against a scratch repo
 IDLEFLOW_RUNTIME=node   bash scripts/selftest.sh
 IDLEFLOW_RUNTIME=python bash scripts/selftest.sh
+bash scripts/shellcheck-new.sh origin/main    # shellcheck findings this branch adds
 ```
+
+`.github/workflows/checks.yml` runs the selftest on each runtime, `claude plugin validate --strict`
+on `.`, `agents` and `commands`, and `shellcheck-new.sh` against the base on every pull request to
+`main` and every push to it, and the first two nightly on `main`.
 
 ## Per-repo state
 
