@@ -801,6 +801,11 @@ f="$(mktemp -d)"; ( cd "$f" && git init -q && mkdir -p .idleflow node_modules &&
 check "detect suggests the lockfile's install when main has node_modules" '(cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup: npm ci — the main checkout has node_modules/"'
 rm -f "$f/package-lock.json"; touch "$f/pnpm-lock.yaml"
 check "the install follows the package manager" '(cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup: pnpm install --frozen-lockfile —"'
+rm -f "$f/pnpm-lock.yaml"; touch "$f/yarn.lock" "$f/.yarnrc.yml"
+check "Yarn 2 and later install with --immutable" '(cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup: yarn install --immutable —"'
+rm -f "$f/yarn.lock" "$f/.yarnrc.yml"
+check "node_modules without a lockfile gets no proposal" '! (cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup"'
+touch "$f/pnpm-lock.yaml"
 mkdir -p "$f/.venv"; touch "$f/uv.lock"
 check "a repo with both gets both installs" '(cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup: uv sync --frozen && pnpm install --frozen-lockfile — the main checkout has .venv/.*; the main checkout has node_modules/"'
 rm -rf "$f/node_modules" "$f/.venv"

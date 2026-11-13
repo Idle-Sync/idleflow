@@ -280,6 +280,7 @@ gen_files() { # $1: the block's current text; descriptions written there are kep
 # The index's command list and detect's worktree_setup proposal both take it from here.
 node_install() { # node_install <folder>
   if [ -f "$1/pnpm-lock.yaml" ]; then printf 'pnpm install --frozen-lockfile\tpnpm-lock.yaml\n'
+  elif [ -f "$1/yarn.lock" ] && [ -f "$1/.yarnrc.yml" ]; then printf 'yarn install --immutable\tyarn.lock\n'  # Yarn 2+
   elif [ -f "$1/yarn.lock" ]; then printf 'yarn install --frozen-lockfile\tyarn.lock\n'
   elif [ -f "$1/bun.lock" ] || [ -f "$1/bun.lockb" ]; then printf 'bun install --frozen-lockfile\tbun lockfile\n'
   elif [ -f "$1/package-lock.json" ]; then printf 'npm ci\tpackage-lock.json\n'; fi
