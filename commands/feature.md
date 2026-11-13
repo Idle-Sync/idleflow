@@ -115,7 +115,7 @@ For each group in order; within a group, all tasks in parallel, at most the impl
 
 ## 6. Gate each task
 
-For each done task: `bash "$RUN" gate <task-id> [limit]` → JSON (pass the greenfield limit when it applies).
+For each done task: `bash "$RUN" gate <task-id> [limit]` → JSON (pass the greenfield limit when it applies). It counts the task's commits only (`<base>..HEAD`, what would merge); `uncommitted` and `uncommitted_paths` name what the worktree holds outside them, which never merges.
 
 - `ok` → review.
 - `audit` or `split` → `bash "$RUN" inc gate_trips`; spawn `idleflow:diff-auditor` with the task's plan section, the gate JSON, the worktree path and the task's base sha. Then:
@@ -137,7 +137,7 @@ For each task:
 
 ## 8. Merge and verify
 
-In plan merge order: `bash "$RUN" merge <task-id>`. Exit 3 (`CONFLICT`) means the ownership map was wrong; do not resolve by hand. Re-run the later task against the new base (`wt rm`, `wt add <id> HEAD`, `set tasks.<id>.status '"building"'`, re-spawn with the same prompt), re-gate, re-review, merge. One attempt; then stop and ask the human as in step 7. Exit 4 is a different failure (unapproved task, unknown branch, dirty checkout): show the message, remove the worktrees, run the **Plugin gaps** question from step 9, and `bash "$RUN" finish needs-human`.
+In plan merge order: `bash "$RUN" merge <task-id>`. It merges the task's branch as committed and approved; a `merge <id>: uncommitted in the worktree, not merged` line names what it left behind; repeat it to the human. Exit 3 (`CONFLICT`) means the ownership map was wrong; do not resolve by hand. Re-run the later task against the new base (`wt rm`, `wt add <id> HEAD`, `set tasks.<id>.status '"building"'`, re-spawn with the same prompt), re-gate, re-review, merge. One attempt; then stop and ask the human as in step 7. Exit 4 is a different failure (unapproved task, unknown branch, dirty checkout): show the message, remove the worktrees, run the **Plugin gaps** question from step 9, and `bash "$RUN" finish needs-human`.
 
 After the last merge, run `bash "$RUN" repo-gate main` when the run has a gate, then the plan's "Verification after merge" command; a gate failure the base did not have counts as a failed verification. When it passes, `bash "$RUN" docs` regenerates the generated blocks in the repo's Markdown from the merged code; when it prints `regenerated <files>`, commit exactly those files: `docs: regenerate generated sections`. If it fails, show the human the head of the failing output, remove the worktrees, run the **Plugin gaps** question from step 9, and finish with `needs-human`. Never spawn agents to fix a red suite; that is a new run.
 

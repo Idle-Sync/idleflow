@@ -467,17 +467,15 @@ JSON
     # `commit_format: conventional` repos often check every subject in CI (type(scope): ..., at most
     # 72 characters), so the run id moves to the body there.
     if [ "$(conventions_value commit_format)" = conventional ]; then
-      finish_msg=(-m "chore(idleflow): finish task $tid" -m "Run: $id")
       merge_msg=(-m "chore(idleflow): merge task $tid" -m "Run: $id")
     else
-      finish_msg=(-m "$tid: finish task")
       merge_msg=(-m "idleflow: merge $tid ($id)")
     fi
-    # commit tracked changes the implementer left uncommitted; untracked files (test caches,
-    # scratch) stay out, since the reviewers already rejected anything that should have been added
+    # What merges is the task's commits, the ones the gate measured and the reviewers approved.
+    # Anything uncommitted in the worktree (a setup script's output, a cache) stays there.
     if [ -d "$p" ]; then
-      git -C "$p" add -u
-      git -C "$p" diff --cached --quiet || git -C "$p" ${IDENTITY[@]+"${IDENTITY[@]}"} commit -q ${finish_msg[@]+"${finish_msg[@]}"}
+      left="$(git -C "$p" -c core.quotePath=false status --porcelain -- . ':(exclude).idleflow-run' | cut -c4- | head -8 | paste -sd ' ' -)"
+      [ -z "$left" ] || echo "merge $tid: uncommitted in the worktree, not merged: $left" >&2
     fi
     if "${G[@]}" ${IDENTITY[@]+"${IDENTITY[@]}"} merge --no-ff -q "${merge_msg[@]}" "$br"; then
       idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.t_merge" "$(date +%s)"

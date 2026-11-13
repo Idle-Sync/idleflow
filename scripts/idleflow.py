@@ -11,7 +11,7 @@ Subcommands:
   inc    <file> <dotted.key> [n]          add n (default 1) to a number
   finish <file> <status> <log.jsonl>      stamp status+finished, append to log
   own    <file> <task-id> <worktree> <globs-json>
-  gate   <limit> <slack> <numstat-all-file> <numstat-code-file>
+  gate   <limit> <slack> <numstat-all-file> <numstat-code-file> [uncommitted-paths-file]
   guard                                   hook: payload on stdin; exit 2 blocks
   detach <cwd> <log> <pidfile> <command>  runs the command in its own session, output to log; writes its pid
   entries <file> <key>                    one "name<TAB>value" line per entry of the object at that top-level key
@@ -129,7 +129,7 @@ def parse_numstat(text):
     return rows
 
 
-def cmd_gate(limit, slack, all_file, code_file):
+def cmd_gate(limit, slack, all_file, code_file, uncommitted_file=None):
     limit, slack = int(limit), int(slack)
     with open(all_file, "r", encoding="utf-8", errors="replace") as f:
         all_rows = parse_numstat(f.read())
@@ -146,12 +146,17 @@ def cmd_gate(limit, slack, all_file, code_file):
     else:
         verdict = "split"
     top = sorted(((p, a + d) for p, a, d in code_rows), key=lambda x: -x[1])[:8]
+    uncommitted = []
+    if uncommitted_file:
+        with open(uncommitted_file, "r", encoding="utf-8", errors="replace") as f:
+            uncommitted = [line.strip() for line in f if line.strip()]
     # compact separators so the output is byte-identical to idleflow.js
     print(json.dumps({
         "added": added, "deleted": deleted, "total": total, "files": len(code_rows),
         "limit": limit, "slack": slack, "verdict": verdict,
         "excluded_total": excluded_total, "top": top,
-    }, separators=(",", ":")))
+        "uncommitted": len(uncommitted), "uncommitted_paths": uncommitted[:8],
+    }, separators=(",", ":"), ensure_ascii=False))
 
 
 # --- guard ------------------------------------------------------------------
