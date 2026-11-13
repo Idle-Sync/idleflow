@@ -148,8 +148,10 @@ bash "$RUN" own T1 '["src/**","tests/**","pages/[slug].astro"]'
 check "allows a bracketed route file it owns"   '[ "$(guard_rc "$wtn/pages/[slug].astro" "$wtn")" = "0" ]'
 check "brackets are not a character class"      '[ "$(guard_rc "$wtn/pages/s.astro" "$wtn")" = "2" ]'
 mkdir -p "$wt/pages" && touch "$wt/pages/[slug].astro" "$wt/pages/s.astro" "$wt/other.txt"
+git -C "$wt" add pages other.txt && git -C "$wt" -c user.name=t -c user.email=t@t commit -qm "T1: pages"
+touch "$wt/setup-output.txt"
 check "unowned lists only what the task may not change" '[ "$(bash "$RUN" unowned T1 | paste -sd, -)" = "other.txt,pages/s.astro" ]'
-rm -rf "$wt/pages" "$wt/other.txt"
+git -C "$wt" reset -q --hard HEAD~1 && rm -f "$wt/setup-output.txt"
 check "unowned fails on an unknown task"        '! bash "$RUN" unowned T9 >/dev/null 2>&1'
 bash "$RUN" own T1 '["src/**","tests/**"]'
 check "allows outside any repo"           '[ "$(guard_rc "/nowhere/x.txt" "/nowhere")" = "0" ]'

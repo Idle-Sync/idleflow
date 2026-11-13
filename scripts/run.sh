@@ -9,7 +9,7 @@
 #   run.sh wt list                        -> lists idleflow worktrees
 #   run.sh own <task-id> '<globs json>'   -> registers file ownership for the guard hook
 #   run.sh skip <key>                     -> this run goes without a repo command (gate, gate_quick, worktree_setup, preview)
-#   run.sh unowned <task-id>              -> paths the task changed (committed, uncommitted, untracked) that its globs,
+#   run.sh unowned <task-id>              -> paths the task's commits change (base..HEAD, what merges) that its globs,
 #                                            .idleflow-run/** and shared_files do not cover; matched as the guard matches
 #   run.sh get <key>                      -> prints a value from run.json (dotted keys ok)
 #   run.sh set <key> <json>               -> sets a value in run.json (dotted keys ok)
@@ -481,9 +481,9 @@ JSON
     tid="${1:?task-id}"; active_id >/dev/null
     p="$(wt_path "$tid")"; base="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$tid.base_sha")"
     if [ ! -d "$p" ] || [ -z "$base" ] || [ "$base" = null ]; then echo "task $tid has no worktree or base sha (run.sh wt add $tid first)" >&2; exit 1; fi
-    # --no-renames: a rename changes the old path too, and the task must own both
-    { git -C "$p" diff --no-renames --name-only "$base"; git -C "$p" ls-files --others --exclude-standard; } \
-      | sort -u | idleflow_rt unowned "$ACTIVE/ownership.json" "$tid"
+    # only the task's commits merge, so only they are checked; --no-renames: a rename changes the
+    # old path too, and the task must own both
+    git -C "$p" diff --no-renames --name-only "$base" HEAD | sort -u | idleflow_rt unowned "$ACTIVE/ownership.json" "$tid"
     ;;
   get)
     key="${1:?key}"; active_id >/dev/null
