@@ -8,6 +8,9 @@
 #   run.sh wt rm <task-id>                -> removes the worktree (keeps the branch); works with or without an active run
 #   run.sh wt list                        -> lists idleflow worktrees
 #   run.sh own <task-id> '<globs json>'   -> registers file ownership for the guard hook
+#   run.sh skip <key>                     -> this run goes without a repo command (gate, gate_quick, worktree_setup, preview)
+#   run.sh unowned <task-id>              -> paths the task changed (committed, uncommitted, untracked) that its globs,
+#                                            .idleflow-run/** and shared_files do not cover; matched as the guard matches
 #   run.sh get <key>                      -> prints a value from run.json (dotted keys ok)
 #   run.sh set <key> <json>               -> sets a value in run.json (dotted keys ok)
 #   run.sh inc <key> [n]                  -> adds n (default 1) to a counter in run.json
@@ -89,12 +92,30 @@ active_id() {
   echo "$id"
 }
 
+# A path from the conventions that stays inside the repo's files: not absolute (/, ~, a drive letter),
+# no `..` folder, nothing under `.git` (hooks there run code), no leading `-` (a command would read it
+# as an option), and only characters that need no quoting. Prints it without a leading ./ or a
+# trailing /, or fails. Other dot folders such as .idleflow/ and .github/ are fine.
+# repo_relative_path <path> [extra allowed characters, e.g. '*' for globs]
+repo_relative_path() {
+  local p="${1#./}" extra="${2:-}" part
+  p="${p%/}"
+  [ -n "$p" ] || return 1
+  case "$p" in /*|'~'*|-*|[A-Za-z]:*) return 1;; esac
+  [[ "$p" =~ ^[A-Za-z0-9_./${extra}-]+$ ]] || return 1
+  local -a parts
+  IFS=/ read -ra parts <<< "$p"
+  for part in "${parts[@]}"; do
+    case "$(printf '%s' "$part" | tr '[:upper:]' '[:lower:]')" in ..|.git|.git.*) return 1;; esac
+  done
+  echo "$p"
+}
 # A repo can keep its records where it already keeps them (conventions "Records"). A value must be
 # a plain relative path inside the repo; anything else falls back to the default, with a warning.
 record_path() { # record_path <conventions key> <default>
   local v; v="$(conventions_value "$1")"
   case "$v" in ""|unset) echo "$2"; return;; esac
-  if [[ "$v" =~ ^[A-Za-z0-9_][A-Za-z0-9_./-]*$ ]] && [[ "$v" != *..* ]]; then echo "${v%/}"; return; fi
+  repo_relative_path "$v" && return
   echo "[idleflow] $1: '$v' is not a relative path inside the repo; using $2" >&2
   echo "$2"
 }
@@ -116,7 +137,7 @@ shared_files() {
   local v f; v="$(conventions_value shared_files)"
   case "$v" in ""|unset|none) return 0;; esac
   for f in $(set -f; echo $v); do
-    if [[ "$f" =~ ^[A-Za-z0-9_.*][A-Za-z0-9_.*/-]*$ ]] && [[ "$f" != *..* ]]; then echo "$f"; else echo "[idleflow] shared_files: skipped '$f'" >&2; fi
+    repo_relative_path "$f" '*' || echo "[idleflow] shared_files: skipped '$f'" >&2
   done
 }
 
@@ -362,6 +383,23 @@ copy_report() {
   native_path "$dst"
 }
 
+# The run keeps its own copy of what the conventions say about commands and shared files, so the
+# conventions can change on main mid-run without changing this run. The copy is taken at `new` and
+# again at the snapshot that ends setup (R1–R6 write and commit conventions after `new`), as long as
+# no task exists yet. A command the human chose to run without (`run.sh skip`) stays empty.
+conventions_to_run() {
+  local key val skipped shared
+  skipped="$(idleflow_rt get "$ACTIVE/run.json" skipped 2>/dev/null || true)"
+  for key in $REPO_COMMANDS; do
+    val="$(repo_command "$key")"
+    case "$skipped" in *"\"$key\""*) val="";; esac
+    idleflow_rt set "$ACTIVE/run.json" "$key" "$(json_str "$val")"
+  done
+  shared="$(shared_files | while IFS= read -r f; do json_str "$f"; echo; done | paste -sd, -)"
+  idleflow_rt set "$ACTIVE/ownership.json" shared "[${shared}]"
+}
+run_has_tasks() { [ "$(idleflow_rt get "$ACTIVE/run.json" tasks 2>/dev/null || echo '{}')" != "{}" ]; }
+
 cmd="${1:-}"; shift || true
 case "$cmd" in
   new)
@@ -375,10 +413,10 @@ case "$cmd" in
     base="$("${G[@]}" symbolic-ref --short -q HEAD || echo HEAD)"
     base_sha="$("${G[@]}" rev-parse -q --verify HEAD 2>/dev/null || true)"
     cat > "$ACTIVE/run.json" <<JSON
-{"id":"$id","worktree_setup":$(json_str "$(repo_command worktree_setup)"),"gate":$(json_str "$(repo_command gate)"),"gate_quick":$(json_str "$(repo_command gate_quick)"),"preview":$(json_str "$(repo_command preview)"),"plugin_version":$(json_str "$(plugin_version)"),"by":$(json_str "$(git config user.name || echo unknown)"),"slug":"$safe","base":$(json_str "$base"),"base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"gate_trips":0,"review_findings":0}
+{"id":"$id","plugin_version":$(json_str "$(plugin_version)"),"by":$(json_str "$(git config user.name || echo unknown)"),"slug":"$safe","base":$(json_str "$base"),"base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"gate_trips":0,"review_findings":0}
 JSON
-    shared="$(shared_files | while IFS= read -r f; do json_str "$f"; echo; done | paste -sd, -)"
-    echo "{\"repo\":$(json_str "$(native_path "$REPO")"),\"shared\":[${shared}],\"tasks\":{}}" > "$ACTIVE/ownership.json"
+    echo "{\"repo\":$(json_str "$(native_path "$REPO")"),\"shared\":[],\"tasks\":{}}" > "$ACTIVE/ownership.json"
+    conventions_to_run
     add_ignore "$(ignore_file)" '.idleflow/runs/'
     # worktree marker dir: excluded locally (shared by all worktrees), never committed or merged
     add_ignore "$(exclude_file)" '.idleflow-run/'
@@ -426,9 +464,26 @@ JSON
       *) echo "unknown wt subcommand" >&2; exit 1;;
     esac
     ;;
+  skip)
+    key="${1:?worktree_setup|gate|gate_quick|preview}"; active_id >/dev/null
+    case " $REPO_COMMANDS " in *" $key "*) ;; *) echo "skip: $key is not a repo command ($REPO_COMMANDS)" >&2; exit 1;; esac
+    list="$(idleflow_rt get "$ACTIVE/run.json" skipped 2>/dev/null || true)"
+    case "$list" in ""|null) list="[]";; esac
+    case "$list" in *"\"$key\""*) ;; "[]") list="[\"$key\"]";; *) list="${list%]},\"$key\"]";; esac
+    idleflow_rt set "$ACTIVE/run.json" skipped "$list"
+    idleflow_rt set "$ACTIVE/run.json" "$key" '""'
+    ;;
   own)
     tid="${1:?task-id}"; globs="${2:?json array}"; active_id >/dev/null
     idleflow_rt own "$ACTIVE/ownership.json" "$tid" "$(native_path "$(wt_path "$tid")")" "$globs"
+    ;;
+  unowned)
+    tid="${1:?task-id}"; active_id >/dev/null
+    p="$(wt_path "$tid")"; base="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$tid.base_sha")"
+    if [ ! -d "$p" ] || [ -z "$base" ] || [ "$base" = null ]; then echo "task $tid has no worktree or base sha (run.sh wt add $tid first)" >&2; exit 1; fi
+    # --no-renames: a rename changes the old path too, and the task must own both
+    { git -C "$p" diff --no-renames --name-only "$base"; git -C "$p" ls-files --others --exclude-standard; } \
+      | sort -u | idleflow_rt unowned "$ACTIVE/ownership.json" "$tid"
     ;;
   get)
     key="${1:?key}"; active_id >/dev/null
@@ -517,6 +572,8 @@ JSON
       gcommit -m "docs: project conventions and run inputs" -- "${paths[@]}"
       echo "snapshot: committed $("${G[@]}" rev-parse --short HEAD)"
     fi
+    # setup is over: the run now uses the conventions it just committed
+    if [ -f "$ACTIVE/run.json" ] && ! run_has_tasks; then conventions_to_run; fi
     ;;
   finish)
     status="${1:-done}"; id="$(active_id)"
