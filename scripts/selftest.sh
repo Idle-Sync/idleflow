@@ -248,7 +248,7 @@ pin="$d-pin"; mkdir -p "$pin/a" "$pin/b" "$pin/c" "$pin/none"
 printf '    steps:\n      - uses: a/b@%s # v1\n      - uses: ./.github/actions/x\n      - uses: docker://alpine@sha256:%s\n' "$(printf '%040d' 0 | tr 0 a)" "$(printf '%064d' 0 | tr 0 b)" > "$pin/a/ok.yml"
 printf '      - uses: a/b@v4\n' > "$pin/b/late.yaml"
 printf '      - {uses: a/b@v4}\n      - uses: a/b@v4 # uses: a/b@%s\n' "$(printf '%040d' 0 | tr 0 a)" > "$pin/c/sly.yml"
-check "every CI action is pinned to a commit, and Dependabot bumps them" '[ -z "$(unpinned_actions "$HERE/../.github/workflows")" ] && grep -q "package-ecosystem: github-actions" "$HERE/../.github/dependabot.yml"'
+check "every CI action is pinned to a commit, and Dependabot bumps them" 'out="$(unpinned_actions "$HERE/../.github/workflows")" && [ -z "$out" ] && grep -q "package-ecosystem: github-actions" "$HERE/../.github/dependabot.yml"'
 check "the pin check reads .yaml, flow and commented forms, and needs a workflow" '[ -z "$(unpinned_actions "$pin/a")" ] && [ -n "$(unpinned_actions "$pin/b")" ] && [ "$(unpinned_actions "$pin/c" | grep -c .)" = 2 ] && { unpinned_actions "$pin/none"; [ $? = 2 ]; }'
 check "the agents that judge the plan get the issue" '( for a in planner red-team cost-critic; do grep -q "issue.md" "$HERE/../agents/$a.md" || exit 1; done ) && grep -q "Spawn \`idleflow:planner\` with: the issue path" "$HERE/../commands/feature.md" && grep -q "each with the issue, plan.md and context.md paths" "$HERE/../commands/feature.md"'
 check "agents that run suites wait on long checks as jobs" '( for a in implementer implementer-hard review-correct; do grep -q "run.sh>\" wait <task-id> <n>" "$HERE/../agents/$a.md" && grep -q "Never start it again while it runs" "$HERE/../agents/$a.md" || exit 1; done )'
