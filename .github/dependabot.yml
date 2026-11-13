@@ -1,0 +1,7 @@
+# The workflow pins each action to a commit; Dependabot proposes the newer commit, with its tag, as a PR.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
