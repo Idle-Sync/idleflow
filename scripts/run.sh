@@ -89,12 +89,30 @@ active_id() {
   echo "$id"
 }
 
+# A path from the conventions that stays inside the repo's files: not absolute (/, ~, a drive letter),
+# no `..` folder, nothing under `.git` (hooks there run code), no leading `-` (a command would read it
+# as an option), and only characters that need no quoting. Prints it without a leading ./ or a
+# trailing /, or fails. Other dot folders such as .idleflow/ and .github/ are fine.
+# repo_relative_path <path> [extra allowed characters, e.g. '*' for globs]
+repo_relative_path() {
+  local p="${1#./}" extra="${2:-}" part
+  p="${p%/}"
+  [ -n "$p" ] || return 1
+  case "$p" in /*|'~'*|-*|[A-Za-z]:*) return 1;; esac
+  [[ "$p" =~ ^[A-Za-z0-9_./${extra}-]+$ ]] || return 1
+  local -a parts
+  IFS=/ read -ra parts <<< "$p"
+  for part in "${parts[@]}"; do
+    case "$(printf '%s' "$part" | tr '[:upper:]' '[:lower:]')" in ..|.git|.git.*) return 1;; esac
+  done
+  echo "$p"
+}
 # A repo can keep its records where it already keeps them (conventions "Records"). A value must be
 # a plain relative path inside the repo; anything else falls back to the default, with a warning.
 record_path() { # record_path <conventions key> <default>
   local v; v="$(conventions_value "$1")"
   case "$v" in ""|unset) echo "$2"; return;; esac
-  if [[ "$v" =~ ^[A-Za-z0-9_][A-Za-z0-9_./-]*$ ]] && [[ "$v" != *..* ]]; then echo "${v%/}"; return; fi
+  repo_relative_path "$v" && return
   echo "[idleflow] $1: '$v' is not a relative path inside the repo; using $2" >&2
   echo "$2"
 }
@@ -116,7 +134,7 @@ shared_files() {
   local v f; v="$(conventions_value shared_files)"
   case "$v" in ""|unset|none) return 0;; esac
   for f in $(set -f; echo $v); do
-    if [[ "$f" =~ ^[A-Za-z0-9_.*][A-Za-z0-9_.*/-]*$ ]] && [[ "$f" != *..* ]]; then echo "$f"; else echo "[idleflow] shared_files: skipped '$f'" >&2; fi
+    repo_relative_path "$f" '*' || echo "[idleflow] shared_files: skipped '$f'" >&2
   done
 }
 

@@ -294,6 +294,15 @@ git config --local --unset idleflow.person
 rm -rf docs
 sed -i.bak 's#^progress_file: .*#progress_file: ../outside.md#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
 check "a path outside the repo falls back"  'p="$(bash "$RUN" path progress 2>/dev/null)"; [ "$p" = "$top/progress.md" ] && bash "$RUN" path progress 2>&1 >/dev/null | grep -q "not a relative path"'
+sed -i.bak 's#^progress_file: .*#progress_file: /abs/progress.md#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
+check "an absolute path falls back"  'p="$(bash "$RUN" path progress 2>/dev/null)"; [ "$p" = "$top/progress.md" ] && bash "$RUN" path progress 2>&1 >/dev/null | grep -q "not a relative path"'
+for bad in .git/hooks/post-commit docs/.GIT/x.md -progress.md; do
+  sed -i.bak "s#^progress_file: .*#progress_file: $bad#" .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
+  check "a path under .git or starting with - falls back ($bad)" '[ "$(bash "$RUN" path progress 2>/dev/null)" = "$top/progress.md" ]'
+done
+sed -i.bak 's#^progress_file: .*#progress_file: ./.docs/notes..md#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
+printf 'time_log: .idleflow/time-log.md\n' >> .idleflow/conventions.md
+check "a path in a dot folder is used without a warning" '[ "$(bash "$RUN" path time-log)" = "$top/.idleflow/time-log.md" ] && [ -z "$(bash "$RUN" path time-log 2>&1 >/dev/null)" ] && [ "$(bash "$RUN" path progress 2>/dev/null)" = "$top/.docs/notes..md" ] && [ -z "$(bash "$RUN" path progress 2>&1 >/dev/null)" ]'
 cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"
 
 echo "--- worktrees inside the repo, with an approved setup command"
