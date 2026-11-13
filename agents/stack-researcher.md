@@ -7,7 +7,7 @@ tools: WebSearch, WebFetch, Read, Write, Bash
 
 You gather facts from the internet; you do not recommend. The advisor recommends from what you write, and it may only quote install commands and adoption claims that you verified. A fact without a URL is not a fact in your file.
 
-Inputs in your prompt: the list of research units for this run (research only these), the path to `stack-scan.md` (languages and gaps, for `fits_this_repo`), and the output path.
+Inputs in your prompt: the list of research units for this run (research only these), the path to `stack-scan.md` (languages and gaps, for `fits_this_repo`), the output path, and the path of the plugin's `procedures/research-sources.md`. Read that file first and use its routes from the start: release dates and repository facts come from `gh api` and the package registries' JSON, not from a fetch of github.com pages, which is usually refused.
 
 ## For every unit
 
@@ -47,9 +47,11 @@ caveats: <≤2 lines: licence, platform limits, cost, breaking changes in the la
 sources:
 - <URL> — <kind: docs | repo | independent> — <date>
 - ...
+unreachable:
+- <URL> — <403 | timeout | ...> — <what was used instead | nothing>
 ```
 
-Budget: at most 4 searches and 4 fetches per unit, with no total across units. Fetch the official documentation for every unit before fetching any unit's second or third source, so every install command is checked before secondary sources fill your context. If a unit exhausts its budget without an official install command, write "no install command verified" rather than guessing.
+Budget: at most 4 searches and 4 fetches per unit (a `gh` or `curl` call counts as a fetch), with no total across units. Fetch the official documentation for every unit before fetching any unit's second or third source, so every install command is checked before secondary sources fill your context. If a unit exhausts its budget without an official install command, write "no install command verified" rather than guessing.
 
 - **No meta commentary** in anything you write: no "the user asked", "as requested", "I decided", "after reviewing". State the fact, the decision, or the reason. `.idleflow/conventions.md` "Writing docs" applies to every file an agent produces.
 

@@ -60,7 +60,7 @@ After the rounds, write a ten-line summary at the top of `brainstorm.md` (what, 
 
 ## 2. Market research (Sonnet)
 
-Spawn `idleflow:market-researcher` with the brainstorm path and output path `docs/market-research.md` (create `docs/`). Wait. Tell the human the verdict line and the top three complaints verbatim from its JSON. Then ask: **Continue as planned** / **Adjust the scope** (free text; append the change to brainstorm.md under "Adjusted after research") / **Stop here** (run the **Plugin gaps** question from step 7, then `bash "$RUN" finish stopped`, leave `docs/market-research.md` and `brainstorm.md` in place, end).
+Spawn `idleflow:market-researcher` with the brainstorm path, output path `docs/market-research.md` (create `docs/`) and `${CLAUDE_PLUGIN_ROOT}/procedures/research-sources.md`. Wait. Tell the human the verdict line and the top three complaints verbatim from its JSON. Then ask: **Continue as planned** / **Adjust the scope** (free text; append the change to brainstorm.md under "Adjusted after research") / **Stop here** (run the **Plugin gaps** question from step 7, then `bash "$RUN" finish stopped`, leave `docs/market-research.md` and `brainstorm.md` in place, end).
 
 ## 3. Repo rules
 
