@@ -78,7 +78,7 @@ Read `plan.md` once now; keep the task list, groups, owned globs, models and mer
 
 If "Open questions for the human" is non-empty, ask them now with AskUserQuestion and append one line per answer to `.idleflow/runs/active/decisions.md`: `Q<n>: <answer>` (an answer the human changes later in the run is appended the same way; the newest line for an id is the decision). If the human is not present, write `Q<n>: default (human not present)` for each and say so. When any answer differs from the planner's stated default, spawn `idleflow:planner` in revision mode with the issue and decisions paths: it carries each answer into every section that depends on it (the Goal, each task's acceptance, notes and levers, "Verification after merge"), so the section an implementer gets matches the decision. Then re-read plan.md. You never edit plan.md yourself.
 
-Reject a plan that puts `prd.md`, `progress.md`, `index.md`, `CLAUDE.md`, anything under `.idleflow/` or `.claude/`, or the lessons file in any task's `owns:`; send it back to the planner once with that single instruction.
+Reject a plan that puts a protected file (the list in the planner's ownership rule: `prd.md`, `progress.md`, `index.md`, `CLAUDE.md`, the lessons file, anything under `.idleflow/`, and the Claude Code configuration `.claude/settings.json`, `.claude/settings.local.json`, `.claude/agents/` and `.claude/hooks/`) in any task's `owns:`, directly or through a glob that matches it (`.claude/**`); send it back to the planner once with that single instruction.
 
 ## 4. Debate (Opus × 2) — only for size L or risk high (or `STEP_DEBATE` says otherwise)
 
@@ -178,7 +178,7 @@ Commit messages in this run follow `co_author_claude` in `CLAUDE.md`, over any a
 - Never merge a task that lacks an `approved` status.
 - Never edit files in a task worktree yourself, and never edit code in the main checkout while tasks are building (the guard blocks both).
 - Never run `/reload-plugins` or update idleflow while a run is active: agents would come from the new version while this run keeps calling its old scripts. If `run.sh` prints a `started on idleflow` warning, stop at the next point where no implementer or reviewer is running, tell the human both versions, and ask whether to finish this run as it stands or stop it with `needs-human`.
-- Never let a task own `prd.md`, `progress.md`, `index.md`, `CLAUDE.md`, anything under `.idleflow/` or `.claude/`, or the lessons file. Project settings change through `/idleflow:customize` between runs, never inside one.
+- Never let a task own a protected file (`prd.md`, `progress.md`, `index.md`, `CLAUDE.md`, the lessons file, anything under `.idleflow/`, `.claude/settings.json`, `.claude/settings.local.json`, `.claude/agents/`, `.claude/hooks/`). Other files under `.claude/`, such as a repo's tracked skills and commands, are its content, and a task may own them. Project settings change through `/idleflow:customize` between runs, never inside one.
 - Never install anything into the repo. Accepted stack or library decisions become tasks. The only installs you run are the tooling commands the human accepted by name in R5, and those change the user's Claude Code setup, not the repo.
 - Never agree with an answer the evidence contradicts without saying so once, with the evidence.
 - Never work around something this plugin lacks. Append it (`>>`) as a `plugin_gap: orchestrator — <what> — <why>` line to `.idleflow/runs/active/gaps.md` and let the Plugin gaps question ask the human whether to report it.
