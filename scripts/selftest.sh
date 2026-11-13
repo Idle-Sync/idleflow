@@ -479,16 +479,20 @@ check "exec runs the command without the agent's markers" '[ "$(CLAUDECODE=1 CLA
 check "exec passes the command's exit code"    'bash "$RUN" exec TA -- sh -c "exit 3"; [ $? = 3 ]'
 inside="$(cd "$wa" && bash "$RUN" exec TA -- sh -c 'echo "$IDLEFLOW_PORT"')"
 check "exec works from inside the task worktree" "[ '$inside' = 4400 ]"
-# a same-size edit within the same second (mtime pinned here) is invisible to Python's bytecode cache
-if command -v python3 >/dev/null 2>&1; then
-  mkdir -p "$scratch/pyc"; echo 'x = 1' > "$scratch/pyc/m.py"; touch "$scratch/pyc/stamp"; touch -r "$scratch/pyc/stamp" "$scratch/pyc/m.py"
-  import_m=(python3 -c "import sys; sys.path.insert(0, sys.argv[1]); import m; print(m.x)" "$scratch/pyc")
-  "${import_m[@]}" >/dev/null
-  echo 'x = 2' > "$scratch/pyc/m.py"; touch -r "$scratch/pyc/stamp" "$scratch/pyc/m.py"
-  check "a same-size edit runs stale bytecode outside exec (the case below is real)" '[ "$("${import_m[@]}")" = 1 ]'
-  check "exec runs the source as it is, not an earlier cache" '[ "$(bash "$RUN" exec TA -- "${import_m[@]}")" = 2 ]'
-  echo 'x = 3' > "$scratch/pyc/m.py"; touch -r "$scratch/pyc/stamp" "$scratch/pyc/m.py"
+# Python reuses bytecode while a source keeps its size and whole-second mtime (pinned here to a stamp);
+# -I ignores PYTHON* variables, as tox's environments do, so only clearing the bytecode helps
+py_ok=no; _idleflow_py_ok python3 && py_ok=yes
+import_m=(python3 -I -c "import sys; sys.path.insert(0, '.'); import m; print(m.x)")
+touch "$scratch/stamp"
+pin_m() { echo "x = $2" > "$1/m.py"; touch -r "$scratch/stamp" "$1/m.py"; }
+unpin_m() { rm -f "$1/m.py" "$1"/__pycache__/m.*.pyc; rmdir "$1/__pycache__" 2>/dev/null || true; }
+if [ "$py_ok" = yes ]; then
+  pin_m "$wa" 1; ( cd "$wa" && "${import_m[@]}" >/dev/null ); pin_m "$wa" 2
+  check "a same-size edit runs stale bytecode outside exec (the case below is real)" '[ "$(cd "$wa" && "${import_m[@]}")" = 1 ]'
+  check "exec runs the source as it is, not an earlier command's bytecode" '[ "$(bash "$RUN" exec TA -- "${import_m[@]}")" = 2 ]'
+  pin_m "$wa" 3
   check "the next exec runs the next same-size edit" '[ "$(bash "$RUN" exec TA -- "${import_m[@]}")" = 3 ]'
+  unpin_m "$wa"
 fi
 [ ! -f .idleflow/idleflow.conf ] || cp .idleflow/idleflow.conf "$scratch/conf.bak"
 printf 'EXEC_WAIT_SECONDS=1\n' >> .idleflow/idleflow.conf
@@ -576,6 +580,18 @@ doc="$(bash "$RUN" doctor 2>/dev/null)"
 check "doctor shows hook advice without a fix it would apply" 'echo "$doc" | grep -q "^suggest fit hooks: .*idleflow never edits hooks"'
 bash "$RUN" custom unset SLOW_GATE_SECONDS >/dev/null; rm -rf .husky; git checkout -q HEAD~1 -- src/keep.py 2>/dev/null || true
 cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"; git add .idleflow/conventions.md && commit -q -m "restore conventions"
+if [ "$py_ok" = yes ]; then
+  cp .idleflow/conventions.md "$d-conv.bak"
+  printf 'gate: python3 -I show_m.py\n' >> .idleflow/conventions.md
+  git add .idleflow/conventions.md && commit -q -m "python gate"; bash "$RUN" approve gate >/dev/null
+  printf '%s\n' "import sys" "sys.path.insert(0, '.')" "import m" "print(m.x)" > show_m.py
+  pin_m . 1; "${import_m[@]}" >/dev/null; pin_m . 2
+  bash "$RUN" new python-gate >/dev/null 2>&1
+  bash "$RUN" repo-gate main >/dev/null 2>&1
+  check "the gate on main runs the source as it is, not an earlier command's bytecode" 'grep -qx 2 .idleflow/runs/active/repo-gate-main.log'
+  bash "$RUN" finish "done" >/dev/null; unpin_m .; rm -f show_m.py
+  cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"; git add .idleflow/conventions.md && commit -q -m "restore conventions"
+fi
 
 echo "--- preview for screenshots"
 cp .idleflow/conventions.md "$d-conv.bak"

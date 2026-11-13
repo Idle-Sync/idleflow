@@ -14,7 +14,7 @@
 #   run.sh exec <task-id> -- <command...> -> runs a command in the task's worktree with its own port (IDLEFLOW_PORT) and
 #                                            its own temp folder (IDLEFLOW_TMP, TMPDIR), as a job; prints its output and exits
 #                                            with its code, or exits 75 while it still runs after EXEC_WAIT_SECONDS.
-#                                            Python compiles the source as it is now, never from an earlier command's cache
+#                                            Python bytecode of the checkout's own code is cleared first, so the source runs as it is
 #   run.sh wait <task-id> <job>           -> waits for a job again, the same way
 #   run.sh stop <task-id> <job>           -> ends a job and every process it started
 #   run.sh get <key>                      -> prints a value from run.json (dotted keys ok)
@@ -400,21 +400,24 @@ allocate_port() { # allocate_port <task-id>
 # so the variables that say so are removed from every repo command's environment here.
 AGENT_MARKERS=(CLAUDECODE CLAUDE_CODE CLAUDE_CODE_ENTRYPOINT AI_AGENT)
 without_agent_markers() { unset "${AGENT_MARKERS[@]}"; }
-# Python reuses a module's compiled bytecode from __pycache__ while the source keeps its size and its
-# modification time in whole seconds. An edit that keeps both (a mutant, the restored original, a
-# one-character fix within the same second) would run the old code. So each repo command reads
-# bytecode only from an empty folder of its own and writes none: it compiles the source it sees.
-own_bytecode_cache() { # own_bytecode_cache <parent folder>; call it in the command's subshell
-  mkdir -p "$1" && PYTHONPYCACHEPREFIX="$(mktemp -d "$1/pycache.XXXXXX")" && PYTHONDONTWRITEBYTECODE=1 \
-    && export PYTHONPYCACHEPREFIX PYTHONDONTWRITEBYTECODE
+# Python reuses a module's compiled bytecode in __pycache__ while the source keeps its size and its
+# modification time in whole seconds, so an edit that keeps both (a mutant, the restored original, a
+# one-character fix within the same second) would run the old code. Every repo command therefore
+# starts with no bytecode for the checkout's own code. It is deleted rather than redirected with
+# PYTHONPYCACHEPREFIX, which tox and `python -I` drop. Installed packages (site-packages,
+# node_modules) keep theirs: nothing edits them during a run. A folder find cannot read is named on
+# stderr, in the command's output, and does not stop the command.
+clear_bytecode() { # clear_bytecode <checkout>
+  find "$1" \( -name .git -o -name node_modules -o -name site-packages \) -prune \
+    -o -path '*/__pycache__/*.pyc' -type f -exec rm -f {} + || true
 }
 
-# Runs a command for a task: in its worktree, with its port, its temp folder and fresh bytecode.
+# Runs a command for a task: in its worktree, with its port and temp folder and no stale bytecode.
 in_task() { # in_task <task-id> <dir> <command...>
   local tid="$1" dir="$2" port tmp rc=0; shift 2
   port="$(task_port "$tid")"; tmp="$(task_tmp "$tid")"; mkdir -p "$tmp"
   # the caller decides what a failure means; errexit is left as the caller set it
-  (cd "$dir" && without_agent_markers && own_bytecode_cache "$tmp" && MAIN="$REPO" IDLEFLOW_TASK="$tid" IDLEFLOW_PORT="$port" IDLEFLOW_TMP="$tmp" TMPDIR="$tmp" "$@") || rc=$?
+  (cd "$dir" && without_agent_markers && clear_bytecode . && MAIN="$REPO" IDLEFLOW_TASK="$tid" IDLEFLOW_PORT="$port" IDLEFLOW_TMP="$tmp" TMPDIR="$tmp" "$@") || rc=$?
   return "$rc"
 }
 
@@ -1113,7 +1116,7 @@ Task: $tid")
     started="$(date +%s)"
     set +e
     case "$target" in
-      base|main) (cd "$dir" && without_agent_markers && own_bytecode_cache "$ACTIVE/tmp" && MAIN="$REPO" bash -c "$cmd") > "$log" 2>&1;;
+      base|main) (cd "$dir" && without_agent_markers && clear_bytecode . && MAIN="$REPO" bash -c "$cmd") > "$log" 2>&1;;
       *) in_task "$target" "$dir" bash -c "$cmd" > "$log" 2>&1;;
     esac
     rc=$?
@@ -1152,7 +1155,7 @@ Task: $tid")
     mkdir -p "$ACTIVE/tasks/$tid"
     echo "preview ($tid): $cmd" >&2
     mkdir -p "$(task_tmp "$tid")"
-    ( without_agent_markers && own_bytecode_cache "$(task_tmp "$tid")" || exit 1
+    ( without_agent_markers; clear_bytecode "$dir"
       MAIN="$REPO" IDLEFLOW_TASK="$tid" IDLEFLOW_PORT="$port" IDLEFLOW_TMP="$(task_tmp "$tid")" TMPDIR="$(task_tmp "$tid")" \
         idleflow_rt detach "$dir" "$ACTIVE/tasks/$tid/preview.log" "$pidf" "$cmd" )
     echo "preview $tid: serving at $url (log: $(native_path "$ACTIVE/tasks/$tid/preview.log"); stop with: run.sh preview $tid stop)"
