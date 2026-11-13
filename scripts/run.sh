@@ -622,11 +622,13 @@ JSON
     # against, then the task's own section. Other tasks' sections stay out.
     tid="${1:?task-id}"; check_task_id "$tid"; active_id >/dev/null
     [ -f "$ACTIVE/plan.md" ] || { echo "extract: no plan.md in the active run" >&2; exit 1; }
-    out="$(H="### $tid:" awk '
-      /^## / { shared = (index($0, "## Stack & style constraints") == 1 || index($0, "## Interfaces") == 1); task = 0 }
-      /^### / { task = (index($0, ENVIRON["H"]) == 1); if (task) found = 1 }
+    # a heading inside a code fence is text, not the start of a section
+    out="$(tr -d '\r' < "$ACTIVE/plan.md" | H="### $tid:" awk '
+      /^(```|~~~)/ { fence = !fence }
+      !fence && /^## / { shared = (index($0, "## Stack & style constraints") == 1 || index($0, "## Interfaces") == 1); task = 0 }
+      !fence && /^### / { task = (index($0, ENVIRON["H"]) == 1); if (task) found = 1 }
       shared || task { print }
-      END { if (!found) exit 3 }' "$ACTIVE/plan.md" | tr -d '\r')" || { echo "extract: plan.md has no '### $tid:' section" >&2; exit 1; }
+      END { if (!found) exit 3 }')" || { echo "extract: plan.md has no '### $tid:' section" >&2; exit 1; }
     printf '%s\n' "$out"
     ;;
   report)

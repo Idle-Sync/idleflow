@@ -543,6 +543,9 @@ bash "$RUN" extract T1 > "$scratch/extract.txt"
 check "extract gives the shared sections and the task's own" '[ "$(cat "$scratch/extract.txt")" = "$(printf "%s\n" "## Stack & style constraints" "mode: repo" "## Interfaces (serial, land first)" "report(msg) prints \"saved\"" "### T1: first" "owns: [a]")" ]'
 check "extract leaves other tasks and sections out" '! grep -q "T10\|T2\|goal text\|Merge order" "$scratch/extract.txt"'
 check "extract refuses a task the plan does not have" '! bash "$RUN" extract T3 2>/dev/null'
+printf '%s\r\n' '## Interfaces' 'sig' '## Tasks' '### T1: first' '```md' '## not a section' '### T2: not a task' '```' 'after the fence' '### T2: second' > .idleflow/runs/active/plan.md
+bash "$RUN" extract T1 > "$scratch/extract.txt"
+check "extract reads a CRLF plan and keeps code fences in the task" '[ "$(cat "$scratch/extract.txt")" = "$(printf "%s\n" "## Interfaces" sig "### T1: first" "\`\`\`md" "## not a section" "### T2: not a task" "\`\`\`" "after the fence")" ]'
 bash "$RUN" finish "done" >/dev/null
 
 echo "--- conventional commits"
