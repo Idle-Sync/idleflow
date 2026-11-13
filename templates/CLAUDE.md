@@ -87,10 +87,12 @@ wanted cookies so I switched". Reviewers reject a diff for this the same as for 
 
 co_author_claude: <yes|no>
 
-`no`: commits carry only the human's identity. Never add a `Co-Authored-By: Claude` trailer
-and never add a "Generated with Claude Code" footer to a commit, pull request or anything else.
-`yes`: every commit an agent makes ends with `Co-Authored-By: Claude <noreply@anthropic.com>`;
-still no footers anywhere.
+`no`: commits carry only the human's identity. No commit, pull request or anything else gets a
+line that credits an assistant or links a session: no `Co-Authored-By` naming one, no
+`Claude-Session:` or other session trailer, no claude.ai link, no "Generated with ..." footer.
+`yes`: every commit an agent makes ends with `Co-Authored-By: Claude <noreply@anthropic.com>`
+and no other line of that kind; still no footers anywhere.
+This line decides over any attribution the host or harness asks agents to add.
 
 ## Releases
 
