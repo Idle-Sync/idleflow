@@ -406,36 +406,48 @@ in_task() { # in_task <task-id> <dir> <command...>
 # no longer wait for it or stop it; a job still running is waited on again or stopped by number.
 job_dir() { echo "$ACTIVE/tasks/$1/jobs/$2"; }
 # The job's pid is written by its own shell ($$), so it is one bash's kill understands everywhere
-# (on Git Bash a runtime's pid is a Windows one). The job leads its own process group; it runs
-# while any process of that group is alive, not only while its shell is.
+# (on Git Bash a runtime's pid is a Windows one). The job leads its own process group. Once the
+# command has ended and no process of the group is left, the job is marked ended and never
+# signalled again: its pid may since belong to someone else.
 job_pid() { cat "$1/pid" 2>/dev/null || true; }
-job_running() { # job_running <job dir>
+group_alive() { # group_alive <job dir>
   local pid; pid="$(job_pid "$1")"
   [ -n "$pid" ] && { kill -0 -- "-$pid" 2>/dev/null || kill -0 "$pid" 2>/dev/null; }
 }
-stop_job() { # stop_job <job dir>: TERM to the whole group, KILL after 5 s; 143 once nothing is left
-  local pid n=0; pid="$(job_pid "$1")"
-  [ -n "$pid" ] || return 0
+job_ended() { # job_ended <job dir>: the command ended and nothing of it is left
+  [ -f "$1/ended" ] && return 0
+  if [ -f "$1/status" ] && ! group_alive "$1"; then : > "$1/ended"; return 0; fi
+  return 1
+}
+stop_job() { # stop_job <job dir>: TERM to the whole group, KILL after 5 s; 143 if the command had not ended
+  local pid n=0
+  job_ended "$1" && return 0
+  pid="$(job_pid "$1")"; [ -n "$pid" ] || return 0
   kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
-  while job_running "$1" && [ "$n" -lt 25 ]; do sleep 0.2; n=$((n + 1)); done
-  if job_running "$1"; then kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true; sleep 0.5; fi
-  if job_running "$1"; then echo "[idleflow] job in $(native_path "$1") still has processes after KILL" >&2; return 1; fi
+  while group_alive "$1" && [ "$n" -lt 25 ]; do sleep 0.2; n=$((n + 1)); done
+  if group_alive "$1"; then kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true; sleep 0.5; fi
+  if group_alive "$1"; then echo "[idleflow] job in $(native_path "$1") still has processes after KILL" >&2; return 1; fi
   [ -f "$1/status" ] || { echo 143 > "$1/status.tmp" && mv "$1/status.tmp" "$1/status"; }
+  : > "$1/ended"
 }
 await_job() { # await_job <task-id> <job>: the command's output and exit code, or 75 while it runs
   local d end n=0; d="$(job_dir "$1" "$2")"
   [ -d "$d" ] || { echo "no job $2 for task $1" >&2; exit 1; }
   while [ ! -f "$d/pid" ] && [ ! -f "$d/status" ] && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
   end=$(( $(date +%s) + ${EXEC_WAIT_SECONDS:-100} ))
-  while [ "$(date +%s)" -lt "$end" ]; do
-    if [ -f "$d/status" ] && ! job_running "$d"; then break; fi
-    if [ ! -f "$d/status" ] && ! job_running "$d"; then
+  while [ ! -f "$d/status" ] && [ "$(date +%s)" -lt "$end" ]; do
+    if ! group_alive "$d"; then
       sleep 0.2; [ -f "$d/status" ] || { echo 1 > "$d/status.tmp" && mv "$d/status.tmp" "$d/status"; echo "[idleflow] job $2 of $1 ended without an exit code" >&2; }
       break
     fi
     sleep 0.2
   done
-  if [ -f "$d/status" ] && ! job_running "$d"; then cat "$d/log"; exit "$(cat "$d/status")"; fi
+  if [ -f "$d/status" ]; then
+    cat "$d/log"
+    # the command is over; a process it left behind (a server it started) is said, not waited for
+    job_ended "$d" || echo "[idleflow] job $2 of $1 ended, but processes it started still run; end them with: bash \"$0\" stop $1 $2" >&2
+    exit "$(cat "$d/status")"
+  fi
   tail -n 20 "$d/log"
   echo "[idleflow] job $2 of $1 is still running (log: $(native_path "$d/log")). Wait for it: bash \"$0\" wait $1 $2. End it: bash \"$0\" stop $1 $2. Do not start it again while it runs." >&2
   exit 75
