@@ -852,6 +852,11 @@ def cmd_killguard():
         cmd = (payload.get("tool_input") or {}).get("command")
     except Exception:
         sys.exit(0)
+    # A plugin's hooks run in every session on the machine; this one acts only inside an idleflow
+    # run (the main checkout of an active run or one of its task worktrees), as the ownership
+    # guard does, and leaves every other session's commands alone.
+    if find_map(payload.get("cwd") or os.getcwd()) is None:
+        sys.exit(0)
     why = kill_by_pattern(cmd) if isinstance(cmd, str) else ""
     if why == "complex":
         sys.stderr.write("[idleflow] BLOCKED: this command is too long or too deeply nested to check for "

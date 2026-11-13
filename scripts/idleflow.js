@@ -763,12 +763,15 @@ function killByPattern(command) {
 }
 
 function cmdKillguard() {
-  let cmd;
+  let payload;
   try {
-    cmd = (JSON.parse(fs.readFileSync(0, "utf8")).tool_input || {}).command;
+    payload = JSON.parse(fs.readFileSync(0, "utf8"));
   } catch {
     process.exit(0);
   }
+  // only inside an idleflow run, as the ownership guard; see cmd_killguard in idleflow.py
+  if (!payload || findMap(payload.cwd || process.cwd()) === null) process.exit(0);
+  const cmd = (payload.tool_input || {}).command;
   const why = typeof cmd === "string" ? killByPattern(cmd) : "";
   if (why === "complex") {
     process.stderr.write("[idleflow] BLOCKED: this command is too long or too deeply nested to check for " +
