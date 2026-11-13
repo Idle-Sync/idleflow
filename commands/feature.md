@@ -122,7 +122,7 @@ For each done task: `bash "$RUN" gate <task-id> [limit]` → JSON (pass the gree
 - `audit` or `split` → `bash "$RUN" inc gate_trips`; spawn `idleflow:diff-auditor` with the task's plan extract, the gate JSON, the worktree path and the task's base sha. Then:
   - `accept` → review.
   - `reject` → `bash "$RUN" set tasks.<id>.status '"building"'`, send the auditor's reason to the implementer as a retry (step 5's retry rule), re-gate.
-  - `split` → `bash "$RUN" set tasks.<id>.status '"split"'`, `bash "$RUN" wt rm <task-id>`; send the auditor's sub-tasks and globs and the issue path to `idleflow:planner` for a one-task revision that replaces the task with a new group; re-read the plan; register ownership. The new group runs steps 5 to 8 after the rest of the current group is merged and before the next group of the plan. You never edit the task list yourself.
+  - `split` → `bash "$RUN" set tasks.<id>.status '"split"'`, `bash "$RUN" wt rm <task-id>`; send the auditor's sub-tasks and globs and the issue path to `idleflow:planner` for a one-task revision that replaces the task with a new group, numbered after the plan's highest task id; re-read the plan; register ownership. The new group runs steps 5 to 8 after the rest of the current group is merged and before the next group of the plan. You never edit the task list yourself.
 
 **Retroactive upgrade:** if size was S and any gate `total` exceeds `SIZE_S_OVERRUN`, set size to M so step 7 runs the conformance reviewer as well. The debate does not run after the fact; it follows `risk`, which a bigger diff does not change.
 

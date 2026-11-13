@@ -359,15 +359,15 @@ gen_settings() {
 }
 
 # A task id names a folder (its worktree, tasks/<id>/) and a branch (idleflow/<run>/<id>), so it is
-# one path segment that git also takes in a ref name: no / \ : * ? " < > | ~ ^ [ ] @ { } and no
-# space or control character, no "..", not ending in "." or ".lock", and not starting with "." or
-# "-" or "_" (idleflow's own worktrees, such as _gate-base, start with "_"), and not a name Windows
-# keeps for a device (CON, NUL, COM1, ...). Every subcommand that takes a task id checks it here
-# before building anything from it.
+# one path segment that git also takes in a ref name, and one run.json key (tasks.<id>.status: a
+# dot would nest it under another task): no . / \ : * ? " < > | ~ ^ [ ] @ { } and no space or
+# control character, not starting with "-" or "_" (idleflow's own worktrees, such as _gate-base,
+# start with "_"), and not a name Windows keeps for a device (CON, NUL, COM1, ...). Every
+# subcommand that takes a task id checks it here before building anything from it.
 check_task_id() { # check_task_id <id>
-  local t="$1" bad='[]/\\:*?"<>|~^[@{}[:space:][:cntrl:]]' device='^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$'
-  if [ -z "$t" ] || [[ "$(printf '%s' "$t" | tr '[:upper:]' '[:lower:]')" =~ $device ]] || [[ "$t" =~ $bad ]] || [[ "$t" == *..* ]] || [[ "$t" == [._-]* ]] || [[ "$t" == *. ]] || [[ "$t" == *.lock ]]; then
-    echo "not a task id: '$t' (one name such as T1, with no path or git ref characters)" >&2
+  local t="$1" bad='[].:/\\*?"<>|~^[@{}[:space:][:cntrl:]]' device='^(con|prn|aux|nul|com[1-9]|lpt[1-9])$'
+  if [ -z "$t" ] || [[ "$(printf '%s' "$t" | tr '[:upper:]' '[:lower:]')" =~ $device ]] || [[ "$t" =~ $bad ]] || [[ "$t" == [_-]* ]]; then
+    echo "not a task id: '$t' (one name such as T1, with no dot, path or git ref characters)" >&2
     exit 1
   fi
   # `main` (run.sh preview main) and `merged` (the browser check after merge) name run-wide records
