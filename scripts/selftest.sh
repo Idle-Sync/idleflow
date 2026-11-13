@@ -493,6 +493,11 @@ if [ "$py_ok" = yes ]; then
   pin_m "$wa" 3
   check "the next exec runs the next same-size edit" '[ "$(bash "$RUN" exec TA -- "${import_m[@]}")" = 3 ]'
   unpin_m "$wa"
+  mkdir -p "$wa/pkg/__pycache__"; : > "$wa/pkg/kept.py"; : > "$wa/pkg/__pycache__/kept.cpython-0.pyc"
+  git -C "$wa" add pkg && git -C "$wa" -c user.name=t -c user.email=t@t commit -qm "tracked bytecode"
+  bash "$RUN" exec TA -- true >/dev/null 2>&1
+  check "exec leaves bytecode the repo tracks alone" '[ -f "$wa/pkg/__pycache__/kept.cpython-0.pyc" ] && [ -z "$(git -C "$wa" status --porcelain --untracked-files=no)" ]'
+  git -C "$wa" reset -q --hard HEAD~1
 fi
 [ ! -f .idleflow/idleflow.conf ] || cp .idleflow/idleflow.conf "$scratch/conf.bak"
 printf 'EXEC_WAIT_SECONDS=1\n' >> .idleflow/idleflow.conf

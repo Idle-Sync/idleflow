@@ -403,13 +403,23 @@ without_agent_markers() { unset "${AGENT_MARKERS[@]}"; }
 # Python reuses a module's compiled bytecode in __pycache__ while the source keeps its size and its
 # modification time in whole seconds, so an edit that keeps both (a mutant, the restored original, a
 # one-character fix within the same second) would run the old code. Every repo command therefore
-# starts with no bytecode for the checkout's own code. It is deleted rather than redirected with
-# PYTHONPYCACHEPREFIX, which tox and `python -I` drop. Installed packages (site-packages,
-# node_modules) keep theirs: nothing edits them during a run. A folder find cannot read is named on
-# stderr, in the command's output, and does not stop the command.
+# starts with no bytecode for the checkout's own sources (the .py files git tracks or would add). It
+# is deleted rather than redirected with PYTHONPYCACHEPREFIX, which tox and `python -I` drop. The
+# list comes from git, so installed packages keep their bytecode, the walk costs no more than
+# reading the index, and a .pyc the repo itself tracks is never touched.
 clear_bytecode() { # clear_bytecode <checkout>
-  find "$1" \( -name .git -o -name node_modules -o -name site-packages \) -prune \
-    -o -path '*/__pycache__/*.pyc' -type f -exec rm -f {} + || true
+  local f dir stem pyc rel tracked
+  tracked="$(git -C "$1" ls-files -z -- '*.pyc' | tr '\0' '\n')"
+  git -C "$1" ls-files -z -co --exclude-standard -- '*.py' | while IFS= read -r -d '' f; do
+    dir="${f%/*}"; [ "$dir" = "$f" ] && dir=.
+    stem="${f##*/}"; stem="${stem%.py}"
+    for pyc in "$1/$dir/__pycache__/$stem".*.pyc; do
+      [ -f "$pyc" ] || continue
+      rel="${pyc#"$1"/}"; rel="${rel#./}"
+      case $'\n'"$tracked"$'\n' in *$'\n'"$rel"$'\n'*) continue;; esac
+      rm -f -- "$pyc"
+    done
+  done
 }
 
 # Runs a command for a task: in its worktree, with its port and temp folder and no stale bytecode.
