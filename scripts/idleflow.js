@@ -377,7 +377,9 @@ const WRAPPERS = new Map(Object.entries({
 const SCRIPT_OPTION = ["su", "runuser", "script", "flock"];
 const NAME_KILLERS = ["pkill", "killall", "killall5", "skill", "kill-port", "fkill", "fkill-cli"];
 const PID_LISTERS = ["pgrep", "pidof", "ps", "lsof", "fuser", "ss", "netstat"];
-const MAX_DEPTH = 12, MAX_WORK = 400000;
+// a hook gets 10 s: refuse a command longer than MAX_INPUT, nested deeper than MAX_DEPTH, needing
+// more than MAX_WORK characters lexed in all, or taking longer than MAX_MS to read
+const MAX_INPUT = 100000, MAX_DEPTH = 12, MAX_WORK = 400000, MAX_MS = 4000;
 const ASSIGN_RE = /^([A-Za-z_][A-Za-z0-9_]*)\+?=/;
 class TooComplex extends Error {}
 class Refuse extends Error {}
@@ -411,14 +413,21 @@ function innerAt(s, i) {
   return [s[i] === "$" ? s.slice(i + 2, k - 1) : s.slice(i + 1, k - 1), k];
 }
 
-// index just past the "))" that closes the "((" at s[i]
-function arithEnd(s, i) {
-  let depth = 0;
-  for (let j = i; j < s.length; j++) {
+// index just past the "))" that closes the "((" at s[i], or 0 when the two do not close
+// together; what it reads counts as work, since "((((..." would read the rest once per "("
+function arithEnd(s, i, work) {
+  let depth = 0, j = i, end = 0;
+  for (; j < s.length; j++) {
     if (s[j] === "(") depth += 1;
-    else if (s[j] === ")") { depth -= 1; if (depth === 0) return j + 1; }
+    else if (s[j] === ")") {
+      depth -= 1;
+      if (depth === 1 && s[j + 1] !== ")") break;
+      if (depth === 0) { end = j + 1; break; }
+    }
   }
-  return s.length;
+  work[0] += j - i;
+  if (work[0] > MAX_WORK) throw new TooComplex();
+  return end;
 }
 
 // the $(...) and backtick scripts in a piece of text that holds no other commands
@@ -435,7 +444,7 @@ function substitutions(text) {
 // The commands of one script, nothing nested parsed yet; see _lex in idleflow.py.
 function lex(s, work) {
   work[0] += s.length;
-  if (work[0] > MAX_WORK) throw new TooComplex();
+  if (work[0] > MAX_WORK || Date.now() > work[1]) throw new TooComplex();
   const cmds = [];
   let stmt = 0, compound = 0, pending = [];
   const st = { cmd: { words: [], subs: [], docs: [], stmt: 0 }, word: null, redirect: false };
@@ -460,15 +469,18 @@ function lex(s, work) {
     if (boundary && compound === 0) stmt += 1;
     st.cmd = { words: [], subs: [], docs: [], stmt };
   };
-  let i = 0;
+  let i = 0, steps = 0;
   const n = s.length;
   while (i < n) {
+    steps += 1;
+    if (steps % 4096 === 0 && Date.now() > work[1]) throw new TooComplex();
     const c = s[i];
-    if (s.startsWith("$((", i) || (s.startsWith("((", i) && st.word === null && !st.cmd.words.length)) {
-      // arithmetic: no commands in it but its own $(...) / backticks, and no here-documents
-      const start = c === "$" ? i + 1 : i;
-      const k = arithEnd(s, start);
-      w().subs.push(...substitutions(s.slice(start + 2, k - 2)));
+    const start = c === "$" ? i + 1 : i;
+    let k = 0;
+    if (s.startsWith("$((", i) || (s.startsWith("((", i) && st.word === null && !st.cmd.words.length)) k = arithEnd(s, start, work);
+    if (k) {
+      // arithmetic, which bash takes only when the "((" closes with "))"; see _lex in idleflow.py
+      w().subs.push(s.slice(start + 2, k - 2));
       w().text += s.slice(i, k);
       i = k;
     } else if (c === " " || c === "\t") { endWord(); i += 1; }
@@ -635,11 +647,41 @@ function killsAll(args) {
 const LISTER = "<lists pids>", DYNAMIC_KILL = "<kills a computed pid>";
 const LITERAL_PID_RE = /^(--|-?[0-9]+|%[0-9]*|-[A-Za-z][A-Za-z0-9+-]*)$/;
 
+// options of ps and lsof that only shape the output, and the ones that take a value
+const PID_ONLY = {
+  ps: [["-f", "-F", "-l", "-w", "-ww", "-H", "--no-headers", "--no-heading", "--forest"],
+    ["-p", "-q", "--pid", "--quick-pid", "-o", "-O", "--format"]],
+  lsof: [["-n", "-P", "-w", "-l", "-b", "-a", "-nP", "-Pn", "-V"], ["-p"]],
+};
+
+// ps -p <pid> / lsof -p <pid> with nothing else that selects processes; see _looks_up_given_pids
+function looksUpGivenPids(name, args) {
+  if (!Object.prototype.hasOwnProperty.call(PID_ONLY, name)) return false;
+  const [flags, valued] = PID_ONLY[name];
+  let selects = false, k = 0;
+  while (k < args.length) {
+    const t = args[k].text;
+    let option, value;
+    if (flags.includes(t)) { k += 1; continue; }
+    if (valued.includes(t)) {
+      if (k + 1 >= args.length) return false;
+      option = t; value = args[k + 1].text; k += 2;
+    } else {
+      option = valued.find((v) => (v.startsWith("--") && t.startsWith(v + "=")) ||
+        (!v.startsWith("--") && v.length === 2 && t.startsWith(v) && t.length > 2));
+      if (option === undefined) return false;
+      value = t.slice(option.length + (option.startsWith("--") ? 1 : 0)); k += 1;
+    }
+    if (["-p", "-q", "--pid", "--quick-pid"].includes(option)) {
+      if (value.includes("^")) return false;
+      selects = true;
+    }
+  }
+  return selects;
+}
+
 function isLister(name, args) {
-  if (!PID_LISTERS.includes(name)) return false;
-  // ps -p / lsof -p look at one PID the caller already has; they do not find processes
-  return !((name === "ps" || name === "lsof") && args.some((a) =>
-    ["-p", "-q", "--pid", "--quick-pid"].includes(a.text) || a.text.startsWith("-p") || a.text.startsWith("--pid=")));
+  return PID_LISTERS.includes(name) && !looksUpGivenPids(name, args);
 }
 
 // [refuse, what this script and everything nested in it runs: program names, plus LISTER when
@@ -707,9 +749,10 @@ function scan(script, work, depth) {
 
 // "" to allow, else the reason to refuse
 function killByPattern(command) {
+  if (command.length > MAX_INPUT) return "complex";
   let refuse, seen;
   try {
-    [refuse, seen] = scan(command, [0], 0);
+    [refuse, seen] = scan(command, [0, Date.now() + MAX_MS], 0);
   } catch (e) {
     if (e instanceof TooComplex) return "complex";
     throw e;

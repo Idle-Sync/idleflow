@@ -199,16 +199,22 @@ for c in 'pkill -f "docker ps --format"' 'killall node' 'sudo pkill vite' 'ls; p
          "find /proc -name '[0-9]*' -exec kill {} ;" '>out pkill x' "$(printf '$(bash -c "%.0s' $(seq 1 12))" \
          'while read p; do kill $p; done < <(pgrep -f vite)' 'pids=($(pgrep vite)); kill ${pids[@]}' \
          "pgrep -f vite | xargs -I{} sh -c 'kill {}'" "trap 'pkill -f vite' EXIT" 'busybox pkill vite' \
-         "$(printf 'echo $((1<<2))\npkill x')" 'kill "$PID"; pgrep -f vite || echo stopped'; do
+         "$(printf 'echo $((1<<2))\npkill x')" 'kill "$PID"; pgrep -f vite || echo stopped' \
+         'echo $((echo a); pkill node)' '((true) ; pkill node)' 'kill $(ps -e -p 1 -o pid=)' 'kill $(ps ax -p 1 -o pid=)' \
+         'kill $(lsof -p ^1 -t)' 'kill $(lsof -p 1 -i :3000 -t)'; do
   check "refuses a kill by name or pattern: $c" '[ "$(kill_rc "$c")" = 2 ]'
 done
 for c in 'kill 1234' 'kill -- -4242' 'grep -n pkill agents/*.md' 'echo "never use pkill"' 'pgrep -f vite' \
          "grep 'a;pkill' file" 'echo "x; killall y"' 'git commit -m "refuse pkill and killall"' 'sleep 300 & pid=$!; kill "$pid"' 'echo hi # pkill x' \
          "$(printf 'cat > notes.md <<%sEOF%s\npkill -f vite is forbidden\nEOF' "'" "'")" 'kill "$(cat .run/server.pid)"' \
          'constructor -x y' 'kill -1 1234' 'if ps -p "$PID" >/dev/null; then kill "$PID"; fi' 'command -v pkill' \
-         "kill -- -$(ps -o pgid= -p $PID | tr -d ' ')"; do
+         "kill -- -$(ps -o pgid= -p $PID | tr -d ' ')" 'echo $(( (a)+(b) )); kill 123' 'ps -p "$pid" -o comm= && kill "$pid"' \
+         'lsof -p "$pid" -nP && kill "$pid"'; do
   check "allows: $c" '[ "$(kill_rc "$c")" = 0 ]'
 done
+check "the kill guard refuses a command too long to check" '[ "$(kill_rc "echo $(printf "%0100001d" 0)")" = 2 ]'
+kg_start=$(date +%s); kg_rc=$(kill_rc "$(printf "%099999d" 0 | tr 0 "(")"); kg_secs=$(( $(date +%s) - kg_start ))
+check "the kill guard gives up on a run of 99999 '(' within its time" "[ $kg_rc = 2 ] && [ $kg_secs -lt 8 ]"
 check "the kill guard is a Bash hook" 'grep -q "kill-guard.sh" "$HERE/../hooks/hooks.json" && idleflow_rt get "$HERE/../hooks/hooks.json" hooks.PreToolUse | grep -q "\"matcher\":\"Bash\""'
 check "every agent that runs commands has the process rule" '( for a in "$HERE"/../agents/*.md; do case "$a" in */classifier.md) continue;; esac; grep -q "Never end processes by name or pattern" "$a" || exit 1; done )'
 

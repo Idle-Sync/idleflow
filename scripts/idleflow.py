@@ -22,6 +22,7 @@ import json
 import os
 import re
 import sys
+import time
 import datetime
 
 WIN = os.name == "nt"
@@ -388,7 +389,9 @@ WRAPPERS = {
 SCRIPT_OPTION = ("su", "runuser", "script", "flock")
 NAME_KILLERS = ("pkill", "killall", "killall5", "skill", "kill-port", "fkill", "fkill-cli")
 PID_LISTERS = ("pgrep", "pidof", "ps", "lsof", "fuser", "ss", "netstat")
-MAX_DEPTH, MAX_WORK = 12, 400000
+# a hook gets 10 s: refuse a command longer than MAX_INPUT, nested deeper than MAX_DEPTH, needing
+# more than MAX_WORK characters lexed in all, or taking longer than MAX_SECONDS to read
+MAX_INPUT, MAX_DEPTH, MAX_WORK, MAX_SECONDS = 100000, 12, 400000, 4.0
 ASSIGN_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\+?=")
 
 
@@ -438,19 +441,20 @@ def _lex(s, work):
     # targets), "docs" (here-document bodies, each (body, delimiter_was_quoted)) and "stmt", the
     # statement it belongs to: a pipeline, or a whole compound command such as a loop.
     work[0] += len(s)
-    if work[0] > MAX_WORK:
+    if work[0] > MAX_WORK or time.monotonic() > work[1]:
         raise _TooComplex()
     cmds, stmt, compound, pending = [], 0, 0, []
     st = {"cmd": {"words": [], "subs": [], "docs": [], "stmt": 0}, "word": None, "redirect": False}
 
     def w():
         if st["word"] is None:
-            st["word"] = {"text": "", "subs": []}
+            st["word"] = {"parts": [], "subs": []}
         return st["word"]
 
     def end_word():
         word = st["word"]
         if word is not None:
+            word["text"] = "".join(word.pop("parts"))  # built from parts: += on a long word is quadratic
             if st["redirect"]:
                 st["cmd"]["subs"].extend(word["subs"])  # a redirection target is not an argument
                 st["redirect"] = False
@@ -471,15 +475,22 @@ def _lex(s, work):
             stmt += 1
         st["cmd"] = {"words": [], "subs": [], "docs": [], "stmt": stmt}
 
-    i, n = 0, len(s)
+    i, n, steps = 0, len(s), 0
     while i < n:
+        steps += 1
+        if steps % 4096 == 0 and time.monotonic() > work[1]:
+            raise _TooComplex()
         c = s[i]
+        start = i + 1 if c == "$" else i
+        k = 0
         if s.startswith("$((", i) or (s.startswith("((", i) and st["word"] is None and not st["cmd"]["words"]):
-            # arithmetic: no commands in it but its own $(...) / backticks, and no here-documents
-            start = i + 1 if c == "$" else i
-            k = _arith_end(s, start)
-            w()["subs"].extend(_substitutions(s[start + 2:k - 2]))
-            w()["text"] += s[i:k]
+            k = _arith_end(s, start, work)
+        if k:
+            # arithmetic, which bash takes only when the "((" closes with "))"; anything else is a
+            # subshell, read below. Its body is also read as a script, so a misread fails closed;
+            # read on its own, a "<<" in it cannot swallow the lines after it as a here-document.
+            w()["subs"].append(s[start + 2:k - 2])
+            w()["parts"].append(s[i:k])
             i = k
         elif c in " \t":
             end_word()
@@ -509,11 +520,11 @@ def _lex(s, work):
         elif c in "<>" and s[i + 1:i + 2] == "(":
             k = _close(s, i)  # <(...) and >(...) run a command, like $(...)
             w()["subs"].append(s[i + 2:k - 1])
-            w()["text"] += s[i:k]
+            w()["parts"].append(s[i:k])
             i = k
         elif c in "<>":
             word = st["word"]
-            if word is not None and word["text"].isdigit() and not word["subs"]:
+            if word is not None and "".join(word["parts"]).isdigit() and not word["subs"]:
                 st["word"] = None  # a file descriptor number, as in 2>&1
             end_word()
             if s.startswith("<<", i) and not s.startswith("<<<", i):
@@ -538,17 +549,17 @@ def _lex(s, work):
             i = n if k < 0 else k
         elif c == "\\":
             if s[i + 1:i + 2] != "\n":
-                w()["text"] += s[i + 1:i + 2]
+                w()["parts"].append(s[i + 1:i + 2])
             i += 2
         elif c == "'" or (c == "$" and s[i + 1:i + 2] == "'"):
             ansi = c == "$"
             j = i + 2 if ansi else i + 1
             while j < n and s[j] != "'":
                 if ansi and s[j] == "\\":
-                    w()["text"] += {"n": "\n", "t": "\t"}.get(s[j + 1:j + 2], s[j + 1:j + 2])
+                    w()["parts"].append({"n": "\n", "t": "\t"}.get(s[j + 1:j + 2], s[j + 1:j + 2]))
                     j += 2
                 else:
-                    w()["text"] += s[j]
+                    w()["parts"].append(s[j])
                     j += 1
             w()
             i = j + 1
@@ -556,42 +567,49 @@ def _lex(s, work):
             j = i + 2 if c == "$" else i + 1
             while j < n and s[j] != '"':
                 if s[j] == "\\":
-                    w()["text"] += s[j + 1:j + 2]
+                    w()["parts"].append(s[j + 1:j + 2])
                     j += 2
                 elif s.startswith("$(", j) or s[j] == "`":
                     inner, k = _inner(s, j)
                     w()["subs"].append(inner)
-                    w()["text"] += s[j:k]
+                    w()["parts"].append(s[j:k])
                     j = k
                 else:
-                    w()["text"] += s[j]
+                    w()["parts"].append(s[j])
                     j += 1
             w()
             i = j + 1
         elif s.startswith("$(", i) or c == "`":
             inner, k = _inner(s, i)
             w()["subs"].append(inner)
-            w()["text"] += s[i:k]
+            w()["parts"].append(s[i:k])
             i = k
         else:
-            w()["text"] += c
+            w()["parts"].append(c)
             i += 1
     end_cmd(True)
     return cmds
 
 
-def _arith_end(s, i):
-    # index just past the "))" that closes the "((" at s[i]
-    depth, j = 0, i
+def _arith_end(s, i, work):
+    # index just past the "))" that closes the "((" at s[i], or 0 when the two do not close
+    # together; what it reads counts as work, since "((((..." would read the rest once per "("
+    depth, j, end = 0, i, 0
     while j < len(s):
         if s[j] == "(":
             depth += 1
         elif s[j] == ")":
             depth -= 1
+            if depth == 1 and s[j + 1:j + 2] != ")":
+                break
             if depth == 0:
-                return j + 1
+                end = j + 1
+                break
         j += 1
-    return len(s)
+    work[0] += j - i
+    if work[0] > MAX_WORK:
+        raise _TooComplex()
+    return end
 
 
 def _substitutions(text):
@@ -695,12 +713,47 @@ def _lists_pids(programs):
     return LISTER in programs
 
 
-def _is_lister(name, args):
-    if name not in PID_LISTERS:
+# options of ps and lsof that only shape the output, and the ones that take a value
+PID_ONLY = {
+    "ps": (("-f", "-F", "-l", "-w", "-ww", "-H", "--no-headers", "--no-heading", "--forest"),
+           ("-p", "-q", "--pid", "--quick-pid", "-o", "-O", "--format")),
+    "lsof": (("-n", "-P", "-w", "-l", "-b", "-a", "-nP", "-Pn", "-V"), ("-p",)),
+}
+
+
+def _looks_up_given_pids(name, args):
+    # ps -p <pid> / lsof -p <pid> with nothing else that selects processes: they look at PIDs the
+    # caller already has instead of finding processes. Any other option (-e, ax, -u, -C, -t, -i, a
+    # ^ that excludes) may select more, so the command counts as a PID lister.
+    if name not in PID_ONLY:
         return False
-    # ps -p / lsof -p look at one PID the caller already has; they do not find processes
-    return not (name in ("ps", "lsof") and any(
-        a["text"] in ("-p", "-q", "--pid", "--quick-pid") or a["text"].startswith(("-p", "--pid=")) for a in args))
+    flags, valued = PID_ONLY[name]
+    selects, k = False, 0
+    while k < len(args):
+        t = args[k]["text"]
+        value = None
+        if t in flags:
+            k += 1
+            continue
+        if t in valued:
+            if k + 1 >= len(args):
+                return False
+            option, value, k = t, args[k + 1]["text"], k + 2
+        else:
+            option = next((v for v in valued if (v.startswith("--") and t.startswith(v + "="))
+                           or (not v.startswith("--") and len(v) == 2 and t.startswith(v) and len(t) > 2)), None)
+            if option is None:
+                return False
+            value, k = t[len(option) + (1 if option.startswith("--") else 0):], k + 1
+        if option in ("-p", "-q", "--pid", "--quick-pid"):
+            if "^" in value:
+                return False
+            selects = True
+    return selects
+
+
+def _is_lister(name, args):
+    return name in PID_LISTERS and not _looks_up_given_pids(name, args)
 
 
 def _scan(script, work, depth):
@@ -782,8 +835,10 @@ class _Refuse(Exception):
 
 def kill_by_pattern(command):
     # "" to allow, else the reason to refuse
+    if len(command) > MAX_INPUT:
+        return "complex"
     try:
-        refuse, seen = _scan(command, [0], 0)
+        refuse, seen = _scan(command, [0, time.monotonic() + MAX_SECONDS], 0)
     except _TooComplex:
         return "complex"
     # a kill of a computed PID next to anything that finds PIDs: the PIDs may come from it, by a
