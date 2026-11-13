@@ -19,8 +19,9 @@
 # fields; ignore rules go through run.sh ignore; the `repo` readability mode is
 # offered and enforced). Exit 0 and a final "PASS" line mean everything worked.
 
-# Every check's test is single-quoted on purpose, so check() expands it when it runs.
-# shellcheck disable=SC2016
+# Every check's test is single-quoted on purpose, so check() expands it when it runs: shellcheck
+# then sees neither the expansion (SC2016) nor the variables the test reads (SC2034).
+# shellcheck disable=SC2016,SC2034
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUN="$HERE/run.sh"
@@ -811,6 +812,21 @@ rm -rf "$f/.venv"; sed -i.bak '/^worktree_setup:/d' "$f/.idleflow/conventions.md
 check "no venv in main, no suggestion"           '! (cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup"'
 rm -rf "$f"
 check "agents never borrow the main checkout's environment" 'grep -q "never the main checkout" "$HERE/../agents/implementer.md" && grep -q "never the main checkout" "$HERE/../agents/implementer-hard.md" && grep -q "never the main checkout" "$HERE/../agents/review-correct.md"'
+echo "--- a worktree installs its own node_modules"
+f="$(mktemp -d)"; ( cd "$f" && git init -q && mkdir -p .idleflow node_modules && printf 'mode: repo\nworktree_setup: unset\n' > .idleflow/conventions.md && printf '{}\n' > package.json && touch package-lock.json )
+check "detect suggests the lockfile's install when main has node_modules" '(cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup: npm ci — the main checkout has node_modules/"'
+rm -f "$f/package-lock.json"; touch "$f/pnpm-lock.yaml"
+check "the install follows the package manager" '(cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup: pnpm install --frozen-lockfile —"'
+rm -f "$f/pnpm-lock.yaml"; touch "$f/yarn.lock" "$f/.yarnrc.yml"
+check "Yarn 2 and later install with --immutable" '(cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup: yarn install --immutable —"'
+rm -f "$f/yarn.lock" "$f/.yarnrc.yml"
+check "node_modules without a lockfile gets no proposal" '! (cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup"'
+touch "$f/pnpm-lock.yaml"
+mkdir -p "$f/.venv"; touch "$f/uv.lock"
+check "a repo with both gets both installs" '(cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup: uv sync --frozen && pnpm install --frozen-lockfile — the main checkout has .venv/.*; the main checkout has node_modules/"'
+rm -rf "$f/node_modules" "$f/.venv"
+check "no node_modules in main, no suggestion" '! (cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup"'
+rm -rf "$f"
 echo "--- which files run.sh docs keeps"
 f="$(mktemp -d)"; ( cd "$f" && git init -q && git config user.name Ada && git config user.email a@a && mkdir -p .idleflow docs templates \
   && printf 'mode: repo\nindex_file: docs/index.md\n' > .idleflow/conventions.md && printf 'docs/\n' >> .git/info/exclude \
@@ -847,7 +863,7 @@ check "fix sizing ignores module count"   '! grep -q "more than one module" "$fi
 check "ignore rules go through run.sh ignore" 'grep -q "^ignore_in: unset" "$conventions" && grep -q "\"\$RUN\" ignore" "$setup" && grep -q "\"\$RUN\" ignore" "$init"'
 check "repo readability mode is offered and enforced" 'grep -q "^| \`repo\` |" "$conventions" && grep -q "Match this repo" "$setup" && grep -q "Match this repo" "$HERE/../commands/style.md" && grep -q "\`repo\`" "$HERE/../agents/implementer.md" && grep -q "\`repo\`" "$HERE/../agents/implementer-hard.md" && grep -q "\`repo\`" "$HERE/../agents/review-conform.md"'
 check "both reviewers allow shared files" 'grep -q "top-level \`shared\` list" "$HERE/../agents/review-conform.md" && grep -q "top-level \`shared\` list" "$HERE/../agents/review-correct.md"'
-check "research agents reach sources by endpoint" '[ -f "$HERE/../procedures/research-sources.md" ] && grep -q "gh api repos" "$HERE/../procedures/research-sources.md" && ( for a in market-researcher stack-researcher library-scout; do grep -q "research-sources.md" "$HERE/../agents/$a.md" || exit 1; done ) && grep -q "research-sources.md" "$HERE/../commands/init.md" && [ "$(grep -o "research-sources.md" "$HERE/../procedures/repo-setup.md" | wc -l | tr -d " ")" -ge 2 ]'
+check "research agents reach sources by endpoint" '[ -f "$HERE/../procedures/research-sources.md" ] && grep -q "GitHub API \`repos/<owner>/<repo>\`" "$HERE/../procedures/research-sources.md" && grep -q "curl -s -A \"research-client/1.0\" '"'"'https://api.github.com/<path>'"'"'" "$HERE/../procedures/research-sources.md" && ( for a in market-researcher stack-researcher library-scout; do grep -q "research-sources.md" "$HERE/../agents/$a.md" || exit 1; done ) && grep -q "research-sources.md" "$HERE/../commands/init.md" && [ "$(grep -o "research-sources.md" "$HERE/../procedures/repo-setup.md" | wc -l | tr -d " ")" -ge 2 ]'
 check "no command labels the idleflow issues it opens" '! grep -rn --exclude=selftest.sh "add-label\|--label" "$HERE/../commands" "$HERE/../procedures" "$HERE/../agents" "$HERE/../templates" "$HERE" | grep -v "/commands/skills-feedback\.md:[0-9]*:.*add-label skill-request"'
 check "the time log exists before the planner reads it" 'grep -q "copy \`templates/time-log.md\` if not" "$HERE/../commands/feature.md" && grep -q "copying \`templates/time-log.md\` if not" "$HERE/../commands/setup.md"'
 check "human decisions reach the plan through the planner" 'grep -q "decisions.md" "$HERE/../agents/planner.md" && grep -q "Q<n>: answered" "$HERE/../agents/planner.md" && ! grep -q "apply the answer; continue" "$HERE/../commands/feature.md" && ! grep -q "write the answers into plan.md" "$HERE/../commands/feature.md" && grep -q "You never edit plan.md yourself" "$HERE/../commands/feature.md" && grep -q "Q1: <question> (default:" "$HERE/../templates/plan.md"'
