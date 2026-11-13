@@ -51,7 +51,7 @@ Files listed under `shared_files` in `.idleflow/conventions.md` are open to ever
 
 ## Processes
 
-Other sessions share this machine. Give a command that may hang (a server, `docker`, a network call, a watch mode) the Bash tool's timeout, or start it in the background and keep its PID (`$!`). End only a process you started, by that PID (`kill <pid>`, or `kill -- -<pid>` for its process group). Never end processes by name or pattern (`pkill`, `killall`, `kill $(pgrep ...)`): that also ends other sessions' work, and the hook refuses it.
+Other sessions share this machine. Give a command that may hang (a server, `docker`, a network call, a watch mode) the Bash tool's timeout, or start it in the background and keep its PID (`$!`). End only a process you started, by that PID (`kill <pid>`, or `kill -- -<pid>` for its process group). Never end processes by name or pattern (`pkill`, `killall`, `kill $(pgrep ...)`): that also ends other sessions' work, and the hook refuses it. A check that may run past the Bash tool's default two minutes (a full suite, a build, a mutation sweep) gets its longest timeout (`timeout: 600000`, ten minutes); one that may run longer than that is split into runs that each fit (a test file, or one mutant, per call). You have no tool to wait for a command the Bash tool moved to the background, so a check that was moved there anyway is run again in smaller parts, never waited on with a polling loop.
 
 ## When the guard hook blocks you
 

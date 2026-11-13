@@ -229,6 +229,7 @@ kg_start=$(date +%s); kg_rc=$(kill_rc "$(printf "%099999d" 0 | tr 0 "(")"); kg_s
 check "the kill guard gives up on a run of 99999 '(' within its time" "[ $kg_rc = 2 ] && [ $kg_secs -lt 8 ]"
 check "the kill guard is a Bash hook" 'grep -q "kill-guard.sh" "$HERE/../hooks/hooks.json" && idleflow_rt get "$HERE/../hooks/hooks.json" hooks.PreToolUse | grep -q "\"matcher\":\"Bash\""'
 check "every agent that runs commands has the process rule" '( for a in "$HERE"/../agents/*.md; do case "$a" in */classifier.md) continue;; esac; grep -q "Never end processes by name or pattern" "$a" || exit 1; done )'
+check "agents that run suites keep long checks in the foreground" '( for a in implementer implementer-hard review-correct; do grep -q "timeout: 600000" "$HERE/../agents/$a.md" && grep -q "never waited on with a polling loop" "$HERE/../agents/$a.md" || exit 1; done )'
 
 echo "--- report / gate"
 check "report fails when none written"  '! bash "$RUN" report T1 2>/dev/null'
