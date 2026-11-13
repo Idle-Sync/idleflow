@@ -15,6 +15,7 @@
 //   guard                                   hook: payload on stdin; exit 2 blocks
 //   detach <cwd> <log> <pidfile> <command>  runs the command in its own session, output to log; writes its pid
 //   entries <file> <key>                    one "name<TAB>value" line per entry of the object at that top-level key
+//   unowned <file> <task-id>                paths on stdin, one per line; prints those the task may not change
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -181,25 +182,17 @@ function findMap(start) {
     d = parent;
   }
 }
-// fnmatch semantics: '*' and '?' also cross '/' (same as Python's fnmatch).
+// Ownership globs: '*' and '?' are the only wildcards and both cross '/'. Everything else is
+// literal, brackets included: routes such as src/pages/[slug].astro are named with them.
+// Same in idleflow.py.
 function globToRegex(g) {
   let re = "";
-  for (let i = 0; i < g.length; i++) {
-    const c = g[i];
+  for (const c of g) {
     if (c === "*") re += ".*";
     else if (c === "?") re += ".";
-    else if (c === "[") {
-      const j = g.indexOf("]", i + 1);
-      if (j === -1) re += "\\[";
-      else {
-        let cls = g.slice(i + 1, j);
-        if (cls.startsWith("!")) cls = "^" + cls.slice(1);
-        re += "[" + cls.replace(/\\/g, "\\\\") + "]";
-        i = j;
-      }
-    } else re += c.replace(/[.+^${}()|\\\/]/g, "\\$&");
+    else re += c.replace(/[.*+?^${}()|[\]\\\/]/g, "\\$&");
   }
-  return new RegExp("^" + re + "$");
+  return new RegExp("^" + re + "$", "s");
 }
 function globMatch(rel, globs) {
   for (let g of globs) {
@@ -323,7 +316,23 @@ function cmdEntries(file, key) {
     process.stdout.write(`${name}\t${text.replace(/[\t\n]/g, " ")}\n`);
   }
 }
-const table = { get: cmdGet, set: cmdSet, inc: cmdInc, finish: cmdFinish, own: cmdOwn, gate: cmdGate, guard: cmdGuard, detach: cmdDetach, entries: cmdEntries };
+// The reviewers' ownership check, with the guard's matcher, so the two can never disagree.
+function cmdUnowned(p, tid) {
+  const omap = load(p);
+  const task = (omap.tasks || {})[tid];
+  if (!task) {
+    process.stderr.write(`idleflow.js: task ${tid} is not in ${p}\n`);
+    process.exit(1);
+  }
+  const owns = Array.isArray(task.owns) ? task.owns : [];
+  const shared = Array.isArray(omap.shared) ? omap.shared : [];
+  const allowed = owns.concat([".idleflow-run/**"], shared);
+  for (const line of fs.readFileSync(0, "utf8").split(/\r?\n/)) {
+    const rel = line.trim().replace(/\\/g, "/");
+    if (rel && !globMatch(WIN ? rel.toLowerCase() : rel, allowed)) process.stdout.write(rel + "\n");
+  }
+}
+const table = { get: cmdGet, set: cmdSet, inc: cmdInc, finish: cmdFinish, own: cmdOwn, gate: cmdGate, guard: cmdGuard, detach: cmdDetach, entries: cmdEntries, unowned: cmdUnowned };
 const [cmd, ...args] = process.argv.slice(2);
 if (!cmd || !(cmd in table)) {
   process.stderr.write(`idleflow.js: unknown subcommand ${JSON.stringify(cmd)}\n`);
