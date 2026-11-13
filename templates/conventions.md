@@ -147,9 +147,12 @@ preview_url: unset
   tasks' previews never share a port; `${IDLEFLOW_PORT}` is replaced with the task's port). The design
   reviewer starts it in a task's worktree only through `run.sh preview`, to take screenshots at phone and
   desktop widths when a browser tool is available. Same approval rule as `gate`.
-- `commit_format`: `idleflow` (task commits `T1: ...`, merges `idleflow: merge T1 (<run>)`) or
-  `conventional` (Conventional Commits subjects of at most 72 characters for task and merge
-  commits, run and task ids in the body), for repos whose CI checks commit subjects.
+- `commit_format`: `idleflow` (task commits `T1: ...`, merges `idleflow: merge T1 (<run>)`),
+  `conventional` (Conventional Commits subjects of at most 72 characters, merges `chore: merge
+  <task title>`, for repos whose CI checks commit subjects) or `plain` (plain-sentence subjects
+  with no prefix, merges `Merge <task title>`, for repos whose history reads that way). Only the
+  `idleflow` format names the tool; every format puts the run and task ids in the body (`Run:`,
+  `Task:`).
 
 ## Ignore rules
 

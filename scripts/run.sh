@@ -86,6 +86,12 @@ json_str() { printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')";
 
 plugin_version() { idleflow_rt get "$HERE/../.claude-plugin/plugin.json" version 2>/dev/null || echo unknown; }
 
+# the title in the plan's "### <task-id>: <title>" heading, empty when there is none
+plan_title() { # plan_title <task-id>
+  [ -f "$ACTIVE/plan.md" ] || return 0
+  H="### $1:" awk 'index($0, ENVIRON["H"]) == 1 { print substr($0, length(ENVIRON["H"]) + 1); exit }' "$ACTIVE/plan.md" | tr -d '\r'
+}
+
 active_id() {
   [ -f "$ACTIVE/run.json" ] || { echo "no active run (run.sh new <slug> first)" >&2; exit 1; }
   local id started_on
@@ -309,9 +315,10 @@ gen_dependencies() {
   [ -f go.mod ] && awk '/^require \(/{ r = 1; next } r && /^\)/{ r = 0 } r && NF >= 2 { print "- `" $1 "` " $2 " — go.mod" } /^require [^(]/{ print "- `" $2 "` " $3 " — go.mod" }' go.mod | LC_ALL=C sort
   return 0
 }
-gen_runs() { # the last ten idleflow runs merged here, newest first, from both merge-commit formats
-  { "${G[@]}" log --date=short --format='%ad%x09%an%x09%s%x09%(trailers:key=Run,valueonly,separator=)' \
-      --grep='^idleflow: merge ' --grep='^chore(idleflow): merge task ' || true; } |
+gen_runs() { # the last ten idleflow runs merged here, newest first: merge commits with a Run trailer,
+  # plus older merges whose subject held the run id
+  { "${G[@]}" log --merges --date=short --format='%ad%x09%an%x09%s%x09%(trailers:key=Run,valueonly,separator=)' || true; } |
+    awk -F'\t' '$4 != "" || $3 ~ /^idleflow: merge / || $3 ~ /^chore\(idleflow\): merge task /' |
     awk -F'\t' '{ id = $4; if (id == "" && match($3, /\(([^)]+)\)$/)) id = substr($3, RSTART + 1, RLENGTH - 2)
                   if (id == "") next; if (!(id in n)) { order[++k] = id; when[id] = $1; who[id] = $2 } n[id]++ }
                 END { for (i = 1; i <= k && i <= 10; i++) { id = order[i]; print "- " when[id] " " who[id] ": run `" id "`, " n[id] " task(s) merged" } }'
@@ -612,17 +619,26 @@ JSON
     ;;
   merge)
     tid="${1:?task-id}"; id="$(active_id)"
+    # The task's title says what the merge brings. It is read here from the plan, never passed on a
+    # command line: a title with `code` or $name in it would be expanded by the shell that runs the
+    # command. One line; the ids go in the body.
+    title="$(plan_title "$tid" | tr '\n\r\t' '   ' | sed 's/  */ /g; s/^ //; s/ $//')"; [ -n "$title" ] || title="task $tid"
     br="idleflow/$id/$tid"; p="$(wt_path "$tid")"
     # the "never merge an unapproved task" rule, enforced here and not only in the prompt
     st="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$tid.status" 2>/dev/null || true)"
     [ "$st" = "approved" ] || { echo "refusing to merge $tid: status is '${st:-unset}', not approved" >&2; exit 4; }
-    # `commit_format: conventional` repos often check every subject in CI (type(scope): ..., at most
-    # 72 characters), so the run id moves to the body there.
-    if [ "$(conventions_value commit_format)" = conventional ]; then
-      merge_msg=(-m "chore(idleflow): merge task $tid" -m "Run: $id")
-    else
-      merge_msg=(-m "idleflow: merge $tid ($id)")
-    fi
+    # The subject follows the repo's style and says what merged; only the `idleflow` format, the
+    # tool's own, names it. `conventional` repos often check every subject in CI (at most 72
+    # characters), so ids live in the body, as trailers every format carries (gen_runs reads them).
+    # --no-log: a merge.log setting would append a shortlog after them, and they would stop being
+    # the message's trailers.
+    case "$(conventions_value commit_format)" in
+      conventional) subject="$(idleflow_rt clip 72 "chore: merge $title")";;
+      plain) subject="$(idleflow_rt clip 72 "Merge $title")";;
+      *) subject="idleflow: merge $tid ($id)";;
+    esac
+    merge_msg=(-m "$subject" -m "Run: $id
+Task: $tid")
     # What merges is the task's commits, the ones the gate measured and the reviewers approved.
     # Anything uncommitted in the worktree (a setup script's output, a cache) stays there.
     if [ -d "$p" ]; then
@@ -630,7 +646,7 @@ JSON
       left="${left% }"
       [ -z "$left" ] || echo "merge $tid: uncommitted in the worktree, not merged: $left" >&2
     fi
-    if "${G[@]}" ${IDENTITY[@]+"${IDENTITY[@]}"} merge --no-ff -q "${merge_msg[@]}" "$br"; then
+    if "${G[@]}" ${IDENTITY[@]+"${IDENTITY[@]}"} merge --no-ff --no-log -q "${merge_msg[@]}" "$br"; then
       idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.t_merge" "$(date +%s)"
       echo "merged $tid"
     elif [ -f "$("${G[@]}" rev-parse --absolute-git-dir)/MERGE_HEAD" ]; then
@@ -831,6 +847,9 @@ JSON
       total="$(printf '%s' "$subjects" | grep -c . || true)"
       cc="$(printf '%s\n' "$subjects" | grep -Ec '^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([A-Za-z0-9_./-]+\))?!?: ' || true)"
       if [ "${total:-0}" -ge 10 ] && [ $((cc * 100 / total)) -ge 80 ]; then say commit_format conventional "$cc of the last $total commit subjects are Conventional Commits"; fi
+      # plain sentences: no type prefix and no `<id>: ` prefix, starting with a capital letter
+      capital="$(printf '%s\n' "$subjects" | grep -Ev '^[A-Za-z0-9_()./!-]+: ' | grep -c '^[A-Z]' || true)"
+      if [ "${total:-0}" -ge 10 ] && [ $((capital * 100 / total)) -ge 80 ]; then say commit_format plain "$capital of the last $total commit subjects are plain sentences with no prefix"; fi
     fi
     if unset_key lessons_in && [ -f "$REPO/lessons.md" ] && [ ! -f "$IDLE/lessons.md" ]; then say lessons_in lessons.md "the repo already keeps lessons.md"; fi
     if unset_key progress_file && [ ! -f "$REPO/progress.md" ] && [ -f "$REPO/docs/progress.md" ]; then say progress_file docs/progress.md "the repo keeps docs/progress.md"; fi
