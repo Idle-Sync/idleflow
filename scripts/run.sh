@@ -410,9 +410,19 @@ job_dir() { echo "$ACTIVE/tasks/$1/jobs/$2"; }
 # command has ended and no process of the group is left, the job is marked ended and never
 # signalled again: its pid may since belong to someone else.
 job_pid() { cat "$1/pid" 2>/dev/null || true; }
+# Once the command has ended its own pid may be reused, so only the group is asked about then; the
+# bare pid stands in for the group only while the job's own shell still runs (where there are no
+# process groups).
 group_alive() { # group_alive <job dir>
   local pid; pid="$(job_pid "$1")"
-  [ -n "$pid" ] && { kill -0 -- "-$pid" 2>/dev/null || kill -0 "$pid" 2>/dev/null; }
+  [ -n "$pid" ] || return 1
+  kill -0 -- "-$pid" 2>/dev/null && return 0
+  [ ! -f "$1/status" ] && kill -0 "$pid" 2>/dev/null
+}
+signal_job() { # signal_job <job dir> <signal>: to the group; to the bare pid only while the command runs
+  local pid; pid="$(job_pid "$1")"
+  kill "-$2" -- "-$pid" 2>/dev/null && return 0
+  if [ ! -f "$1/status" ]; then kill "-$2" "$pid" 2>/dev/null || true; fi
 }
 job_ended() { # job_ended <job dir>: the command ended and nothing of it is left
   [ -f "$1/ended" ] && return 0
@@ -423,9 +433,9 @@ stop_job() { # stop_job <job dir>: TERM to the whole group, KILL after 5 s; 143 
   local pid n=0
   job_ended "$1" && return 0
   pid="$(job_pid "$1")"; [ -n "$pid" ] || return 0
-  kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+  signal_job "$1" TERM
   while group_alive "$1" && [ "$n" -lt 25 ]; do sleep 0.2; n=$((n + 1)); done
-  if group_alive "$1"; then kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true; sleep 0.5; fi
+  if group_alive "$1"; then signal_job "$1" KILL; sleep 0.5; fi
   if group_alive "$1"; then echo "[idleflow] job in $(native_path "$1") still has processes after KILL" >&2; return 1; fi
   [ -f "$1/status" ] || { echo 143 > "$1/status.tmp" && mv "$1/status.tmp" "$1/status"; }
   : > "$1/ended"

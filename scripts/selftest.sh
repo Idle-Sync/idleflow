@@ -495,6 +495,10 @@ check "a job that leaves a process behind ends with its code and says so" '[ "$r
 sleep 300 >/dev/null 2>&1 & other=$!
 echo "$other" > ".idleflow/runs/active/tasks/TA/jobs/$job/pid"
 check "an ended job is never signalled again" 'bash "$RUN" stop TA "$job" >/dev/null && kill -0 "$other" 2>/dev/null'
+bash "$RUN" exec TA -- true >/dev/null 2> "$scratch/job.err"
+job="$(sed -n 's/.*job \([0-9]*\) of TA started.*/\1/p' "$scratch/job.err")"; rm -f ".idleflow/runs/active/tasks/TA/jobs/$job/ended"
+echo "$other" > ".idleflow/runs/active/tasks/TA/jobs/$job/pid"
+check "a finished job whose pid was reused is never signalled" 'bash "$RUN" stop TA "$job" >/dev/null && kill -0 "$other" 2>/dev/null'
 kill "$other" 2>/dev/null
 bash "$RUN" exec TB -- sleep 60 >/dev/null 2> "$scratch/job.err"
 job="$(sed -n 's/.*job \([0-9]*\) of TB is still running.*/\1/p' "$scratch/job.err")"
