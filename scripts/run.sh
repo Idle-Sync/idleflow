@@ -12,7 +12,10 @@
 #   run.sh unowned <task-id>              -> paths the task's commits change (base..HEAD, what merges) that its globs,
 #                                            .idleflow-run/** and shared_files do not cover; matched as the guard matches
 #   run.sh exec <task-id> -- <command...> -> runs a command in the task's worktree with its own port (IDLEFLOW_PORT) and
-#                                            its own temp folder (IDLEFLOW_TMP, TMPDIR)
+#                                            its own temp folder (IDLEFLOW_TMP, TMPDIR), as a job; prints its output and exits
+#                                            with its code, or exits 75 while it still runs after EXEC_WAIT_SECONDS
+#   run.sh wait <task-id> <job>           -> waits for a job again, the same way
+#   run.sh stop <task-id> <job>           -> ends a job and every process it started
 #   run.sh get <key>                      -> prints a value from run.json (dotted keys ok)
 #   run.sh set <key> <json>               -> sets a value in run.json (dotted keys ok)
 #   run.sh inc <key> [n]                  -> adds n (default 1) to a counter in run.json
@@ -397,6 +400,69 @@ in_task() { # in_task <task-id> <dir> <command...>
   return "$rc"
 }
 
+# A task's commands run as jobs: each in its own session, its output in tasks/<id>/jobs/<n>/log and
+# its exit code in .../status when it ends. exec and wait return within EXEC_WAIT_SECONDS, below the
+# point where Claude Code moves a subagent's Bash command to the background, where the agent could
+# no longer wait for it or stop it; a job still running is waited on again or stopped by number.
+job_dir() { echo "$ACTIVE/tasks/$1/jobs/$2"; }
+# The job's pid is written by its own shell ($$), so it is one bash's kill understands everywhere
+# (on Git Bash a runtime's pid is a Windows one). The job leads its own process group. Once the
+# command has ended and no process of the group is left, the job is marked ended and never
+# signalled again: its pid may since belong to someone else.
+job_pid() { cat "$1/pid" 2>/dev/null || true; }
+# Once the command has ended its own pid may be reused, so only the group is asked about then; the
+# bare pid stands in for the group only while the job's own shell still runs (where there are no
+# process groups).
+group_alive() { # group_alive <job dir>
+  local pid; pid="$(job_pid "$1")"
+  [ -n "$pid" ] || return 1
+  kill -0 -- "-$pid" 2>/dev/null && return 0
+  [ ! -f "$1/status" ] && kill -0 "$pid" 2>/dev/null
+}
+signal_job() { # signal_job <job dir> <signal>: to the group; to the bare pid only while the command runs
+  local pid; pid="$(job_pid "$1")"
+  kill "-$2" -- "-$pid" 2>/dev/null && return 0
+  if [ ! -f "$1/status" ]; then kill "-$2" "$pid" 2>/dev/null || true; fi
+}
+job_ended() { # job_ended <job dir>: the command ended and nothing of it is left
+  [ -f "$1/ended" ] && return 0
+  if [ -f "$1/status" ] && ! group_alive "$1"; then : > "$1/ended"; return 0; fi
+  return 1
+}
+stop_job() { # stop_job <job dir>: TERM to the whole group, KILL after 5 s; 143 if the command had not ended
+  local pid n=0
+  job_ended "$1" && return 0
+  pid="$(job_pid "$1")"; [ -n "$pid" ] || return 0
+  signal_job "$1" TERM
+  while group_alive "$1" && [ "$n" -lt 25 ]; do sleep 0.2; n=$((n + 1)); done
+  if group_alive "$1"; then signal_job "$1" KILL; sleep 0.5; fi
+  if group_alive "$1"; then echo "[idleflow] job in $(native_path "$1") still has processes after KILL" >&2; return 1; fi
+  [ -f "$1/status" ] || { echo 143 > "$1/status.tmp" && mv "$1/status.tmp" "$1/status"; }
+  : > "$1/ended"
+}
+await_job() { # await_job <task-id> <job>: the command's output and exit code, or 75 while it runs
+  local d end n=0; d="$(job_dir "$1" "$2")"
+  [ -d "$d" ] || { echo "no job $2 for task $1" >&2; exit 1; }
+  while [ ! -f "$d/pid" ] && [ ! -f "$d/status" ] && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
+  end=$(( $(date +%s) + ${EXEC_WAIT_SECONDS:-100} ))
+  while [ ! -f "$d/status" ] && [ "$(date +%s)" -lt "$end" ]; do
+    if ! group_alive "$d"; then
+      sleep 0.2; [ -f "$d/status" ] || { echo 1 > "$d/status.tmp" && mv "$d/status.tmp" "$d/status"; echo "[idleflow] job $2 of $1 ended without an exit code" >&2; }
+      break
+    fi
+    sleep 0.2
+  done
+  if [ -f "$d/status" ]; then
+    cat "$d/log"
+    # the command is over; a process it left behind (a server it started) is said, not waited for
+    job_ended "$d" || echo "[idleflow] job $2 of $1 ended, but processes it started still run; end them with: bash \"$0\" stop $1 $2" >&2
+    exit "$(cat "$d/status")"
+  fi
+  tail -n 20 "$d/log"
+  echo "[idleflow] job $2 of $1 is still running (log: $(native_path "$d/log")). Wait for it: bash \"$0\" wait $1 $2. End it: bash \"$0\" stop $1 $2. Do not start it again while it runs." >&2
+  exit 75
+}
+
 # The repo's own preparation for a fresh worktree (link shared folders, copy fixtures).
 run_worktree_setup() { # run_worktree_setup <task-id> <worktree>
   local cmd log
@@ -573,6 +639,8 @@ JSON
         ;;
       rm)
         tid="${1:?task-id}"; check_task_id "$tid"; p="$(wt_path "$tid")"
+        # the task's jobs go with its worktree
+        for jd in "$ACTIVE/tasks/$tid/jobs"/*/; do [ -d "$jd" ] && stop_job "${jd%/}"; done
         "${G[@]}" worktree remove --force "$p" 2>/dev/null || true
         "${G[@]}" worktree prune
         ;;
@@ -608,8 +676,24 @@ JSON
     [ "$#" -gt 0 ] || { echo "usage: run.sh exec <task-id> -- <command...>" >&2; exit 1; }
     active_id >/dev/null
     dir="$(wt_path "$tid")"; [ -d "$dir" ] || { echo "exec: no worktree for $tid (run.sh wt add $tid first)" >&2; exit 1; }
-    rc=0; in_task "$tid" "$dir" "$@" || rc=$?
-    exit "$rc"
+    jobs="$ACTIVE/tasks/$tid/jobs"; mkdir -p "$jobs"
+    n=1; while ! mkdir "$jobs/$n" 2>/dev/null; do n=$((n + 1)); done
+    jd="$jobs/$n"; printf -v q '%q ' "$@"; printf -v st '%q' "$jd/status"
+    # the exit code is written to a temp name and moved, so a reader never sees half of it
+    printf -v pf '%q' "$jd/pid"
+    in_task "$tid" "$dir" idleflow_rt detach "$dir" "$jd/log" "$jd/pid.runtime" \
+      "echo \$\$ > $pf.tmp && mv $pf.tmp $pf; $q; rc=\$?; echo \$rc > $st.tmp && mv $st.tmp $st" || { echo "exec: could not start the command" >&2; exit 1; }
+    # the number first, so an agent whose call is cut short still knows which job to wait for
+    echo "[idleflow] job $n of $tid started" >&2
+    await_job "$tid" "$n"
+    ;;
+  wait|stop)
+    tid="${1:?task-id}"; check_task_id "$tid"; job="${2:?job number}"; active_id >/dev/null
+    [[ "$job" =~ ^[0-9]+$ ]] || { echo "$cmd: '$job' is not a job number" >&2; exit 1; }
+    if [ "$cmd" = wait ]; then await_job "$tid" "$job"; fi
+    [ -f "$(job_dir "$tid" "$job")/pid" ] || { echo "no job $job for task $tid" >&2; exit 1; }
+    stop_job "$(job_dir "$tid" "$job")" || exit 1
+    echo "job $job of $tid: stopped"
     ;;
   get)
     key="${1:?key}"; active_id >/dev/null
