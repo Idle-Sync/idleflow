@@ -183,6 +183,11 @@ wtu="$(bash "$RUN" wt add "Té")"; bash "$RUN" own "Té" '["src/**"]'
 check "blocks in a non-ASCII worktree"    '[ "$(guard_rc "$(native "$wtu")/é.txt" "$(native "$wtu")")" = "2" ]'
 check "allows owned in non-ASCII worktree" '[ "$(guard_rc "$(native "$wtu")/src/é.txt" "$(native "$wtu")")" = "0" ]'
 bash "$RUN" wt rm "Té"
+touch "${d}__wt/keep-me"
+check "wt add refuses an id that is a path"       '! bash "$RUN" wt add .. 2>/dev/null && ! bash "$RUN" wt add ../x 2>/dev/null && [ -e "${d}__wt/keep-me" ] && [ ! -e "${d}__wt/x" ]'
+check "every task-id subcommand refuses a path"   '( for c in "wt rm" own unowned report gate merge exec preview repo-gate; do out="$(bash "$RUN" $c ../T1 x y 2>&1)"; case "$out" in "not a task id: "*) ;; *) exit 1;; esac; done )'
+check "an id with a git ref character is refused" '! bash "$RUN" wt add "a~1" 2>/dev/null && ! bash "$RUN" wt add "x.lock" 2>/dev/null && ! bash "$RUN" wt add _gate-base 2>/dev/null'
+rm -f "${d}__wt/keep-me"
 
 echo "--- kill guard"
 KILLG="$HERE/kill-guard.sh"
