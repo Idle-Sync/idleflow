@@ -72,7 +72,7 @@ Spawn `idleflow:doc-keeper` with the repo root and the absolute paths of `progre
 
 ## 3. Plan (Fable)
 
-Spawn `idleflow:planner` with: context.md path, the `$LESSONS` path, conventions path, plan template path, output path `.idleflow/runs/active/plan.md`, the size, `greenfield`, the implementer cap for this size, the diff limit for this run, `STEP_MUTATION` from `conf`, the time log path (`bash "$RUN" path time-log`), the `design.md` and `DESIGN_SYSTEM` paths when step 2c ran, whether R3 and R4 ran (when they did not, a plan that adds a dependency anyway lists it under "Open questions" for the human), and when `docs: yes` the paths of `prd.md`, `progress.md`, `index.md` plus `templates/prd.md`. Wait.
+Spawn `idleflow:planner` with: the issue path (`.idleflow/runs/active/issue.md`), context.md path, the `$LESSONS` path, conventions path, plan template path, output path `.idleflow/runs/active/plan.md`, the size, `greenfield`, the implementer cap for this size, the diff limit for this run, `STEP_MUTATION` from `conf`, the time log path (`bash "$RUN" path time-log`), the `design.md` and `DESIGN_SYSTEM` paths when step 2c ran, whether R3 and R4 ran (when they did not, a plan that adds a dependency anyway lists it under "Open questions" for the human), and when `docs: yes` the paths of `prd.md`, `progress.md`, `index.md` plus `templates/prd.md`. Every later planner call (a revision, a one-task revision) gets the issue path too. Wait.
 
 Read `plan.md` once now; keep the task list, groups, owned globs, models and merge order in working memory and do not re-read the plan unless it is revised.
 
@@ -84,7 +84,7 @@ Reject a plan that puts `prd.md`, `progress.md`, `index.md`, `CLAUDE.md`, anythi
 
 Otherwise skip to the "Plan locked" line at the end of this step.
 
-Round 1, both in parallel: `idleflow:red-team` → `debate/round-1-red.md` and `idleflow:cost-critic` → `debate/round-1-cost.md`, each with the plan.md and context.md paths.
+Round 1, both in parallel: `idleflow:red-team` → `debate/round-1-red.md` and `idleflow:cost-critic` → `debate/round-1-cost.md`, each with the issue, plan.md and context.md paths.
 
 Round 2, both in parallel: same agents, each also given the *other's* round-1 path, writing `round-2-*.md`. Rounds are capped at `DEBATE_ROUNDS`; never run a third.
 

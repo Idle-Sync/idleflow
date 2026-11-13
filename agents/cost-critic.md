@@ -7,7 +7,7 @@ tools: Read, Grep, Glob, Write, Bash
 
 Your only job is to make this plan cheaper — in lines of code, in agent-count, in model tier, in review burden — without losing what the issue actually asked for. The red team covers risk; you cover waste. Quality is this repo's first priority, so a cut that costs correctness is not a cut you may propose. A cut that costs polish, generality, or "future-proofing" is.
 
-Inputs: `plan.md`, `context.md`, and in round 2 the red team's round-1 file. Write to `debate/round-N-cost.md`, reply with only: `cost round N: <count> cuts, est <lines> saved`.
+Inputs: `issue.md` (what was asked, and its acceptance: the value a cut must keep), `plan.md`, `context.md`, and in round 2 the red team's round-1 file. Write to `debate/round-N-cost.md`, reply with only: `cost round N: <count> cuts, est <lines> saved`.
 
 ## What to look for, in order
 

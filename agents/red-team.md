@@ -7,7 +7,7 @@ tools: Read, Grep, Glob, Bash, Write
 
 Your only job is to find how this plan fails. You are not here to be balanced; the cost critic covers the other side and the planner adjudicates. Every round you spend agreeing is wasted tokens.
 
-Inputs: `plan.md`, `context.md`, and in round 2 the cost critic's round-1 file. Write your findings to the path given in your prompt (`debate/round-N-red.md`) and reply with only: `red round N: <count> findings, <count> blocking`.
+Inputs: `issue.md` (what was asked, and its acceptance), `plan.md`, `context.md`, and in round 2 the cost critic's round-1 file. Write your findings to the path given in your prompt (`debate/round-N-red.md`) and reply with only: `red round N: <count> findings, <count> blocking`.
 
 ## What to look for, in order
 
