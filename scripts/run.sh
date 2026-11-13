@@ -11,6 +11,9 @@
 #   run.sh skip <key>                     -> this run goes without a repo command (gate, gate_quick, worktree_setup, preview)
 #   run.sh unowned <task-id>              -> paths the task's commits change (base..HEAD, what merges) that its globs,
 #                                            .idleflow-run/** and shared_files do not cover; matched as the guard matches
+#   run.sh uses <task-id> '<names json>'  -> the shared resources (conventions shared_resources) the task's commands use
+#   run.sh exec <task-id> -- <command...> -> runs a command in the task's worktree with its own port (IDLEFLOW_PORT), its
+#                                            own temp folder (IDLEFLOW_TMP, TMPDIR) and the locks of the resources it uses
 #   run.sh get <key>                      -> prints a value from run.json (dotted keys ok)
 #   run.sh set <key> <json>               -> sets a value in run.json (dotted keys ok)
 #   run.sh inc <key> [n]                  -> adds n (default 1) to a counter in run.json
@@ -60,6 +63,11 @@ source "$HERE/rt.sh"
 source "$HERE/conf.sh"
 
 REPO="$(git rev-parse --show-toplevel)"
+# Called from inside a linked worktree (an agent's `run.sh exec`), the run still lives in the main
+# checkout. git itself names it: the common git dir's parent. No file in the checkout is trusted
+# for this, since a committed one could point anywhere.
+_git_dir="$(git rev-parse --path-format=absolute --git-dir)"; _common="$(git rev-parse --path-format=absolute --git-common-dir)"
+if [ "$_git_dir" != "$_common" ] && [ "$(basename "$_common")" = .git ]; then REPO="$(dirname "$_common")"; fi
 idleflow_load_conf "$REPO"
 IDLE="$REPO/.idleflow"
 CONVENTIONS="$IDLE/conventions.md"
@@ -328,6 +336,79 @@ command_approved() { # command_approved <key> <command>
   [ "$("${G[@]}" config --local --get "$(approval_key "$1")" 2>/dev/null || true)" = "$(command_hash "$2")" ]
 }
 
+# A worktree isolates files. What a task's commands share at run time is handled here: each task
+# gets its own port and temp folder, and a resource the repo names in shared_resources (a local
+# database, a container stack) is used by one command at a time across tasks.
+lock_dir() { local d; d="$("${G[@]}" rev-parse --git-common-dir)/idleflow-locks"; case "$d" in /*|?:*) ;; *) d="$REPO/$d";; esac; echo "$d"; }
+shared_resource_ok() { # shared_resource_ok <name>
+  [[ "$1" =~ ^[A-Za-z0-9_-]+$ ]] && [ "$1" != none ] || return 1
+  local r list; read -ra list <<< "$(conventions_value shared_resources)"
+  for r in "${list[@]}"; do [ "$r" = "$1" ] && return 0; done
+  return 1
+}
+HELD_LOCKS=()
+# a lock is removed only by the process that holds it
+release_locks() {
+  local l
+  for l in ${HELD_LOCKS[@]+"${HELD_LOCKS[@]}"}; do
+    case "$(cat "$l/holder" 2>/dev/null || true)" in "$$ "*) rm -rf "$l";; esac
+  done
+  HELD_LOCKS=()
+}
+# A lock is stale when its holder process is gone (a killed agent shell), or when it has no holder
+# a minute after it was made (killed between mkdir and writing the holder).
+lock_stale() { # lock_stale <lock> <holder line read earlier>
+  if [ -n "$2" ]; then
+    if kill -0 "${2%% *}" 2>/dev/null; then return 1; fi
+    return 0
+  fi
+  [ -n "$(find "$1" -maxdepth 0 -mmin +1 2>/dev/null)" ]
+}
+acquire_lock() { # acquire_lock <resource> <task-id>; waits for the task that holds it
+  local l holder said=""; l="$(lock_dir)/$1.lock"
+  mkdir -p "$(lock_dir)" || { echo "[idleflow] cannot create $(lock_dir)" >&2; return 1; }
+  until mkdir "$l" 2>/dev/null; do
+    holder="$(cat "$l/holder" 2>/dev/null || true)"
+    # Taking a stale lock over is check-then-act, so waiters do it one at a time, and only if the
+    # lock still has the holder they judged stale: a waiter acting on an old read never removes
+    # a lock someone took in the meantime.
+    if lock_stale "$l" "$holder" && mkdir "$l.takeover" 2>/dev/null; then
+      if [ "$(cat "$l/holder" 2>/dev/null || true)" = "$holder" ] && lock_stale "$l" "$holder"; then rm -rf "$l"; fi
+      rmdir "$l.takeover"; continue
+    fi
+    # a waiter killed inside the takeover leaves its mutex; it is stale after a minute too
+    [ -z "$(find "$l.takeover" -maxdepth 0 -mmin +1 2>/dev/null)" ] || rmdir "$l.takeover" 2>/dev/null || true
+    [ -n "$said" ] || { echo "[idleflow] $2 waits for $1 (held by ${holder#* })" >&2; said=1; }
+    sleep 1
+  done
+  echo "$$ $2" > "$l/holder"; HELD_LOCKS+=("$l")
+}
+task_port() { idleflow_rt get "$ACTIVE/run.json" "tasks.$1.port" 2>/dev/null || true; }
+task_tmp() { echo "$ACTIVE/tasks/$1/tmp"; }
+task_uses() { { idleflow_rt get "$ACTIVE/run.json" "tasks.$1.uses" 2>/dev/null || true; } | tr -d '[]" ' | tr ',' '\n' | grep . | LC_ALL=C sort -u || true; }
+# The lowest PORT_BASE + n no other task of this run holds; a task keeps its port when re-added.
+allocate_port() { # allocate_port <task-id>
+  local mine used n=0; mine="$(task_port "$1")"
+  case "$mine" in ""|null) ;; *) echo "$mine"; return;; esac
+  used="$(idleflow_rt entries "$ACTIVE/run.json" tasks 2>/dev/null | sed -n 's/.*"port":\([0-9]*\).*/\1/p')"
+  while printf '%s\n' "$used" | grep -qx "$(( ${PORT_BASE:-4400} + n ))"; do n=$((n + 1)); done
+  echo $(( ${PORT_BASE:-4400} + n ))
+}
+# Runs a command for a task: in its worktree, with its port, temp folder and resource locks.
+in_task() { # in_task <task-id> <dir> <command...>
+  local tid="$1" dir="$2" port tmp r rc=0; shift 2
+  port="$(task_port "$tid")"; tmp="$(task_tmp "$tid")"; mkdir -p "$tmp"
+  trap release_locks EXIT
+  while IFS= read -r r; do
+    [ -n "$r" ] || continue
+    acquire_lock "$r" "$tid" || { release_locks; return 1; }
+  done < <(task_uses "$tid")
+  # the caller decides what a failure means; errexit is left as the caller set it
+  (cd "$dir" && MAIN="$REPO" IDLEFLOW_TASK="$tid" IDLEFLOW_PORT="$port" IDLEFLOW_TMP="$tmp" TMPDIR="$tmp" "$@") || rc=$?
+  release_locks
+  return "$rc"
+}
+
 # The repo's own preparation for a fresh worktree (link shared folders, copy fixtures).
 run_worktree_setup() { # run_worktree_setup <task-id> <worktree>
   local cmd log
@@ -492,6 +573,8 @@ JSON
         # the task's own base: groups merged earlier move the branch, so gate/review must diff from here, not from the run start
         idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.base_sha" "\"$("${G[@]}" rev-parse "$base")\""
         idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.worktree" "$(json_str "$(native_path "$p")")"
+        idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.port" "$(allocate_port "$tid")"
+        mkdir -p "$(task_tmp "$tid")"
         # epoch seconds, so the retro's time log can subtract them without date parsing
         idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.t_start" "$(date +%s)"
         # the commit the first tasks branch from is the base a later gate is compared against
@@ -531,6 +614,21 @@ JSON
     # only the task's commits merge, so only they are checked; --no-renames: a rename changes the
     # old path too, and the task must own both
     git -C "$p" diff --no-renames --name-only "$base" HEAD | sort -u | idleflow_rt unowned "$ACTIVE/ownership.json" "$tid"
+    ;;
+  uses)
+    tid="${1:?task-id}"; names="${2:?json array}"; active_id >/dev/null
+    for r in $(printf '%s' "$names" | tr -d '[]" ' | tr ',' ' '); do
+      shared_resource_ok "$r" || { echo "uses: '$r' is not in shared_resources in conventions" >&2; exit 1; }
+    done
+    idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.uses" "$names"
+    ;;
+  exec)
+    tid="${1:?task-id}"; shift; [ "${1:-}" = -- ] && shift
+    [ "$#" -gt 0 ] || { echo "usage: run.sh exec <task-id> -- <command...>" >&2; exit 1; }
+    active_id >/dev/null
+    dir="$(wt_path "$tid")"; [ -d "$dir" ] || { echo "exec: no worktree for $tid (run.sh wt add $tid first)" >&2; exit 1; }
+    rc=0; in_task "$tid" "$dir" "$@" || rc=$?
+    exit "$rc"
     ;;
   get)
     key="${1:?key}"; active_id >/dev/null
@@ -887,7 +985,10 @@ JSON
     echo "repo $key ($target): $cmd" >&2
     started="$(date +%s)"
     set +e
-    (cd "$dir" && MAIN="$REPO" bash -c "$cmd") > "$log" 2>&1
+    case "$target" in
+      base|main) (cd "$dir" && MAIN="$REPO" bash -c "$cmd") > "$log" 2>&1;;
+      *) in_task "$target" "$dir" bash -c "$cmd" > "$log" 2>&1;;
+    esac
     rc=$?
     set -e
     secs=$(( $(date +%s) - started ))
@@ -916,13 +1017,16 @@ JSON
     cmd="$(idleflow_rt get "$ACTIVE/run.json" preview 2>/dev/null || true)"
     case "$cmd" in ""|null) echo "preview: none"; exit 0;; esac
     command_approved preview "$cmd" || { echo "preview is not approved on this clone; nothing ran. The command is: $cmd" >&2; exit 7; }
-    url="$(conventions_value preview_url)"
+    url="$(conventions_value preview_url)"; port="$(task_port "$tid")"
+    url="${url//\$\{IDLEFLOW_PORT\}/$port}"
     [[ "$url" =~ ^https?://(localhost|127\.0\.0\.1|\[::1\])(:[0-9]+)?(/[^[:space:]]*)?$ ]] \
       || { echo "preview_url must be a localhost address (got '$url')" >&2; exit 1; }
     dir="$(wt_path "$tid")"; [ -d "$dir" ] || { echo "preview: no worktree for $tid" >&2; exit 1; }
     mkdir -p "$ACTIVE/tasks/$tid"
     echo "preview ($tid): $cmd" >&2
-    MAIN="$REPO" idleflow_rt detach "$dir" "$ACTIVE/tasks/$tid/preview.log" "$pidf" "$cmd"
+    mkdir -p "$(task_tmp "$tid")"
+    MAIN="$REPO" IDLEFLOW_TASK="$tid" IDLEFLOW_PORT="$port" IDLEFLOW_TMP="$(task_tmp "$tid")" TMPDIR="$(task_tmp "$tid")" \
+      idleflow_rt detach "$dir" "$ACTIVE/tasks/$tid/preview.log" "$pidf" "$cmd"
     echo "preview $tid: serving at $url (log: $(native_path "$ACTIVE/tasks/$tid/preview.log"); stop with: run.sh preview $tid stop)"
     ;;
   commands)
@@ -1188,7 +1292,7 @@ JSON
     fi
     ;;
   conf)
-    for v in DIFF_LIMIT DIFF_SLACK MAX_IMPLEMENTERS SIZE_M_IMPLEMENTERS DEBATE_ROUNDS MAX_RETRIES SIZE_S_MAX SIZE_M_MAX SIZE_S_OVERRUN LARGE_REPO_LOC STEP_DEBATE STEP_STACK STEP_LIBRARIES STEP_TOOLING STEP_DOC_KEEPER STEP_MUTATION STEP_DESIGN SLOW_GATE_SECONDS; do
+    for v in DIFF_LIMIT DIFF_SLACK MAX_IMPLEMENTERS SIZE_M_IMPLEMENTERS DEBATE_ROUNDS MAX_RETRIES SIZE_S_MAX SIZE_M_MAX SIZE_S_OVERRUN LARGE_REPO_LOC STEP_DEBATE STEP_STACK STEP_LIBRARIES STEP_TOOLING STEP_DOC_KEEPER STEP_MUTATION STEP_DESIGN SLOW_GATE_SECONDS PORT_BASE; do
       echo "$v=${!v:-}"
     done
     echo "RUNTIME=$(idleflow_rt_name)"

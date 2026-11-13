@@ -394,6 +394,37 @@ check "once a task exists, the run's copy stays put"        '[ "$(bash "$RUN" ge
 bash "$RUN" wt rm T8; bash "$RUN" finish done >/dev/null
 cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"; git add .idleflow/conventions.md && commit -q -m "restore conventions"
 
+echo "--- parallel tasks share no port, temp folder or declared resource"
+cp .idleflow/conventions.md "$d-conv.bak"
+printf 'shared_resources: db\n' >> .idleflow/conventions.md; git add .idleflow/conventions.md && commit -q -m "a shared db"
+bash "$RUN" new isolation >/dev/null 2>&1
+wa="$(bash "$RUN" wt add TA 2>/dev/null)"; wb="$(bash "$RUN" wt add TB 2>/dev/null)"
+pa="$(bash "$RUN" get tasks.TA.port)"; pb="$(bash "$RUN" get tasks.TB.port)"
+check "each task gets its own port"            '[ "$pa" = 4400 ] && [ "$pb" = 4401 ]'
+bash "$RUN" wt add TA >/dev/null 2>&1
+check "a re-added task keeps its port"         '[ "$(bash "$RUN" get tasks.TA.port)" = 4400 ]'
+out="$(bash "$RUN" exec TA -- sh -c 'echo "$IDLEFLOW_TASK $IDLEFLOW_PORT"; echo "$TMPDIR"; pwd')"
+check "exec runs in the worktree with the task's port and temp folder" '[ "$(echo "$out" | sed -n 1p)" = "TA 4400" ] && echo "$out" | sed -n 2p | grep -q "/tasks/TA/tmp$" && [ "$(echo "$out" | sed -n 3p)" = "$(cd "$wa" && pwd)" ]'
+check "exec passes the command's exit code"    'bash "$RUN" exec TA -- sh -c "exit 3"; [ $? = 3 ]'
+check "uses refuses an undeclared resource"    '! bash "$RUN" uses TA "[\"redis\"]" 2>/dev/null'
+bash "$RUN" uses TA '["db"]'; bash "$RUN" uses TB '["db"]'
+check "uses refuses none"                      '! bash "$RUN" uses TA "[\"none\"]" 2>/dev/null'
+check "exec works from inside the task worktree" '[ "$(cd "$wa" && bash "$RUN" exec TA -- sh -c "echo \$IDLEFLOW_PORT")" = 4400 ]'
+lg="$scratch/lock.log"; mk="$scratch/lock.held"; : > "$lg"; rm -f "$mk"
+bash "$RUN" exec TA -- sh -c "echo start >> '$lg'; touch '$mk'; sleep 2; echo end >> '$lg'" 2>/dev/null &
+for _ in $(seq 1 50); do [ -e "$mk" ] && break; sleep 0.1; done
+bash "$RUN" exec TB -- sh -c "echo start >> '$lg'; echo end >> '$lg'" 2>/dev/null
+wait
+check "two tasks never use a shared resource at once" '[ -e "$mk" ] && [ "$(paste -sd, "$lg")" = "start,end,start,end" ]'
+ld="$(git rev-parse --git-common-dir)/idleflow-locks/db.lock"; mkdir -p "$ld" && echo "999999 TZ" > "$ld/holder"
+: > "$lg"
+bash "$RUN" exec TA -- sh -c "echo start >> '$lg'; sleep 1; echo end >> '$lg'" 2>/dev/null &
+bash "$RUN" exec TB -- sh -c "echo start >> '$lg'; sleep 1; echo end >> '$lg'" 2>/dev/null &
+wait
+check "a dead holder's lock is taken over by one waiter at a time" '[ "$(paste -sd, "$lg")" = "start,end,start,end" ] && [ ! -e "$ld" ]'
+bash "$RUN" wt rm TA; bash "$RUN" wt rm TB; bash "$RUN" finish done >/dev/null
+cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"; git add .idleflow/conventions.md && commit -q -m "no shared db"
+
 echo "--- the repo's gate"
 git add -u && commit -q -m "tidy before the gate"
 cp .idleflow/conventions.md "$d-conv.bak"
@@ -654,6 +685,7 @@ check "repo readability mode is offered and enforced" 'grep -q "^| \`repo\` |" "
 check "both reviewers allow shared files" 'grep -q "top-level \`shared\` list" "$HERE/../agents/review-conform.md" && grep -q "top-level \`shared\` list" "$HERE/../agents/review-correct.md"'
 check "attribution is one rule every commit writer gets" '( for a in implementer implementer-hard; do grep -q "in this repo this setting decides" "$HERE/../agents/$a.md" && grep -q "Claude-Session:" "$HERE/../agents/$a.md" || exit 1; done ) && grep -q "Claude-Session:" "$HERE/../agents/review-conform.md" && grep -q "Claude-Session:" "$HERE/../templates/CLAUDE.md" && [ "$(grep -c "co_author_claude: <value>" "$HERE/../commands/feature.md")" = 2 ]'
 check "the doc-keeper edits sentences, never whole files" '! grep -q "^tools:.*Write" "$HERE/../agents/doc-keeper.md" && grep -q "belongs to humans" "$HERE/../agents/doc-keeper.md" && grep -q "as it is on disk now" "$HERE/../templates/CLAUDE.md"'
+check "agents run task commands through run.sh exec" '( for a in implementer implementer-hard review-correct; do grep -q "exec <task-id> -- <command>" "$HERE/../agents/$a.md" || exit 1; done ) && grep -q "IDLEFLOW_PORT" "$HERE/../agents/planner.md" && grep -q "^uses: \[\]" "$HERE/../templates/plan.md" && grep -q "^shared_resources: " "$HERE/../templates/conventions.md" && [ "$(grep -c "exec <task-id> -- <command>\|exec <id> -- <command>" "$HERE/../commands/feature.md")" = 2 ]'
 check "the designer and design reviewer exist" '[ -f "$HERE/../agents/designer.md" ] && [ -f "$HERE/../agents/review-design.md" ] && grep -q "\"ui\"" "$HERE/../agents/classifier.md" && grep -q "^### 2c. Design" "$HERE/../commands/feature.md"'
 check "the design handbook carries the contrast rule" 'grep -q "4.5:1" "$HERE/../procedures/design.md" && grep -q "0.2126 R + 0.7152 G + 0.0722 B" "$HERE/../procedures/design-data.md"'
 check "STEP_DESIGN is a setting" 'grep -q STEP_DESIGN "$HERE/conf.sh" && grep -q "^STEP_DESIGN=auto" "$HERE/../config/idleflow.conf"'
