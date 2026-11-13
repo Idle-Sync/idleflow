@@ -148,8 +148,10 @@ bash "$RUN" own T1 '["src/**","tests/**","pages/[slug].astro"]'
 check "allows a bracketed route file it owns"   '[ "$(guard_rc "$wtn/pages/[slug].astro" "$wtn")" = "0" ]'
 check "brackets are not a character class"      '[ "$(guard_rc "$wtn/pages/s.astro" "$wtn")" = "2" ]'
 mkdir -p "$wt/pages" && touch "$wt/pages/[slug].astro" "$wt/pages/s.astro" "$wt/other.txt"
+git -C "$wt" add pages other.txt && git -C "$wt" -c user.name=t -c user.email=t@t commit -qm "T1: pages"
+touch "$wt/setup-output.txt"
 check "unowned lists only what the task may not change" '[ "$(bash "$RUN" unowned T1 | paste -sd, -)" = "other.txt,pages/s.astro" ]'
-rm -rf "$wt/pages" "$wt/other.txt"
+git -C "$wt" reset -q --hard HEAD~1 && rm -f "$wt/setup-output.txt"
 check "unowned fails on an unknown task"        '! bash "$RUN" unowned T9 >/dev/null 2>&1'
 bash "$RUN" own T1 '["src/**","tests/**"]'
 check "allows outside any repo"           '[ "$(guard_rc "/nowhere/x.txt" "/nowhere")" = "0" ]'
@@ -163,7 +165,7 @@ bash "$RUN" wt rm "Té"
 
 echo "--- report / gate"
 check "report fails when none written"  '! bash "$RUN" report T1 2>/dev/null'
-( cd "$wt" && printf 'x\ny\nz\n' > src/code.py && printf '%s\n' $(seq 1 50) > README.md && printf 'task: T1\nstatus: done\n' > .idleflow-run/result.md )
+( cd "$wt" && printf 'x\ny\nz\n' > src/code.py && printf '%s\n' $(seq 1 50) > README.md && printf 'task: T1\nstatus: done\n' > .idleflow-run/result.md && git add src/code.py README.md && commit -m "T1: code" )
 r="$(bash "$RUN" report T1)"
 check "report copied into run dir"     '[ -f .idleflow/runs/active/tasks/T1/report.md ] && grep -q "status: done" "$r"'
 touch -t 200001010000 "$wt/.idleflow-run/result.md"; echo "edited: yes" >> "$r"
@@ -176,7 +178,12 @@ check "gate verdict ok"                'echo "$g" | grep -q "\"verdict\":\"ok\""
 check "gate counts code lines (3)"     'echo "$g" | grep -q "\"total\":3,"'
 check "gate excludes .md (50+1)"       'echo "$g" | grep -q "\"excluded_total\":51"'
 check "gate.json written"              '[ -f .idleflow/runs/active/tasks/T1/gate.json ]'
-( cd "$wt" && seq 1 40 > src/big.py )
+# what is not committed never merges, so the gate does not count it and does not stage it
+( cd "$wt" && seq 1 500 > src/generated.py && echo w >> src/code.py )
+g="$(bash "$RUN" gate T1)"
+check "gate counts only the task's commits" 'echo "$g" | grep -q "\"total\":3," && echo "$g" | grep -q "\"uncommitted\":2," && echo "$g" | grep -q "src/generated.py"'
+check "gate leaves the task's index alone"  'git -C "$wt" diff --cached --quiet && [ -z "$(git -C "$wt" ls-files src/generated.py)" ]'
+( cd "$wt" && seq 1 40 > src/big.py && git add src/big.py && commit -m "T1: big" )
 check "gate limit override -> audit"   'bash "$RUN" gate T1 10 | grep -q "\"verdict\":\"audit\""'
 ( cd "$wt" && mkdir -p .idleflow && printf 'DIFF_LIMIT=100000\n' > .idleflow/idleflow.conf )
 g2="$(bash "$HERE/diff-gate.sh" "$wt" "$(git rev-parse HEAD)" 2>/dev/null)"
@@ -195,10 +202,11 @@ echo "--- merge, then a second group gates against its own base"
 check "merge refuses an unapproved task" 'bash "$RUN" merge T1 >/dev/null 2>&1; [ $? -eq 4 ]'
 bash "$RUN" set tasks.T1.status '"approved"'
 mkdir -p "$wt/.pytest_cache" && echo v > "$wt/.pytest_cache/v"
-m="$(bash "$RUN" merge T1)"
+m="$(bash "$RUN" merge T1 2>"$scratch/merge.err")"
 check "merge stamps the task's merge"     '[[ "$(bash "$RUN" get tasks.T1.t_merge 2>/dev/null)" =~ ^[0-9]{10}$ ]]'
 check "merge reports merged"           '[ "$m" = "merged T1" ]'
 check "merged file on main"            '[ -f src/code.py ]'
+check "merge takes commits, never uncommitted work" '[ ! -e src/generated.py ] && [ "$(cat src/code.py)" = "$(printf "x\ny\nz")" ] && grep -q "not merged: .*src/generated.py" "$scratch/merge.err"'
 check "merge leaves untracked caches out" '[ ! -e .pytest_cache ] && ! git ls-files | grep -q pytest_cache'
 check "merge keeps the human identity" '[ "$(git log -1 --format=%an)" = "Human" ]'
 bash "$RUN" set tasks.NOPE.status '"approved"'
@@ -214,10 +222,10 @@ rm -f docs/new.md; sed -i '/^docs\/$/d' .gitignore; git add .gitignore; commit -
 wt2="$(bash "$RUN" wt add T2 HEAD)"
 bash "$RUN" own T2 '["src/**"]'
 bash "$RUN" set tasks.T2.status '"approved"'
-( cd "$wt2" && printf '1\n2\n3\n4\n5\n' > src/second.py )
+( cd "$wt2" && printf '1\n2\n3\n4\n5\n' > src/second.py && git add src/second.py && commit -m "T2: second" )
 g2="$(bash "$RUN" gate T2)"
 check "T2 gate sees only T2 lines (5)" 'echo "$g2" | grep -q "\"total\":5,"'
-check "merge conflict exits 3"         '( cd "$wt2" && printf "changed\n" > src/code.py ); printf "other\n" > src/code.py; git add -A; commit -m main-change; bash "$RUN" merge T2 >/dev/null 2>&1; [ $? -eq 3 ]'
+check "merge conflict exits 3"         '( cd "$wt2" && printf "changed\n" > src/code.py && git add src/code.py && commit -m "T2: change" ); printf "other\n" > src/code.py; git add -A; commit -m main-change; bash "$RUN" merge T2 >/dev/null 2>&1; [ $? -eq 3 ]'
 check "conflict left no MERGE_HEAD"    '[ ! -f .git/MERGE_HEAD ]'
 
 echo "--- finish, then worktrees can still be removed"
@@ -444,13 +452,12 @@ cp .idleflow/conventions.md "$d-conv.bak"
 printf 'commit_format: conventional\n' >> .idleflow/conventions.md
 bash "$RUN" new conventional-commits-with-a-long-slug-name >/dev/null 2>&1
 wc6="$(bash "$RUN" wt add T6 2>/dev/null)"
-( cd "$wc6" && echo y >> src/keep.py )
+( cd "$wc6" && echo y >> src/keep.py && git add src/keep.py && commit -m "fix: keep y" )
 bash "$RUN" set tasks.T6.status '"approved"'; bash "$RUN" merge T6 >/dev/null 2>&1
-# the merge and its second parent by name: commits made in the same second sort either way in git log
-subjects="$(git log -1 --format=%s HEAD; git log -1 --format=%s HEAD^2)"; bodies="$(git log -1 --format=%b HEAD; git log -1 --format=%b HEAD^2)"
+subjects="$(git log -1 --format=%s HEAD)"; bodies="$(git log -1 --format=%b HEAD)"
 cc_re='^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([A-Za-z0-9_./-]+\))?!?: [^ ]'
-check "merge and finish commits are Conventional Commits" '[ "$(echo "$subjects" | grep -Ec "$cc_re")" = 2 ] && [ "$(echo "$subjects" | awk "length > 72" | wc -l | tr -d " ")" = 0 ]'
-check "the run id moves to the commit body" '[ "$(echo "$bodies" | grep -c "^Run: ")" = 2 ]'
+check "the merge commit is a Conventional Commit" '[ "$(echo "$subjects" | grep -Ec "$cc_re")" = 1 ] && [ "$(echo "$subjects" | awk "length > 72" | wc -l | tr -d " ")" = 0 ]'
+check "the run id moves to the commit body" '[ "$(echo "$bodies" | grep -c "^Run: ")" = 1 ]'
 bash "$RUN" wt rm T6; bash "$RUN" finish done >/dev/null
 cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"
 

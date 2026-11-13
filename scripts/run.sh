@@ -9,7 +9,7 @@
 #   run.sh wt list                        -> lists idleflow worktrees
 #   run.sh own <task-id> '<globs json>'   -> registers file ownership for the guard hook
 #   run.sh skip <key>                     -> this run goes without a repo command (gate, gate_quick, worktree_setup, preview)
-#   run.sh unowned <task-id>              -> paths the task changed (committed, uncommitted, untracked) that its globs,
+#   run.sh unowned <task-id>              -> paths the task's commits change (base..HEAD, what merges) that its globs,
 #                                            .idleflow-run/** and shared_files do not cover; matched as the guard matches
 #   run.sh get <key>                      -> prints a value from run.json (dotted keys ok)
 #   run.sh set <key> <json>               -> sets a value in run.json (dotted keys ok)
@@ -481,9 +481,9 @@ JSON
     tid="${1:?task-id}"; active_id >/dev/null
     p="$(wt_path "$tid")"; base="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$tid.base_sha")"
     if [ ! -d "$p" ] || [ -z "$base" ] || [ "$base" = null ]; then echo "task $tid has no worktree or base sha (run.sh wt add $tid first)" >&2; exit 1; fi
-    # --no-renames: a rename changes the old path too, and the task must own both
-    { git -C "$p" diff --no-renames --name-only "$base"; git -C "$p" ls-files --others --exclude-standard; } \
-      | sort -u | idleflow_rt unowned "$ACTIVE/ownership.json" "$tid"
+    # only the task's commits merge, so only they are checked; --no-renames: a rename changes the
+    # old path too, and the task must own both
+    git -C "$p" diff --no-renames --name-only "$base" HEAD | sort -u | idleflow_rt unowned "$ACTIVE/ownership.json" "$tid"
     ;;
   get)
     key="${1:?key}"; active_id >/dev/null
@@ -522,17 +522,15 @@ JSON
     # `commit_format: conventional` repos often check every subject in CI (type(scope): ..., at most
     # 72 characters), so the run id moves to the body there.
     if [ "$(conventions_value commit_format)" = conventional ]; then
-      finish_msg=(-m "chore(idleflow): finish task $tid" -m "Run: $id")
       merge_msg=(-m "chore(idleflow): merge task $tid" -m "Run: $id")
     else
-      finish_msg=(-m "$tid: finish task")
       merge_msg=(-m "idleflow: merge $tid ($id)")
     fi
-    # commit tracked changes the implementer left uncommitted; untracked files (test caches,
-    # scratch) stay out, since the reviewers already rejected anything that should have been added
+    # What merges is the task's commits, the ones the gate measured and the reviewers approved.
+    # Anything uncommitted in the worktree (a setup script's output, a cache) stays there.
     if [ -d "$p" ]; then
-      git -C "$p" add -u
-      git -C "$p" diff --cached --quiet || git -C "$p" ${IDENTITY[@]+"${IDENTITY[@]}"} commit -q ${finish_msg[@]+"${finish_msg[@]}"}
+      left="$(git -C "$p" -c core.quotePath=false status --porcelain -- . ':(exclude).idleflow-run' | cut -c4- | head -8 | paste -sd ' ' -)"
+      [ -z "$left" ] || echo "merge $tid: uncommitted in the worktree, not merged: $left" >&2
     fi
     if "${G[@]}" ${IDENTITY[@]+"${IDENTITY[@]}"} merge --no-ff -q "${merge_msg[@]}" "$br"; then
       idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.t_merge" "$(date +%s)"

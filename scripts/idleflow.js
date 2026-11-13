@@ -11,7 +11,7 @@
 //   inc    <file> <dotted.key> [n]          add n (default 1) to a number
 //   finish <file> <status> <log.jsonl>      stamp status+finished, append to log
 //   own    <file> <task-id> <worktree> <globs-json>
-//   gate   <limit> <slack> <numstat-all-file> <numstat-code-file>
+//   gate   <limit> <slack> <numstat-all-file> <numstat-code-file> [uncommitted-paths-file]
 //   guard                                   hook: payload on stdin; exit 2 blocks
 //   detach <cwd> <log> <pidfile> <command>  runs the command in its own session, output to log; writes its pid
 //   entries <file> <key>                    one "name<TAB>value" line per entry of the object at that top-level key
@@ -105,7 +105,7 @@ function parseNumstat(text) {
   }
   return rows;
 }
-function cmdGate(limit, slack, allFile, codeFile) {
+function cmdGate(limit, slack, allFile, codeFile, uncommittedFile) {
   limit = parseInt(limit, 10);
   slack = parseInt(slack, 10);
   const allRows = parseNumstat(fs.readFileSync(allFile, "utf8"));
@@ -119,11 +119,15 @@ function cmdGate(limit, slack, allFile, codeFile) {
     .map((r) => [r[0], r[1] + r[2]])
     .sort((x, y) => y[1] - x[1])
     .slice(0, 8);
+  const uncommitted = uncommittedFile
+    ? fs.readFileSync(uncommittedFile, "utf8").split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+    : [];
   console.log(
     JSON.stringify({
       added, deleted, total, files: codeRows.length,
       limit, slack, verdict,
       excluded_total: excludedTotal, top,
+      uncommitted: uncommitted.length, uncommitted_paths: uncommitted.slice(0, 8),
     })
   );
 }
