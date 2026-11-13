@@ -184,6 +184,21 @@ check "blocks in a non-ASCII worktree"    '[ "$(guard_rc "$(native "$wtu")/é.tx
 check "allows owned in non-ASCII worktree" '[ "$(guard_rc "$(native "$wtu")/src/é.txt" "$(native "$wtu")")" = "0" ]'
 bash "$RUN" wt rm "Té"
 
+echo "--- kill guard"
+KILLG="$HERE/kill-guard.sh"
+kill_rc() { # kill_rc <command> -> exit code of the hook
+  local j; j="$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+  printf '{"tool_input":{"command":"%s"}}' "$j" | bash "$KILLG" 2>/dev/null; echo $?
+}
+for c in 'pkill -f "docker ps --format"' 'killall node' 'sudo pkill vite' 'ls; pkill -9 x' 'kill $(pgrep -f vite)' 'pgrep -f x | xargs kill' 'fuser -k 4321/tcp'; do
+  check "refuses a kill by name or pattern: $c" '[ "$(kill_rc "$c")" = 2 ]'
+done
+for c in 'kill 1234' 'kill -- -4242' 'grep -n pkill agents/*.md' 'echo "never use pkill"' 'pgrep -f vite'; do
+  check "allows: $c" '[ "$(kill_rc "$c")" = 0 ]'
+done
+check "the kill guard is a Bash hook" 'grep -q "kill-guard.sh" "$HERE/../hooks/hooks.json" && idleflow_rt get "$HERE/../hooks/hooks.json" hooks.PreToolUse | grep -q "\"matcher\":\"Bash\""'
+check "every agent that runs commands has the process rule" '( for a in "$HERE"/../agents/*.md; do case "$a" in */classifier.md) continue;; esac; grep -q "Never end processes by name or pattern" "$a" || exit 1; done )'
+
 echo "--- report / gate"
 check "report fails when none written"  '! bash "$RUN" report T1 2>/dev/null'
 ( cd "$wt" && printf 'x\ny\nz\n' > src/code.py && printf '%s\n' $(seq 1 50) > README.md && printf 'task: T1\nstatus: done\n' > .idleflow-run/result.md && git add src/code.py README.md && commit -m "T1: code" )

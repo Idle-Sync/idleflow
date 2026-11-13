@@ -13,6 +13,7 @@
 //   own    <file> <task-id> <worktree> <globs-json>
 //   gate   <limit> <slack> <numstat-all-file> <numstat-code-file> [uncommitted-paths-file]
 //   guard                                   hook: payload on stdin; exit 2 blocks
+//   killguard                               hook on Bash: payload on stdin; exit 2 blocks a kill by name or pattern
 //   detach <cwd> <log> <pidfile> <command>  runs the command in its own session, output to log; writes its pid
 //   entries <file> <key>                    one "name<TAB>value" line per entry of the object at that top-level key
 //   unowned <file> <task-id>                NUL-separated paths on stdin; prints those the task may not change
@@ -344,7 +345,35 @@ function cmdUnowned(p, tid) {
     if (rel && !globMatch(WIN ? rel.toLowerCase() : rel, allowed)) process.stdout.write(rel + "\n");
   }
 }
-const table = { get: cmdGet, set: cmdSet, inc: cmdInc, finish: cmdFinish, own: cmdOwn, gate: cmdGate, guard: cmdGuard, detach: cmdDetach, entries: cmdEntries, unowned: cmdUnowned };
+// A kill by name or pattern matches every process on the machine with that text, other Claude Code
+// sessions' included, so only a kill by a PID the agent kept is allowed. Same in idleflow.py.
+const KILL_BY_PATTERN = [
+  // in command position: at the start, after ; & | ( or a backtick, or after sudo, exec or xargs
+  /(^|[;&|`(]\s*|\b(sudo|exec)\s+|\bxargs\s+(-\S+\s+)*)(pkill|killall)\b/,
+  /(^|[;&|`(]\s*|\b(sudo|exec)\s+)kill\b[^;&|\n]*(\$\(|`)\s*(pgrep|pidof)\b/,
+  /\b(pgrep|pidof)\b[^;&\n]*\|\s*(sudo\s+)?xargs\b[^;&|\n]*\bkill\b/,
+  /(^|[;&|`(]\s*|\b(sudo|exec)\s+)fuser\b[^;&|\n]*\s-[a-zA-Z]*k/,
+];
+function cmdKillguard() {
+  let payload;
+  try {
+    payload = JSON.parse(fs.readFileSync(0, "utf8"));
+  } catch {
+    process.exit(0);
+  }
+  const cmd = (payload.tool_input || {}).command || "";
+  if (KILL_BY_PATTERN.some((re) => re.test(cmd))) {
+    process.stderr.write(
+      "[idleflow] BLOCKED: this ends processes by name or pattern, which also ends other " +
+        "sessions' work on this machine. End only a process you started, by the PID you kept " +
+        "(kill <pid>, or kill -- -<pid> for its group); give a command that may hang the Bash " +
+        "tool's timeout instead of killing it afterwards.\n"
+    );
+    process.exit(2);
+  }
+  process.exit(0);
+}
+const table = { get: cmdGet, set: cmdSet, inc: cmdInc, finish: cmdFinish, own: cmdOwn, gate: cmdGate, guard: cmdGuard, killguard: cmdKillguard, detach: cmdDetach, entries: cmdEntries, unowned: cmdUnowned };
 const [cmd, ...args] = process.argv.slice(2);
 if (!cmd || !(cmd in table)) {
   process.stderr.write(`idleflow.js: unknown subcommand ${JSON.stringify(cmd)}\n`);

@@ -49,6 +49,10 @@ When your task says `ui: true`, your prompt gives `design.md`, the design system
 
 Files listed under `shared_files` in `.idleflow/conventions.md` are open to every task: add the lines your task needs (a changelog entry, an index row for a file you added) and never change, reorder or remove lines you did not add. Other tasks add theirs in parallel, and git merges both.
 
+## Processes
+
+Other sessions share this machine. Give a command that may hang (a server, `docker`, a network call, a watch mode) the Bash tool's timeout, or start it in the background and keep its PID (`$!`). End only a process you started, by that PID (`kill <pid>`, or `kill -- -<pid>` for its process group). Never end processes by name or pattern (`pkill`, `killall`, `kill $(pgrep ...)`): that also ends other sessions' work, and the hook refuses it.
+
 ## When the guard hook blocks you
 
 The ownership guard will refuse edits to files you don't own. This is not a bug to route around. Stop, finish what you can inside your files, and list the blocked file and why you needed it under `blocked_on` in the report. The orchestrator will reassign or re-plan. Working around the guard (writing the file via Bash, editing a different file to achieve the same effect) is the one thing that gets a task rejected outright.

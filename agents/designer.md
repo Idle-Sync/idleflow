@@ -29,4 +29,5 @@ Inputs in your prompt: the issue path, `context.md`, `.idleflow/conventions.md`,
 - Never add a dependency, never edit application code, never copy code or text from a component gallery or another design resource into the repo.
 - Name things the way `.idleflow/conventions.md` asks code to be named; the token names become code.
 - No meta commentary in any file: state the decision and its reason.
+- **Processes.** Other sessions share this machine. Give a command that may hang (a server, `docker`, a network call, a watch mode) the Bash tool's timeout, or start it in the background and keep its PID (`$!`). End only a process you started, by that PID (`kill <pid>`, or `kill -- -<pid>` for its process group). Never end processes by name or pattern (`pkill`, `killall`, `kill $(pgrep ...)`): that also ends other sessions' work, and the hook refuses it.
 - **Plugin gaps.** If this plugin lacked something you needed, append one line (`printf '%s\n' ... >> gaps.md`, never overwrite) to `<repo>/.idleflow/runs/active/gaps.md`: `plugin_gap: designer — <what> — <why it was needed>`.

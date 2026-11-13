@@ -13,6 +13,7 @@ Subcommands:
   own    <file> <task-id> <worktree> <globs-json>
   gate   <limit> <slack> <numstat-all-file> <numstat-code-file> [uncommitted-paths-file]
   guard                                   hook: payload on stdin; exit 2 blocks
+  killguard                               hook on Bash: payload on stdin; exit 2 blocks a kill by name or pattern
   detach <cwd> <log> <pidfile> <command>  runs the command in its own session, output to log; writes its pid
   entries <file> <key>                    one "name<TAB>value" line per entry of the object at that top-level key
   unowned <file> <task-id>                NUL-separated paths on stdin; prints those the task may not change
@@ -354,6 +355,34 @@ def cmd_unowned(path, tid):
             print(rel)
 
 
+# A kill by name or pattern matches every process on the machine with that text, other Claude Code
+# sessions' included, so only a kill by a PID the agent kept is allowed. Same in idleflow.js.
+KILL_BY_PATTERN = [
+    # in command position: at the start, after ; & | ( or a backtick, or after sudo, exec or xargs
+    r"(^|[;&|`(]\s*|\b(sudo|exec)\s+|\bxargs\s+(-\S+\s+)*)(pkill|killall)\b",
+    r"(^|[;&|`(]\s*|\b(sudo|exec)\s+)kill\b[^;&|\n]*(\$\(|`)\s*(pgrep|pidof)\b",
+    r"\b(pgrep|pidof)\b[^;&\n]*\|\s*(sudo\s+)?xargs\b[^;&|\n]*\bkill\b",
+    r"(^|[;&|`(]\s*|\b(sudo|exec)\s+)fuser\b[^;&|\n]*\s-[a-zA-Z]*k",
+]
+
+
+def cmd_killguard():
+    try:
+        payload = json.loads(sys.stdin.buffer.read().decode("utf-8", "replace"))
+    except Exception:
+        sys.exit(0)
+    cmd = (payload.get("tool_input") or {}).get("command") or ""
+    for pat in KILL_BY_PATTERN:
+        if re.search(pat, cmd):
+            sys.stderr.write(
+                "[idleflow] BLOCKED: this ends processes by name or pattern, which also ends other "
+                "sessions' work on this machine. End only a process you started, by the PID you kept "
+                "(kill <pid>, or kill -- -<pid> for its group); give a command that may hang the Bash "
+                "tool's timeout instead of killing it afterwards.\n")
+            sys.exit(2)
+    sys.exit(0)
+
+
 def main(argv):
     # -I (isolated mode) ignores PYTHONUTF8, so on Windows stdout/stderr would be cp1252
     # and a BLOCKED message with a non-ASCII filename would come out garbled.
@@ -368,7 +397,7 @@ def main(argv):
     cmd, args = argv[0], argv[1:]
     table = {
         "get": cmd_get, "set": cmd_set, "inc": cmd_inc, "finish": cmd_finish,
-        "own": cmd_own, "gate": cmd_gate, "guard": cmd_guard, "detach": cmd_detach, "entries": cmd_entries,
+        "own": cmd_own, "gate": cmd_gate, "guard": cmd_guard, "killguard": cmd_killguard, "detach": cmd_detach, "entries": cmd_entries,
         "unowned": cmd_unowned,
     }
     if cmd not in table:
