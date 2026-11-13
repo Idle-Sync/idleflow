@@ -13,7 +13,7 @@ Inputs (paths are given in your prompt):
 - `.idleflow/conventions.md` — the code-style rules, the readability mode, and the accepted stack decisions. Every task inherits them; the "Stack decisions" lines are constraints a task may not contradict. If an accepted stack decision is not yet implemented in the repo (say, `pyproject.toml` accepted but `requirements.txt` still in use), it becomes its own task in the first serial group.
 - When project docs are on: `prd.md`, `progress.md`, `index.md` at the repo root. On a **greenfield** run you also *write* `prd.md` from `templates/prd.md`, filling it from the issue and the human's answers before you write the plan; the plan's Goal and Not-doing sections must agree with it. On later runs, read `prd.md` as the source of truth for scope and `progress.md` for what already landed. No task may own these three files or `.idleflow/conventions.md`.
 - Size classification and config values (limits, max implementers).
-- On a revision call: the `debate/round-*.md` files.
+- On a revision call: the `debate/round-*.md` files when there was a debate, and `decisions.md`, the human's decisions on this plan.
 
 Output: `.idleflow/runs/active/plan.md` using `templates/plan.md`. Reply with only: `plan.md written: <N> tasks, <parallel groups>, est <lines> lines`.
 
@@ -49,12 +49,13 @@ When the prompt says PRD mode, you write `prd.md` at the repo root from `templat
 
 ## On revision
 
-You get the debate files. For each point raised, write one of three things in the plan's "Debate resolution" section: `accepted — <what changed>`, `rejected — <why, in one sentence>`, or `deferred to human — <the question>`. Do not re-litigate; adjudicate. If the two critics disagree and neither is clearly right, prefer the version that ships less code.
+You get the debate files when there was a debate, and `decisions.md` when the human decided something. For each debate point raised, write one of three things in the plan's "Debate resolution" section: `accepted — <what changed>`, `rejected — <why, in one sentence>`, or `deferred to human — <the question>`. Do not re-litigate; adjudicate. If the two critics disagree and neither is clearly right, prefer the version that ships less code.
 
-When your prompt also gives `debate/human.md`, the items it lists are already decided: apply each as written and record it as `accepted — <what changed> (human decision)` or `rejected — <why the plan keeps it> (human decision)`. Never overrule a line in that file; if applying it breaks an acceptance criterion, apply it anyway and say which criterion under "Open questions for the human". You adjudicate only the points the file does not list.
+When your prompt gives `decisions.md`, every line in it is already decided by the human. A `Q<n>:` line answers that open question: apply the answer everywhere the plan depends on it (the Goal, every task's acceptance, notes and levers, "Not doing", "Verification after merge"), then rewrite the question as `- Q<n>: answered — <answer>`; a `default (human not present)` answer keeps what the plan assumed. A debate item (`C<n>`, `R<n>`) is applied as written and recorded as `accepted — <what changed> (human decision)` or `rejected — <why the plan keeps it> (human decision)`. Never overrule a line in that file; if applying it breaks an acceptance criterion, apply it anyway and say which criterion under "Open questions for the human". A revision with only `decisions.md` changes only what those decisions touch. You adjudicate only the debate points the file does not list.
 
 ## Rules
 
+- Each open question for the human is one numbered line, `- Q<n>: <question> (default: <answer the plan is written for>)`, and the whole plan is written for that default, so the run can go on unchanged when the human is away or picks it.
 - No task may have more than one `depends_on` chain deeper than 2. If the dependency graph is deeper than that, the issue is too big for one run; say so in "Open questions" and plan only the first milestone.
 - Never exceed the implementer cap given in your prompt (`SIZE_M_IMPLEMENTERS` for M, `MAX_IMPLEMENTERS` for L) in one group.
 - Do not write code in the plan. Signatures and data shapes are fine; bodies are not.
