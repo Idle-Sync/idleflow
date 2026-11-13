@@ -12,7 +12,10 @@
 #   run.sh unowned <task-id>              -> paths the task's commits change (base..HEAD, what merges) that its globs,
 #                                            .idleflow-run/** and shared_files do not cover; matched as the guard matches
 #   run.sh exec <task-id> -- <command...> -> runs a command in the task's worktree with its own port (IDLEFLOW_PORT) and
-#                                            its own temp folder (IDLEFLOW_TMP, TMPDIR)
+#                                            its own temp folder (IDLEFLOW_TMP, TMPDIR), as a job; prints its output and exits
+#                                            with its code, or exits 75 while it still runs after EXEC_WAIT_SECONDS
+#   run.sh wait <task-id> <job>           -> waits for a job again, the same way
+#   run.sh stop <task-id> <job>           -> ends a job and every process it started
 #   run.sh get <key>                      -> prints a value from run.json (dotted keys ok)
 #   run.sh set <key> <json>               -> sets a value in run.json (dotted keys ok)
 #   run.sh inc <key> [n]                  -> adds n (default 1) to a counter in run.json
@@ -397,6 +400,37 @@ in_task() { # in_task <task-id> <dir> <command...>
   return "$rc"
 }
 
+# A task's commands run as jobs: each in its own session, its output in tasks/<id>/jobs/<n>/log and
+# its exit code in .../status when it ends. exec and wait return within EXEC_WAIT_SECONDS, below the
+# point where Claude Code moves a subagent's Bash command to the background, where the agent could
+# no longer wait for it or stop it; a job still running is waited on again or stopped by number.
+job_dir() { echo "$ACTIVE/tasks/$1/jobs/$2"; }
+job_running() { # job_running <job dir>
+  [ ! -f "$1/status" ] && [ -f "$1/pid" ] && kill -0 "$(cat "$1/pid")" 2>/dev/null
+}
+stop_job() { # stop_job <job dir>; the job's whole process group goes (test runners start children)
+  local pid
+  job_running "$1" || return 0
+  pid="$(cat "$1/pid")"; kill -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
+  echo 143 > "$1/status.tmp" && mv "$1/status.tmp" "$1/status"
+}
+await_job() { # await_job <task-id> <job>: the command's output and exit code, or 75 while it runs
+  local d end; d="$(job_dir "$1" "$2")"
+  [ -f "$d/pid" ] || { echo "no job $2 for task $1" >&2; exit 1; }
+  end=$(( $(date +%s) + ${EXEC_WAIT_SECONDS:-150} ))
+  while [ ! -f "$d/status" ] && [ "$(date +%s)" -lt "$end" ]; do
+    if ! kill -0 "$(cat "$d/pid")" 2>/dev/null; then
+      sleep 0.2; [ -f "$d/status" ] || { echo 1 > "$d/status.tmp" && mv "$d/status.tmp" "$d/status"; echo "[idleflow] job $2 of $1 ended without an exit code" >&2; }
+      break
+    fi
+    sleep 0.2
+  done
+  if [ -f "$d/status" ]; then cat "$d/log"; exit "$(cat "$d/status")"; fi
+  tail -n 20 "$d/log"
+  echo "[idleflow] job $2 of $1 is still running (log: $(native_path "$d/log")). Wait for it: bash \"$0\" wait $1 $2. End it: bash \"$0\" stop $1 $2. Do not start it again while it runs." >&2
+  exit 75
+}
+
 # The repo's own preparation for a fresh worktree (link shared folders, copy fixtures).
 run_worktree_setup() { # run_worktree_setup <task-id> <worktree>
   local cmd log
@@ -573,6 +607,8 @@ JSON
         ;;
       rm)
         tid="${1:?task-id}"; check_task_id "$tid"; p="$(wt_path "$tid")"
+        # the task's jobs go with its worktree
+        for jd in "$ACTIVE/tasks/$tid/jobs"/*/; do [ -d "$jd" ] && stop_job "${jd%/}"; done
         "${G[@]}" worktree remove --force "$p" 2>/dev/null || true
         "${G[@]}" worktree prune
         ;;
@@ -608,8 +644,19 @@ JSON
     [ "$#" -gt 0 ] || { echo "usage: run.sh exec <task-id> -- <command...>" >&2; exit 1; }
     active_id >/dev/null
     dir="$(wt_path "$tid")"; [ -d "$dir" ] || { echo "exec: no worktree for $tid (run.sh wt add $tid first)" >&2; exit 1; }
-    rc=0; in_task "$tid" "$dir" "$@" || rc=$?
-    exit "$rc"
+    jobs="$ACTIVE/tasks/$tid/jobs"; mkdir -p "$jobs"
+    n=1; while ! mkdir "$jobs/$n" 2>/dev/null; do n=$((n + 1)); done
+    jd="$jobs/$n"; printf -v q '%q ' "$@"; printf -v st '%q' "$jd/status"
+    # the exit code is written to a temp name and moved, so a reader never sees half of it
+    in_task "$tid" "$dir" idleflow_rt detach "$dir" "$jd/log" "$jd/pid" "$q; rc=\$?; echo \$rc > $st.tmp && mv $st.tmp $st" || { echo "exec: could not start the command" >&2; exit 1; }
+    await_job "$tid" "$n"
+    ;;
+  wait|stop)
+    tid="${1:?task-id}"; check_task_id "$tid"; job="${2:?job number}"; active_id >/dev/null
+    [[ "$job" =~ ^[0-9]+$ ]] || { echo "$cmd: '$job' is not a job number" >&2; exit 1; }
+    if [ "$cmd" = wait ]; then await_job "$tid" "$job"; fi
+    [ -f "$(job_dir "$tid" "$job")/pid" ] || { echo "no job $job for task $tid" >&2; exit 1; }
+    stop_job "$(job_dir "$tid" "$job")"; echo "job $job of $tid: stopped"
     ;;
   get)
     key="${1:?key}"; active_id >/dev/null
