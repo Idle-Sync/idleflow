@@ -86,7 +86,7 @@ Otherwise skip to the "Plan locked" line at the end of this step.
 
 Round 1, both in parallel: `idleflow:red-team` → `debate/round-1-red.md` and `idleflow:cost-critic` → `debate/round-1-cost.md`, each with the issue, plan.md and context.md paths.
 
-Round 2, both in parallel: same agents, each also given the *other's* round-1 path, writing `round-2-*.md`. Rounds are capped at `DEBATE_ROUNDS`; never run a third.
+Round 2, in turn, so each answer has something to answer: first `idleflow:red-team` → `debate/round-2-red.md`, with the round-1 inputs and `round-1-cost.md`; once that file exists, `idleflow:cost-critic` → `debate/round-2-cost.md`, with the round-1 inputs, `round-1-red.md` and `round-2-red.md`. Rounds are capped at `DEBATE_ROUNDS`; never run a third.
 
 Before the revision, the human decides what gets cut. Read the four debate files and list every cost cut (`C<n>`) still standing after round 2 (not withdrawn) and every red-team finding whose fix the cost critic contested, one line each: what it changes, what it saves (from `saves:`), what it risks (from `risk:` or the red team's `claim:`), with its id last in parentheses. Ask with AskUserQuestion, `multiSelect: true`, one option per item (label = the change in plain words with the id in parentheses; description = saves and risks), at most four options per question and four questions per call; use more calls when there are more items. Selected means accepted. Append the answers to `decisions.md`, one line per item: `<id>: accepted` or `<id>: rejected`. If the human is not present, skip the question and write no line for these items; the planner adjudicates them as before. Red-team findings nobody contested are not asked about.
 
