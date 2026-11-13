@@ -25,8 +25,10 @@ page) and add `via <endpoint>` when the fact came from the endpoint.
 A "GitHub API `<path>`" route is GitHub's public REST API, which needs no login: call it with
 `gh api '<path>'` when `gh auth status` succeeds, and otherwise with
 `curl -s -A "research-client/1.0" 'https://api.github.com/<path>'` (add `-H '<header>'` where the row
-names one). Without a login GitHub allows 60 requests an hour and 10 searches a minute, so ask only
-for what the claim needs; a `403` with `rate limit exceeded` goes under `unreachable:` like any other.
+names one). In the path, words are joined with `+` and other characters percent-encoded (a space
+breaks the curl URL). Without a login GitHub allows 60 requests an hour and 10 searches a minute, so
+ask only for what the claim needs; a `403` or `429` for the rate limit goes under `unreachable:` like
+any other. A private or GitHub Enterprise repository answers only with a login, through `gh`.
 
 Send a plain `User-Agent` with `curl` (`-A "research-client/1.0"`); never one that names the person or
 the project.
