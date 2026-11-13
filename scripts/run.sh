@@ -821,13 +821,17 @@ JSON
     # checkout's code (its editable install) in any child process that does not inherit PYTHONPATH,
     # so each worktree builds its own. `none` is no answer here: the template ships it, and a
     # declined suggestion is remembered in suggestions.md.
+    # shellcheck disable=SC2016 # a command for the repo's shell to run later, not to expand here
+    VENV_CMD='py="$(command -v python3 || command -v python)" && "$py" -m venv .venv && vpy=.venv/bin/python && { [ -x "$vpy" ] || vpy=.venv/Scripts/python.exe; } && "$vpy" -m pip install -q'
     case "$(conventions_value worktree_setup)" in ""|unset|none)
       env_cmd=""
       if [ -d "$REPO/.venv" ]; then
         if [ -f "$REPO/uv.lock" ]; then env_cmd="uv sync --frozen"
         elif [ -f "$REPO/poetry.lock" ]; then env_cmd="POETRY_VIRTUALENVS_IN_PROJECT=true poetry install"
-        elif [ -f "$REPO/pyproject.toml" ] || [ -f "$REPO/setup.py" ]; then env_cmd="python3 -m venv .venv && .venv/bin/pip install -q -e ."
-        elif [ -f "$REPO/requirements.txt" ]; then env_cmd="python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt"
+        # The command is committed and runs on every teammate's clone, so it cannot assume one OS:
+        # the interpreter is python3 or python, and a venv keeps it in bin/ or, on Windows, Scripts/.
+        elif [ -f "$REPO/pyproject.toml" ] || [ -f "$REPO/setup.py" ]; then env_cmd="$VENV_CMD -e ."
+        elif [ -f "$REPO/requirements.txt" ]; then env_cmd="$VENV_CMD -r requirements.txt"
         fi
       fi
       [ -n "$env_cmd" ] && say worktree_setup "$env_cmd" "the main checkout has .venv/ and a task worktree starts without one; borrowing the main one runs the main checkout's code in subprocesses"
