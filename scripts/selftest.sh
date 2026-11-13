@@ -364,6 +364,13 @@ git add .idleflow/conventions.md && commit -q -m "editing setup"; bash "$RUN" ap
 bash "$RUN" new editing >/dev/null 2>&1
 out="$(bash "$RUN" wt add T7 2>&1)"; rc=$?
 check "a setup that edits tracked files is refused and undone" '[ "$rc" = 6 ] && echo "$out" | grep -q "changed tracked files" && [ "$(cat .idleflow/worktrees/T7/src/keep.py)" = x ]'
+sed -i.bak 's#^worktree_setup: .*#worktree_setup: mkdir -p "$MAIN/node_modules" \&\& ln -s "$MAIN/node_modules" node_modules#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
+git add .idleflow/conventions.md && commit -q -m "linking setup"; bash "$RUN" approve worktree_setup >/dev/null
+bash "$RUN" wt rm T7; bash "$RUN" finish done >/dev/null; bash "$RUN" new linking >/dev/null 2>&1
+mkdir -p node_modules && echo keep > node_modules/dep.js
+out="$(bash "$RUN" wt add T7 2>&1)"; rc=$?
+check "a setup that links main's node_modules is refused" '[ "$rc" = 6 ] && echo "$out" | grep -q "linked node_modules to the main checkout" && [ ! -e .idleflow/worktrees/T7/node_modules ] && [ "$(cat node_modules/dep.js)" = keep ]'
+rm -rf node_modules
 bash "$RUN" wt rm T7; bash "$RUN" finish done >/dev/null
 rm -rf shared-big; cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"; git add .idleflow/conventions.md && commit -q -m "restore conventions"
 
@@ -598,6 +605,17 @@ det="$(cd "$f" && bash "$RUN" detect)"
 check "detect suggests generated blocks for a hand-kept index" 'echo "$det" | grep -q "^suggest generated_docs: index.md —"'
 rm -rf "$f"
 
+echo "--- a worktree builds its own Python environment"
+f="$(mktemp -d)"; ( cd "$f" && git init -q && mkdir -p .idleflow .venv && printf 'mode: repo\nworktree_setup: none\n' > .idleflow/conventions.md && printf '[project]\nname = "x"\n' > pyproject.toml )
+check "detect suggests a worktree venv when main has one" '(cd "$f" && bash "$RUN" detect) | grep -qxF "suggest worktree_setup: python3 -m venv .venv && .venv/bin/pip install -q -e . — the main checkout has .venv/ and a task worktree starts without one; borrowing the main one runs the main checkout'"'"'s code in subprocesses"'
+touch "$f/uv.lock"
+check "a uv project syncs its own environment"   '(cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup: uv sync --frozen —"'
+printf 'worktree_setup: make env\n' >> "$f/.idleflow/conventions.md"; sed -i.bak '/^worktree_setup: none$/d' "$f/.idleflow/conventions.md"
+check "a chosen worktree_setup is left alone"    '! (cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup"'
+rm -rf "$f/.venv"; sed -i.bak '/^worktree_setup:/d' "$f/.idleflow/conventions.md"
+check "no venv in main, no suggestion"           '! (cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup"'
+rm -rf "$f"
+check "agents never borrow the main checkout's environment" 'grep -q "never the main checkout" "$HERE/../agents/implementer.md" && grep -q "never the main checkout" "$HERE/../agents/implementer-hard.md" && grep -q "never the main checkout" "$HERE/../agents/review-correct.md"'
 echo "--- which files run.sh docs keeps"
 f="$(mktemp -d)"; ( cd "$f" && git init -q && git config user.name Ada && git config user.email a@a && mkdir -p .idleflow docs templates \
   && printf 'mode: repo\nindex_file: docs/index.md\n' > .idleflow/conventions.md && printf 'docs/\n' >> .git/info/exclude \

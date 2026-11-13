@@ -353,6 +353,21 @@ run_worktree_setup() { # run_worktree_setup <task-id> <worktree>
     echo "$changed" >&2
     exit 6
   fi
+  # A dependency folder linked to the main checkout's is shared, not borrowed: an install in the
+  # worktree (npm ci, pip) rewrites or empties the main checkout's copy, and Python's editable
+  # install there runs the main checkout's code. The worktree builds its own instead.
+  local dep main_real target
+  main_real="$(cd -P "$REPO" && pwd)"
+  for dep in node_modules .venv venv; do
+    [ -L "$2/$dep" ] || continue
+    target="$(cd -P "$2/$dep" 2>/dev/null && pwd)" || target=""
+    case "$target" in "$main_real"|"$main_real"/*)
+      rm -f "$2/$dep"
+      echo "worktree setup for $1 linked $dep to the main checkout's ($target); the link was removed and the worktree is not ready." >&2
+      echo "an install in the worktree would rewrite the main checkout's $dep; make worktree_setup build the worktree's own (npm ci, uv sync, python3 -m venv)" >&2
+      exit 6;;
+    esac
+  done
 }
 
 exclude_file() {
@@ -802,6 +817,21 @@ JSON
         [ -f "$REPO/$h" ] && grep -qE "$tests_re" "$REPO/$h" && say hooks "move the tests out of $h" "it runs tests on every commit or push, and each idleflow task commits several times while the gate takes ${slowest}s"
       done
     fi
+    # A task worktree starts with no Python environment. Borrowing the main checkout's runs the main
+    # checkout's code (its editable install) in any child process that does not inherit PYTHONPATH,
+    # so each worktree builds its own. `none` is no answer here: the template ships it, and a
+    # declined suggestion is remembered in suggestions.md.
+    case "$(conventions_value worktree_setup)" in ""|unset|none)
+      env_cmd=""
+      if [ -d "$REPO/.venv" ]; then
+        if [ -f "$REPO/uv.lock" ]; then env_cmd="uv sync --frozen"
+        elif [ -f "$REPO/poetry.lock" ]; then env_cmd="POETRY_VIRTUALENVS_IN_PROJECT=true poetry install"
+        elif [ -f "$REPO/pyproject.toml" ] || [ -f "$REPO/setup.py" ]; then env_cmd="python3 -m venv .venv && .venv/bin/pip install -q -e ."
+        elif [ -f "$REPO/requirements.txt" ]; then env_cmd="python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt"
+        fi
+      fi
+      [ -n "$env_cmd" ] && say worktree_setup "$env_cmd" "the main checkout has .venv/ and a task worktree starts without one; borrowing the main one runs the main checkout's code in subprocesses"
+    esac
     if unset_key preview; then
       for t in dev start preview; do
         if grep -qE "\"$t\"[[:space:]]*:" "$REPO/package.json" 2>/dev/null; then say preview "npm run $t" "package.json has a $t script; the design reviewer can serve the app to take screenshots (setup asks for its address)"; break; fi
