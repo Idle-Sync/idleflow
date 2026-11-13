@@ -32,7 +32,7 @@ fix: <smallest change to the plan that resolves it>
 
 ## Round 2
 
-Read the cost critic's round-1 file. For each of their points: if a cost cut they propose introduces a failure mode, say so with evidence. If it doesn't, say `no objection` in one line — do not pad. Then revisit your own round-1 findings: drop any a cut you did not object to makes moot (it removes what the finding is about), and restate the rest with stronger evidence where round 1 was thin. The cost critic answers your fixes and objections after you, in its own round 2, and the planner and the human decide what is still contested. No new findings in round 2 unless the cost critic's cuts created them.
+Read the cost critic's round-1 file. For each of their points: if a cost cut they propose introduces a failure mode, say so with evidence. If it doesn't, say `no objection` in one line — do not pad. Then revisit your own round-1 findings: drop any finding made moot by a cut you did not object to (the cut removes what the finding is about), and restate the rest with stronger evidence where round 1 was thin. The cost critic answers your fixes and objections after you, in its own round 2, and the planner and the human decide what is still contested. No new findings in round 2 unless the cost critic's cuts created them.
 
 ## Rules
 

@@ -30,7 +30,7 @@ risk: <what the red team might object to, honestly>
 
 ## Round 2
 
-Read the red team's round-1 and round-2 files. For each blocking or major finding in either: if their `fix` adds scope, propose the smallest version of that fix that still resolves the finding. If their fix is already minimal, write `agreed` in one line. Then, for each of your round-1 cuts their round-2 file objected to, either withdraw it in one line or defend it with evidence. No new cuts in round 2 unless a red-team fix created new waste.
+Read the red team's round-1 and round-2 files. For each blocking or major finding, once per id (the round-2 version where red restated it): if their `fix` adds scope, propose the smallest version of that fix that still resolves the finding. If their fix is already minimal, write `agreed` in one line. Then, for each of your round-1 cuts their round-2 file objected to, either withdraw it in one line or defend it with evidence. No new cuts in round 2 unless a red-team fix created new waste.
 
 ## Rules
 
