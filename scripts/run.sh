@@ -15,7 +15,7 @@
 #                                            (IDLEFLOW_PORT) and its own temp folder (IDLEFLOW_TMP, TMPDIR), as a job; prints
 #                                            its output and exits with its code, or exits 75 while it still runs after
 #                                            EXEC_WAIT_SECONDS. With --limit, a job still running <s> seconds after it started
-#                                            is stopped by the next exec or wait of it, which exits 124
+#                                            is stopped by the next exec or wait of it, which exits 124.
 #                                            Python bytecode of the checkout's own code is cleared first, so the source runs as it is
 #   run.sh wait <task-id> <job>           -> waits for a job again, the same way
 #   run.sh stop <task-id> <job>           -> ends a job and every process it started
