@@ -40,6 +40,7 @@
 #   run.sh loc                            -> prints hand-written code lines in the repo (DIFF_EXCLUDE applied)
 #   run.sh conf                           -> prints resolved config values and the runtime in use
 #   run.sh path <name>                    -> where a record lives here: conventions, lessons, progress, index, sessions, time-log, runs
+#   run.sh path --relative <name>         -> the same, relative to the repo root: progress, index, sessions, time-log
 #   run.sh migrate                        -> moves files a pre-.idleflow/ version kept under .claude/ and commits the move
 #   run.sh doctor                         -> checks the repo's idleflow setup, one "ok|warn|fail|suggest <check>: <detail> | fix: <how>" line each
 #   run.sh update-check                   -> prints one line when a newer idleflow is tagged on GitHub, nothing otherwise
@@ -1046,6 +1047,14 @@ Task: $tid")
     echo "${n:-0}"
     ;;
   path)
+    if [ "${1:-}" = "--relative" ]; then
+      # The repo-relative form, for text that is committed and read in other clones.
+      case "${2:?progress|index|sessions|time-log}" in
+        progress) progress_rel;; index) index_rel;; sessions) sessions_rel;; time-log) time_log_rel;;
+        *) echo "path --relative: $2 has no repo-relative form; use progress, index, sessions or time-log" >&2; exit 1;;
+      esac
+      exit 0
+    fi
     case "${1:?conventions|lessons|progress|index|sessions|time-log|runs}" in
       conventions) native_path "$CONVENTIONS";;
       lessons) native_path "$(lessons_path)";;
