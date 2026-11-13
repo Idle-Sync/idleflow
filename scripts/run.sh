@@ -23,7 +23,7 @@
 #   run.sh extract <task-id>              -> the task's plan extract: the plan's Stack & style constraints and Interfaces
 #                                            sections, then the task's own ### <task-id>: section
 #   run.sh report <task-id>               -> copies the task's .idleflow-run/result.md into the run dir as report.md, prints its path
-#   run.sh keep [--move] <run file>       -> sets a run file's current version aside as <name>.<n>.<ext> (next free n), prints
+#   run.sh keep [--move] <run file>       -> sets a run file's current version aside as <name>.<n>.<ext> (n past the highest), prints
 #                                            that path; copies (plan.md before a revision) or, with --move, moves (a review)
 #   run.sh gate <task-id> [limit]         -> runs diff-gate against the task's own base, writes tasks/<id>/gate.json, prints it;
 #                                            refreshes the run's report.md when the worktree copy is newer
@@ -770,13 +770,19 @@ JSON
     # undone exactly. --move frees the name for the new version (a review counts once its file exists).
     move=""; [ "${1:-}" = "--move" ] && { move=1; shift; }
     active_id >/dev/null
-    rel="$(repo_relative_path "${1:?run file, such as plan.md or review/T1-correct.md}")" || { echo "keep: '$1' is not a path inside the run" >&2; exit 1; }
+    [ -n "${1:-}" ] || { echo "keep: name a run file, such as plan.md or review/T1-correct.md" >&2; exit 1; }
+    rel="$(repo_relative_path "$1")" || { echo "keep: '$1' is not a path inside the run" >&2; exit 1; }
     src="$ACTIVE/$rel"
     [ -f "$src" ] || { echo "keep: no $rel in the active run" >&2; exit 1; }
     name="${src##*/}"
     if [[ "$name" == ?*.* ]]; then stem="${src%.*}"; ext=".${src##*.}"; else stem="$src"; ext=""; fi
+    # one past the highest kept number, so the highest is always the newest even after a gap
     n=1
-    while [ -e "$stem.$n$ext" ]; do n=$((n + 1)); done
+    for kept in "$stem".*"$ext"; do
+      k="${kept#"$stem".}"; k="${k%"$ext"}"
+      case "$k" in ''|*[!0-9]*) continue;; esac
+      [ "$((10#$k))" -ge "$n" ] && n=$((10#$k + 1))
+    done
     if [ -n "$move" ]; then mv "$src" "$stem.$n$ext"; else cp -p "$src" "$stem.$n$ext"; fi
     native_path "$stem.$n$ext"
     ;;
