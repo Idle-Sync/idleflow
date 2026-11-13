@@ -152,6 +152,27 @@ git -C "$wt" add pages other.txt && git -C "$wt" -c user.name=t -c user.email=t@
 touch "$wt/setup-output.txt"
 check "unowned lists only what the task may not change" '[ "$(bash "$RUN" unowned T1 | paste -sd, -)" = "other.txt,pages/s.astro" ]'
 git -C "$wt" reset -q --hard HEAD~1 && rm -f "$wt/setup-output.txt"
+bash "$RUN" own T1 '["src/**","tests/**","docs/café.md","src/café.py"]'
+mkdir -p "$wt/docs" && echo x > "$wt/docs/café.md" && echo y > "$wt/src/café.py" && ( cd "$wt" && git add docs/café.md src/café.py && commit -m "T1: café" )
+check "unowned reads non-ASCII paths as the guard does" '[ -z "$(bash "$RUN" unowned T1)" ]'
+check "the gate names non-ASCII files as they are"      'bash "$RUN" gate T1 | grep -q "\"src/café.py\""'
+( cd "$wt" && git reset -q --hard HEAD~1 )
+hk="$(git rev-parse --git-common-dir)/hooks"; mkdir -p "$hk"; printf '#!/bin/sh\necho "${GIT_CONFIG_PARAMETERS:-}" >> "%s"\n' "$scratch/hook.env" > "$hk/pre-commit"; chmod +x "$hk/pre-commit"; : > "$scratch/hook.env"
+echo hooked > hooked.txt; git add hooked.txt; bash "$RUN" snapshot >/dev/null 2>&1; commit -m hooked >/dev/null 2>&1 || true
+( cd "$wt" && echo h > src/hook.txt && git add src/hook.txt && bash -c 'source "$0"; git commit -q -m "T1: hook"' "$HERE/conf.sh" )
+check "the repo's hooks keep the repo's git settings" '[ -s "$scratch/hook.env" ] && ! grep -q quotePath "$scratch/hook.env"'
+rm -f "$hk/pre-commit"; ( cd "$wt" && git reset -q --hard HEAD~1 )
+# names git quotes even with quotePath off: a double quote, a backslash, a tab
+odd="$(printf 'src/a"b\\c\td.py')"
+printf 'x\ny\n' > "$wt/$odd"; ( cd "$wt" && git add -- "$odd" && commit -m "T1: odd name" )
+check "unowned reads any file name as it is"      '[ -z "$(bash "$RUN" unowned T1)" ]'
+check "the gate names any file as it is"          'bash "$RUN" gate T1 | grep -qF "\"src/a\\\"b\\\\c\\td.py\",2"'
+bs="$(printf 'src\\x.py')"; echo z > "$wt/$bs"; ( cd "$wt" && git add -- "$bs" && commit -m "T1: backslash" )
+check "a backslash in a name is not a folder"     '[ "$(bash "$RUN" unowned T1)" = "$bs" ]'
+( cd "$wt" && git reset -q --hard HEAD~1 )
+printf '3\t1\t\0old/x.py\0new/x.py\0' > "$scratch/ns-rename"
+check "the gate reads a rename record as the new path" 'idleflow_rt gate 10 5 "$scratch/ns-rename" "$scratch/ns-rename" | grep -qF "\"files\":1," && idleflow_rt gate 10 5 "$scratch/ns-rename" "$scratch/ns-rename" | grep -qF "[[\"new/x.py\",4]]"'
+( cd "$wt" && git reset -q --hard HEAD~1 )
 check "unowned fails on an unknown task"        '! bash "$RUN" unowned T9 >/dev/null 2>&1'
 bash "$RUN" own T1 '["src/**","tests/**"]'
 check "allows outside any repo"           '[ "$(guard_rc "/nowhere/x.txt" "/nowhere")" = "0" ]'
@@ -605,6 +626,7 @@ out="$(cd "$f" && bash "$RUN" docs)"; idx="$(cat "$f/index.md")"
 check "docs regenerates in place"           'echo "$out" | grep -q "^docs: regenerated index.md"'
 check "files keeps written descriptions, drops gone rows" 'echo "$idx" | grep -qxF -- "- \`src/\` — the app source" && ! echo "$idx" | grep -q "gone/" && echo "$idx" | grep -qxF -- "- \`package.json\` — (describe)"'
 check "commands follow the package manager" 'echo "$idx" | grep -qxF -- "- \`pnpm test\` — runs \`vitest '"'"'run'"'"'\`" && echo "$idx" | grep -qxF -- "- \`make build\`" && ! echo "$idx" | grep -q "make VAR"'
+check "commands start with the lockfile's install" 'echo "$idx" | grep -qxF -- "- \`pnpm install --frozen-lockfile\` — install (pnpm-lock.yaml)"'
 check "milestones counted from progress"   'echo "$idx" | grep -qxF -- "- M1: Sign in: 1/2"'
 check "dependencies read from the manifest" 'echo "$idx" | grep -qxF -- "- \`react\` ^19.0.0 — package.json"'
 check "runs read from both merge formats"   'echo "$idx" | grep -q "run \`run-old\`, 1 task" && echo "$idx" | grep -q "run \`run-new\`, 1 task"'
@@ -617,15 +639,45 @@ check "doctor warns about undescribed entries" 'echo "$doc" | grep -q "^warn gen
 ( cd "$f" && printf '# Index\n- `src/` — code\n' > index.md )
 det="$(cd "$f" && bash "$RUN" detect)"
 check "detect suggests generated blocks for a hand-kept index" 'echo "$det" | grep -q "^suggest generated_docs: index.md —"'
+( cd "$f" && git checkout -q -- index.md 2>/dev/null; printf '# Index\n<!-- idleflow:generated files -->\n<!-- idleflow:end -->\n' > index.md && echo x > é.txt && git add -A && git commit -qm "é" && bash "$RUN" docs >/dev/null )
+check "the files block names non-ASCII files as they are" 'grep -qxF -- "- \`é.txt\` — (describe)" "$f/index.md"'
+( cd "$f" && printf '# Index\n<!-- idleflow:generated files -->\n<!-- idleflow:end -->\n' > index.md && echo x > 'q"uote.txt' && git add -A && git commit -qm quote && bash "$RUN" docs >/dev/null )
+check "the files block names any file as it is" 'grep -qxF -- "- \`q\"uote.txt\` — (describe)" "$f/index.md"'
 rm -rf "$f"
 
+echo "--- a first run fills Commands and can propose the gate"
+f="$(mktemp -d)"; ( cd "$f" && git init -q && git config user.name Ada && git config user.email a@a && mkdir -p .idleflow \
+  && cp "$HERE/../templates/conventions.md" .idleflow/conventions.md && cp "$HERE/../templates/CLAUDE.md" CLAUDE.md \
+  && printf '{"scripts":{"test":"vitest run"}}' > package.json && printf '{}' > package-lock.json && git add -A && git commit -qm start )
+( cd "$f" && bash "$RUN" docs >/dev/null )
+check "CLAUDE.md Commands is filled from the repo"    'grep -qxF -- "- \`npm ci\` — install (package-lock.json)" "$f/CLAUDE.md" && grep -qxF -- "- \`npm run test\` — runs \`vitest run\`" "$f/CLAUDE.md"'
+check "the template leaves the gate open to a proposal" '(cd "$f" && bash "$RUN" detect) | grep -q "^suggest gate: npm run test —"'
+printf -- '- declined: gate -> npm run test (run r1)\n' > "$f/.idleflow/suggestions.md"
+check "a declined gate is not proposed again"          '! (cd "$f" && bash "$RUN" detect) | grep -q "^suggest gate:"'
+rm -rf "$f"
 echo "--- a worktree builds its own Python environment"
-f="$(mktemp -d)"; ( cd "$f" && git init -q && mkdir -p .idleflow .venv && printf 'mode: repo\nworktree_setup: none\n' > .idleflow/conventions.md && printf '[project]\nname = "x"\n' > pyproject.toml )
-check "detect suggests a worktree venv when main has one" '(cd "$f" && bash "$RUN" detect) | grep -qxF "suggest worktree_setup: python3 -m venv .venv && .venv/bin/pip install -q -e . — the main checkout has .venv/ and a task worktree starts without one; borrowing the main one runs the main checkout'"'"'s code in subprocesses"'
+f="$(mktemp -d)"; ( cd "$f" && git init -q && mkdir -p .idleflow .venv && printf 'mode: repo\nworktree_setup: unset\n' > .idleflow/conventions.md && printf '[project]\nname = "x"\n' > pyproject.toml )
+check "detect suggests a worktree venv when main has one" '(cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup: py=.*-m venv .venv.*\.venv/Scripts/python\.exe.* -m pip install -q -e \. — the main checkout has .venv/"'
+# a Windows-style python: no python3 on PATH, and its venv keeps the interpreter in Scripts/
+cmd="$(cd "$f" && bash "$RUN" detect | sed -n 's/^suggest worktree_setup: \(.*\) — the main.*/\1/p')"
+t="$(mktemp -d)"; mkdir -p "$t/bin" "$t/w"; ln -s "$(command -v mkdir)" "$t/bin/mkdir"; ln -s "$(command -v chmod)" "$t/bin/chmod"
+cat > "$t/bin/python" <<'PY'
+#!/bin/sh
+if [ "$1" = -m ] && [ "$2" = venv ]; then
+  mkdir -p "$3/Scripts"
+  printf '#!/bin/sh\necho "$@" > ran\n' > "$3/Scripts/python.exe"; chmod +x "$3/Scripts/python.exe"
+fi
+PY
+chmod +x "$t/bin/python"
+( cd "$t/w" && PATH="$t/bin" "$(command -v bash)" -c "$cmd" )
+check "the proposed venv command runs on a Windows layout" 'grep -qx -- "-m pip install -q -e ." "$t/w/ran"'
+rm -rf "$t"
 touch "$f/uv.lock"
 check "a uv project syncs its own environment"   '(cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup: uv sync --frozen —"'
-printf 'worktree_setup: make env\n' >> "$f/.idleflow/conventions.md"; sed -i.bak '/^worktree_setup: none$/d' "$f/.idleflow/conventions.md"
+printf 'worktree_setup: make env\n' >> "$f/.idleflow/conventions.md"; sed -i.bak '/^worktree_setup: unset$/d' "$f/.idleflow/conventions.md"
 check "a chosen worktree_setup is left alone"    '! (cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup"'
+sed -i.bak 's/^worktree_setup: make env$/worktree_setup: none/' "$f/.idleflow/conventions.md"
+check "worktree_setup: none is a decision"       '! (cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup"'
 rm -rf "$f/.venv"; sed -i.bak '/^worktree_setup:/d' "$f/.idleflow/conventions.md"
 check "no venv in main, no suggestion"           '! (cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup"'
 rm -rf "$f"
@@ -666,9 +718,13 @@ check "fix sizing ignores module count"   '! grep -q "more than one module" "$fi
 check "ignore rules go through run.sh ignore" 'grep -q "^ignore_in: unset" "$conventions" && grep -q "\"\$RUN\" ignore" "$setup" && grep -q "\"\$RUN\" ignore" "$init"'
 check "repo readability mode is offered and enforced" 'grep -q "^| \`repo\` |" "$conventions" && grep -q "Match this repo" "$setup" && grep -q "Match this repo" "$HERE/../commands/style.md" && grep -q "\`repo\`" "$HERE/../agents/implementer.md" && grep -q "\`repo\`" "$HERE/../agents/implementer-hard.md" && grep -q "\`repo\`" "$HERE/../agents/review-conform.md"'
 check "both reviewers allow shared files" 'grep -q "top-level \`shared\` list" "$HERE/../agents/review-conform.md" && grep -q "top-level \`shared\` list" "$HERE/../agents/review-correct.md"'
+check "research agents reach sources by endpoint" '[ -f "$HERE/../procedures/research-sources.md" ] && grep -q "gh api repos" "$HERE/../procedures/research-sources.md" && ( for a in market-researcher stack-researcher library-scout; do grep -q "research-sources.md" "$HERE/../agents/$a.md" || exit 1; done ) && grep -q "research-sources.md" "$HERE/../commands/init.md" && [ "$(grep -o "research-sources.md" "$HERE/../procedures/repo-setup.md" | wc -l | tr -d " ")" -ge 2 ]'
+check "the time log exists before the planner reads it" 'grep -q "copy \`templates/time-log.md\` if not" "$HERE/../commands/feature.md" && grep -q "copying \`templates/time-log.md\` if not" "$HERE/../commands/setup.md"'
+check "human decisions reach the plan through the planner" 'grep -q "decisions.md" "$HERE/../agents/planner.md" && grep -q "Q<n>: answered" "$HERE/../agents/planner.md" && ! grep -q "apply the answer; continue" "$HERE/../commands/feature.md" && ! grep -q "write the answers into plan.md" "$HERE/../commands/feature.md" && grep -q "You never edit plan.md yourself" "$HERE/../commands/feature.md" && grep -q "Q1: <question> (default:" "$HERE/../templates/plan.md"'
 check "attribution is one rule every commit writer gets" '( for a in implementer implementer-hard; do grep -q "in this repo this setting decides" "$HERE/../agents/$a.md" && grep -q "Claude-Session:" "$HERE/../agents/$a.md" || exit 1; done ) && grep -q "Claude-Session:" "$HERE/../agents/review-conform.md" && grep -q "Claude-Session:" "$HERE/../templates/CLAUDE.md" && [ "$(grep -c "co_author_claude: <value>" "$HERE/../commands/feature.md")" = 2 ]'
 check "the doc-keeper edits sentences, never whole files" '! grep -q "^tools:.*Write" "$HERE/../agents/doc-keeper.md" && grep -q "belongs to humans" "$HERE/../agents/doc-keeper.md" && grep -q "as it is on disk now" "$HERE/../templates/CLAUDE.md"'
 check "agents run task commands through run.sh exec" '( for a in implementer implementer-hard review-correct; do grep -q "exec <task-id> -- <command>" "$HERE/../agents/$a.md" || exit 1; done ) && grep -q "IDLEFLOW_PORT" "$HERE/../agents/planner.md" && [ "$(grep -c "exec <task-id> -- <command>\|exec <id> -- <command>" "$HERE/../commands/feature.md")" = 2 ]'
+check "the index limit counts only hand-written text" 'grep -q "outside generated blocks) stays under 80 lines" "$HERE/../agents/retro.md" && grep -q "the text outside its generated blocks stays under 80 lines" "$HERE/../commands/setup.md" && ! grep -q "Under 80 lines\.\|), under 80 lines," "$HERE/../agents/retro.md" "$HERE/../commands/setup.md"'
 check "the designer and design reviewer exist" '[ -f "$HERE/../agents/designer.md" ] && [ -f "$HERE/../agents/review-design.md" ] && grep -q "\"ui\"" "$HERE/../agents/classifier.md" && grep -q "^### 2c. Design" "$HERE/../commands/feature.md"'
 check "the design handbook carries the contrast rule" 'grep -q "4.5:1" "$HERE/../procedures/design.md" && grep -q "0.2126 R + 0.7152 G + 0.0722 B" "$HERE/../procedures/design-data.md"'
 check "STEP_DESIGN is a setting" 'grep -q STEP_DESIGN "$HERE/conf.sh" && grep -q "^STEP_DESIGN=auto" "$HERE/../config/idleflow.conf"'

@@ -14,28 +14,10 @@ Feedback: $ARGUMENTS
 2. Check for duplicates: `gh issue list --repo Idle-Sync/idleflow --search "<three key words>" --state all --limit 10`. If one matches, say which and offer to comment there instead (only if the human says yes).
 3. Gather evidence, read-only, from this repo if present: the plugin version (`cat "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json"`), `bash "${CLAUDE_PLUGIN_ROOT}/scripts/run.sh" conf` (config values and runtime), the last line of `.idleflow/runs/log.jsonl`, and for the most recent run directory under `.idleflow/runs/` its `run.json` size, retries, gate_trips and review_findings and the one-line `verdict:` of each `review/*.md`. Nothing from `plan.md`, `context.md` or the code: those may be private.
 
-   Decide the kind: `bug` (a step did the wrong thing), `workflow` (a rule or step is wrong or missing), `idea` (something new), `pushback` (idleflow disagreed with the human and the human was right, or the other way round).
-
-   Draft. Title: `<kind>: <six words>`. Body:
-
-```
-## What happened / what is wanted
-<the feedback, cleaned up, one paragraph>
-
-## Expected
-<what should have happened, or what the idea changes>
-
-## Evidence
-- idleflow <version>, runtime <from conf>, OS <uname -s or Windows>
-- run <id>: size <S/M/L>, retries N, gate trips N, review findings N, reviews: <verdicts>
-- config: <only the values that matter to this report>
-
-## Repro or example
-<the shortest command sequence or prompt that shows it, when known>
-```
+   Draft the issue exactly as `${CLAUDE_PLUGIN_ROOT}/ISSUES.md` describes; read it now. It is the one blueprint for every idleflow issue, the same one people see on the GitHub form: its kinds (`bug`, `workflow`, `idea`, `pushback`), its title (`<kind>: <what is wrong, in about six words>`, the problem, not the fix) and its four body headings in order. Put the evidence gathered above under its Evidence heading.
 
 No meta commentary, no secrets, no private paths, no code or plan contents from the project.
 
 4. Show the draft and ask with AskUserQuestion: **Open the issue** / **Edit first** (free text, apply, show again) / **Cancel**.
-5. `gh issue create --repo Idle-Sync/idleflow --title "<title>" --body-file <tmpfile>`; then `gh issue edit <url> --add-label <kind>` and ignore the error if the label does not exist.
+5. `gh issue create --repo Idle-Sync/idleflow --title "<title>" --body-file <tmpfile>`. Add no labels: the maintainers label issues after they are opened (ISSUES.md, Labels).
 6. Reply with one line: the issue URL, or `cancelled`.

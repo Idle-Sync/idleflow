@@ -15,7 +15,7 @@ Subcommands:
   guard                                   hook: payload on stdin; exit 2 blocks
   detach <cwd> <log> <pidfile> <command>  runs the command in its own session, output to log; writes its pid
   entries <file> <key>                    one "name<TAB>value" line per entry of the object at that top-level key
-  unowned <file> <task-id>                paths on stdin, one per line; prints those the task may not change
+  unowned <file> <task-id>                NUL-separated paths on stdin; prints those the task may not change
 """
 import json
 import os
@@ -117,12 +117,19 @@ def cmd_own(path, tid, wt, globs):
 # --- gate -------------------------------------------------------------------
 
 def parse_numstat(text):
-    rows = []
-    for line in text.splitlines():
-        parts = line.split("\t")
+    # `git diff -z --numstat`: "added<TAB>deleted<TAB>path<NUL>", or, for a rename, an empty path
+    # followed by "old<NUL>new<NUL>". NUL-separated paths are never quoted, so any name arrives as is.
+    toks = text.split("\0")
+    rows, i = [], 0
+    while i < len(toks):
+        parts = toks[i].split("\t", 2)
+        i += 1
         if len(parts) < 3:
             continue
-        a, d, p = parts[0], parts[1], parts[2]
+        a, d, p = parts
+        if p == "" and i + 1 < len(toks):
+            p = toks[i + 1]
+            i += 2
         a = 0 if a == "-" else int(a)  # binary files
         d = 0 if d == "-" else int(d)
         rows.append((p, a, d))
@@ -149,7 +156,8 @@ def cmd_gate(limit, slack, all_file, code_file, uncommitted_file=None):
     uncommitted = []
     if uncommitted_file:
         with open(uncommitted_file, "r", encoding="utf-8", errors="replace") as f:
-            uncommitted = [line.strip() for line in f if line.strip()]
+            # `git status -z --porcelain`: "XY path<NUL>"
+            uncommitted = [r[3:] for r in f.read().split("\0") if len(r) > 3]
     # compact separators so the output is byte-identical to idleflow.js
     print(json.dumps({
         "added": added, "deleted": deleted, "total": total, "files": len(code_rows),
@@ -339,8 +347,9 @@ def cmd_unowned(path, tid):
         sys.stderr.write("idleflow.py: task %s is not in %s\n" % (tid, path))
         sys.exit(1)
     allowed = list(task.get("owns") or []) + [".idleflow-run/**"] + list(omap.get("shared") or [])
-    for line in sys.stdin.buffer.read().decode("utf-8", "replace").splitlines():
-        rel = line.strip().replace("\\", "/")
+    # paths come NUL-separated (`git diff -z --name-only`), so none is quoted. git separates folders
+    # with `/` on every OS; a `\` is part of a name and is kept, or `src\x.py` would pass as `src/x.py`.
+    for rel in sys.stdin.buffer.read().decode("utf-8", "replace").split("\0"):
         if rel and not glob_match(rel.lower() if WIN else rel, allowed):
             print(rel)
 

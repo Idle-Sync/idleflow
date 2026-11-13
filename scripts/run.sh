@@ -261,11 +261,23 @@ gen_files() { # $1: the block's current text; descriptions written there are kep
   while IFS= read -r e; do
     desc="$(grep -F -- "- \`$e\` — " "$1" 2>/dev/null | head -1 | sed "s/^- \`[^\`]*\` — //" || true)"
     echo "- \`$e\` — ${desc:-(describe)}"
-  done < <({ "${G[@]}" ls-files || true; } | awk -F/ '{ print (NF > 1) ? $1 "/" : $1 }' | LC_ALL=C sort -u)
+  done < <({ "${G[@]}" ls-files -z || true; } | while IFS= read -r -d '' e; do
+             case "$e" in */*) printf '%s\n' "${e%%/*}/";; *) printf '%s\n' "$e";; esac
+           done | LC_ALL=C sort -u)
 }
 gen_commands() {
   local pm=npm k v c
   [ -f pnpm-lock.yaml ] && pm=pnpm; [ -f yarn.lock ] && pm=yarn; { [ -f bun.lock ] || [ -f bun.lockb ]; } && pm=bun
+  # first the install a fresh clone runs, as its lockfile pins it
+  if [ -f pnpm-lock.yaml ]; then echo "- \`pnpm install --frozen-lockfile\` — install (pnpm-lock.yaml)"
+  elif [ -f yarn.lock ]; then echo "- \`yarn install --frozen-lockfile\` — install (yarn.lock)"
+  elif [ -f bun.lock ] || [ -f bun.lockb ]; then echo "- \`bun install --frozen-lockfile\` — install (bun lockfile)"
+  elif [ -f package-lock.json ]; then echo "- \`npm ci\` — install (package-lock.json)"; fi
+  if [ -f uv.lock ]; then echo "- \`uv sync --frozen\` — install (uv.lock)"
+  elif [ -f poetry.lock ]; then echo "- \`poetry install\` — install (poetry.lock)"
+  elif [ -f requirements.txt ]; then echo "- \`pip install -r requirements.txt\` — install (requirements.txt)"; fi
+  [ -f Cargo.lock ] && echo "- \`cargo build --locked\` — install and build (Cargo.lock)"
+  [ -f go.sum ] && echo "- \`go mod download\` — install (go.sum)"
   if [ -f package.json ]; then
     while IFS=$'\t' read -r k v; do
       case "$pm" in npm|bun) c="$pm run $k";; *) c="$pm $k";; esac
@@ -560,7 +572,7 @@ JSON
     if [ ! -d "$p" ] || [ -z "$base" ] || [ "$base" = null ]; then echo "task $tid has no worktree or base sha (run.sh wt add $tid first)" >&2; exit 1; fi
     # only the task's commits merge, so only they are checked; --no-renames: a rename changes the
     # old path too, and the task must own both
-    git -C "$p" diff --no-renames --name-only "$base" HEAD | sort -u | idleflow_rt unowned "$ACTIVE/ownership.json" "$tid"
+    git -C "$p" diff -z --no-renames --name-only "$base" HEAD | idleflow_rt unowned "$ACTIVE/ownership.json" "$tid"
     ;;
   exec)
     tid="${1:?task-id}"; shift; [ "${1:-}" = -- ] && shift
@@ -614,7 +626,8 @@ JSON
     # What merges is the task's commits, the ones the gate measured and the reviewers approved.
     # Anything uncommitted in the worktree (a setup script's output, a cache) stays there.
     if [ -d "$p" ]; then
-      left="$(git -C "$p" -c core.quotePath=false status --porcelain -- . ':(exclude).idleflow-run' | cut -c4- | head -8 | paste -sd ' ' -)"
+      left="$(git -C "$p" status -z --no-renames --porcelain -- . ':(exclude).idleflow-run' | { n=0; while IFS= read -r -d '' r && [ "$n" -lt 8 ]; do printf '%s ' "${r:3}"; n=$((n + 1)); done; })"
+      left="${left% }"
       [ -z "$left" ] || echo "merge $tid: uncommitted in the worktree, not merged: $left" >&2
     fi
     if "${G[@]}" ${IDENTITY[@]+"${IDENTITY[@]}"} merge --no-ff -q "${merge_msg[@]}" "$br"; then
@@ -811,7 +824,8 @@ JSON
     # Evidence for the Repo fit and Records settings, one `suggest <key>: <value> — <evidence>` line
     # for each key still unset whose evidence points away from the default. Read-only.
     unset_key() { case "$(conventions_value "$1")" in ""|unset) return 0;; *) return 1;; esac; }
-    say() { echo "suggest $1: $2 — $3"; }
+    # a suggestion the human declined stays quiet for every caller (setup, the doctor, a run's end)
+    say() { grep -qF -- "- declined: $1 -> $2 " "$IDLE/suggestions.md" 2>/dev/null || echo "suggest $1: $2 — $3"; }
     if unset_key commit_format; then
       subjects="$("${G[@]}" log --no-merges -50 --format=%s 2>/dev/null || true)"
       total="$(printf '%s' "$subjects" | grep -c . || true)"
@@ -857,19 +871,23 @@ JSON
     fi
     # A task worktree starts with no Python environment. Borrowing the main checkout's runs the main
     # checkout's code (its editable install) in any child process that does not inherit PYTHONPATH,
-    # so each worktree builds its own. `none` is no answer here: the template ships it, and a
-    # declined suggestion is remembered in suggestions.md.
-    case "$(conventions_value worktree_setup)" in ""|unset|none)
+    # so each worktree builds its own. `none` is the repo's decision to go without, so only an
+    # undecided line gets the proposal; a declined one is remembered in suggestions.md.
+    # shellcheck disable=SC2016 # a command for the repo's shell to run later, not to expand here
+    VENV_CMD='py="$(command -v python3 || command -v python)" && "$py" -m venv .venv && vpy=.venv/bin/python && { [ -x "$vpy" ] || vpy=.venv/Scripts/python.exe; } && "$vpy" -m pip install -q'
+    if unset_key worktree_setup; then
       env_cmd=""
       if [ -d "$REPO/.venv" ]; then
         if [ -f "$REPO/uv.lock" ]; then env_cmd="uv sync --frozen"
         elif [ -f "$REPO/poetry.lock" ]; then env_cmd="POETRY_VIRTUALENVS_IN_PROJECT=true poetry install"
-        elif [ -f "$REPO/pyproject.toml" ] || [ -f "$REPO/setup.py" ]; then env_cmd="python3 -m venv .venv && .venv/bin/pip install -q -e ."
-        elif [ -f "$REPO/requirements.txt" ]; then env_cmd="python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt"
+        # The command is committed and runs on every teammate's clone, so it cannot assume one OS:
+        # the interpreter is python3 or python, and a venv keeps it in bin/ or, on Windows, Scripts/.
+        elif [ -f "$REPO/pyproject.toml" ] || [ -f "$REPO/setup.py" ]; then env_cmd="$VENV_CMD -e ."
+        elif [ -f "$REPO/requirements.txt" ]; then env_cmd="$VENV_CMD -r requirements.txt"
         fi
       fi
       [ -n "$env_cmd" ] && say worktree_setup "$env_cmd" "the main checkout has .venv/ and a task worktree starts without one; borrowing the main one runs the main checkout's code in subprocesses"
-    esac
+    fi
     if unset_key preview; then
       for t in dev start preview; do
         if grep -qE "\"$t\"[[:space:]]*:" "$REPO/package.json" 2>/dev/null; then say preview "npm run $t" "package.json has a $t script; the design reviewer can serve the app to take screenshots (setup asks for its address)"; break; fi
@@ -1194,7 +1212,6 @@ JSON
     while IFS= read -r line; do
       [ -n "$line" ] || continue
       kv="${line#suggest }"; key="${kv%%:*}"; rest="${kv#*: }"; val="${rest%% — *}"
-      grep -qF -- "- declined: $key -> $val " "$IDLE/suggestions.md" 2>/dev/null && continue
       if [ "$key" = hooks ]; then
         check_line suggest "fit hooks" "$val (${rest#* — })" "move that step to one run, before the push or in CI; idleflow never edits hooks"
       else

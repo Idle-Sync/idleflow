@@ -11,6 +11,27 @@
 
 _IDLEFLOW_CONF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# The git commands these scripts read paths from print them as they are. git's default
+# (core.quotePath) prints a non-ASCII path quoted and escaped ("caf\303\251.md"), which matches no
+# glob, no file and no exclude. Only the read-only listing commands get the setting: `git -c`
+# passes it on to every process git starts, and commit, merge and worktree run the repo's own
+# hooks, which keep the repo's settings. The function is not exported, so commands the repo runs
+# (the gate, worktree_setup) are not affected either.
+git() {
+  local i=1 sub=""
+  while [ "$i" -le "$#" ]; do
+    case "${!i}" in
+      -C|-c) i=$((i + 2));;
+      -*) i=$((i + 1));;
+      *) sub="${!i}"; break;;
+    esac
+  done
+  case "$sub" in
+    diff|ls-files|status|log|show|grep) command git -c core.quotePath=false "$@";;
+    *) command git "$@";;
+  esac
+}
+
 _idleflow_number_in() { # _idleflow_number_in <value> <min> <max>
   local re='^[0-9]+$'
   [[ "$1" =~ $re ]] && [ "$1" -ge "$2" ] && [ "$1" -le "$3" ]

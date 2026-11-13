@@ -48,8 +48,9 @@ done <<< "${DIFF_EXCLUDE:-}"
 # command-line limit. The index is never touched: the gate reads, it does not stage.
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp" "$BASE_CONF"' EXIT
-git diff --numstat "$BASE" HEAD -- . > "$tmp/all" 2>/dev/null || true
-git diff --numstat "$BASE" HEAD -- . ${EXCL[@]+"${EXCL[@]}"} > "$tmp/code" 2>/dev/null || true
-git -c core.quotePath=false status --porcelain -- . ':(exclude).idleflow-run' 2>/dev/null | cut -c4- > "$tmp/uncommitted" || true
+# -z everywhere: NUL-separated paths are never quoted or escaped, whatever their characters.
+git diff -z --numstat "$BASE" HEAD -- . > "$tmp/all" 2>/dev/null || true
+git diff -z --numstat "$BASE" HEAD -- . ${EXCL[@]+"${EXCL[@]}"} > "$tmp/code" 2>/dev/null || true
+git status -z --no-renames --porcelain -- . ':(exclude).idleflow-run' > "$tmp/uncommitted" 2>/dev/null || true
 
 idleflow_rt gate "$LIMIT" "$SLACK" "$tmp/all" "$tmp/code" "$tmp/uncommitted"

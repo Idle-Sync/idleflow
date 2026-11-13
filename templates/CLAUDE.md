@@ -115,7 +115,9 @@ gh release create vX.Y.Z --title "vX.Y.Z — <milestone>" --notes-file <notes>
 
 ## Commands
 
-- Install: `<command>`
-- Test: `<command>`
-- Run: `<command>`
+Written by `run.sh docs` from the lockfile, package scripts, Makefile, justfile and pyproject, so
+it is filled in as soon as the repo has them; edit nothing between the markers.
+
+<!-- idleflow:generated commands -->
+<!-- idleflow:end -->
 <!-- idleflow end -->
