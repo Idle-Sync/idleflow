@@ -19,7 +19,7 @@ issue: <link or one-line reference>
 
 ## Tasks
 
-### T1: <title>
+### T1: <title: what the task delivers, in a few words; the merge commit's subject uses it, so it does not start with "merge">
 group: 1                      # tasks in the same group run in parallel; groups run in order
 depends_on: []                # task ids
 model: sonnet | opus

@@ -454,6 +454,20 @@ check "once a task exists, the run's copy stays put"        '[ "$(bash "$RUN" ge
 bash "$RUN" wt rm T8; bash "$RUN" finish done >/dev/null
 cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"; git add .idleflow/conventions.md && commit -q -m "restore conventions"
 
+echo "--- parallel tasks share no port or temp folder"
+bash "$RUN" new isolation >/dev/null 2>&1
+wa="$(bash "$RUN" wt add TA 2>/dev/null)"; bash "$RUN" wt add TB >/dev/null 2>&1
+pa="$(bash "$RUN" get tasks.TA.port)"; pb="$(bash "$RUN" get tasks.TB.port)"
+check "each task gets its own port"            "[ '$pa' = 4400 ] && [ '$pb' = 4401 ]"
+bash "$RUN" wt add TA >/dev/null 2>&1
+check "a re-added task keeps its port"         '[ "$(bash "$RUN" get tasks.TA.port)" = 4400 ]'
+out="$(bash "$RUN" exec TA -- sh -c 'echo "$IDLEFLOW_TASK $IDLEFLOW_PORT"; echo "$TMPDIR"; pwd')"
+check "exec runs in the worktree with the task's port and temp folder" '[ "$(echo "$out" | sed -n 1p)" = "TA 4400" ] && echo "$out" | sed -n 2p | grep -q "/tasks/TA/tmp$" && [ "$(echo "$out" | sed -n 3p)" = "$(cd "$wa" && pwd)" ]'
+check "exec passes the command's exit code"    'bash "$RUN" exec TA -- sh -c "exit 3"; [ $? = 3 ]'
+inside="$(cd "$wa" && bash "$RUN" exec TA -- sh -c 'echo "$IDLEFLOW_PORT"')"
+check "exec works from inside the task worktree" "[ '$inside' = 4400 ]"
+bash "$RUN" wt rm TA; bash "$RUN" wt rm TB; bash "$RUN" finish done >/dev/null
+
 echo "--- the repo's gate"
 git add -u && commit -q -m "tidy before the gate"
 cp .idleflow/conventions.md "$d-conv.bak"
@@ -520,12 +534,28 @@ printf 'commit_format: conventional\n' >> .idleflow/conventions.md
 bash "$RUN" new conventional-commits-with-a-long-slug-name >/dev/null 2>&1
 wc6="$(bash "$RUN" wt add T6 2>/dev/null)"
 ( cd "$wc6" && echo y >> src/keep.py && git add src/keep.py && commit -m "fix: keep y" )
+printf '## Tasks\n\n### T6: keep the y line\n' > .idleflow/runs/active/plan.md
 bash "$RUN" set tasks.T6.status '"approved"'; bash "$RUN" merge T6 >/dev/null 2>&1
 subjects="$(git log -1 --format=%s HEAD)"; bodies="$(git log -1 --format=%b HEAD)"
 cc_re='^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([A-Za-z0-9_./-]+\))?!?: [^ ]'
 check "the merge commit is a Conventional Commit" '[ "$(echo "$subjects" | grep -Ec "$cc_re")" = 1 ] && [ "$(echo "$subjects" | awk "length > 72" | wc -l | tr -d " ")" = 0 ]'
-check "the run id moves to the commit body" '[ "$(echo "$bodies" | grep -c "^Run: ")" = 1 ]'
+check "the run id moves to the commit body" '[ "$(echo "$bodies" | grep -c "^Run: ")" = 1 ] && echo "$bodies" | grep -qx "Task: T6"'
+check "a conventional merge says what merged, not the tool" '[ "$subjects" = "chore: merge keep the y line" ]'
 bash "$RUN" wt rm T6; bash "$RUN" finish done >/dev/null
+sed -i.bak 's/^commit_format: .*/commit_format: plain/' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
+bash "$RUN" new plain-subjects >/dev/null 2>&1
+wc7="$(bash "$RUN" wt add T7 2>/dev/null)"
+( cd "$wc7" && echo z >> src/keep.py && git add src/keep.py && commit -m "Keep the z line" )
+git config merge.log true
+# the title comes from the plan, so backticks and $ in it reach the subject as written
+printf '%s\n' '### T70: Not this one' '### T7: Keep the `z` line, not $(z) or $HOME' > .idleflow/runs/active/plan.md
+bash "$RUN" set tasks.T7.status '"approved"'; bash "$RUN" merge T7 >/dev/null 2>&1
+git config --unset merge.log
+check "a plain merge is a plain sentence with the ids in the body" '[ "$(git log -1 --format=%s HEAD)" = "Merge Keep the \`z\` line, not \$(z) or \$HOME" ] && git log -1 --format=%b HEAD | grep -qx "Task: T7" && git log -1 --format=%b HEAD | grep -q "^Run: "'
+check "the ids stay trailers when merge.log is set" '[ "$(git log -1 --format="%(trailers:key=Run,valueonly,separator=)" HEAD)" = "$(bash "$RUN" get id)" ]'
+long="$(printf "é%.0s" $(seq 1 80))"
+check "a long title is cut by characters, never inside one" '[ "$(LC_ALL=C idleflow_rt clip 72 "Merge $long")" = "Merge $(printf "é%.0s" $(seq 1 63))..." ]'
+bash "$RUN" wt rm T7; bash "$RUN" finish done >/dev/null
 cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"
 
 echo "--- team"
@@ -657,12 +687,18 @@ check "dependencies read from the manifest" 'echo "$idx" | grep -qxF -- "- \`rea
 check "runs read from both merge formats"   'echo "$idx" | grep -q "run \`run-old\`, 1 task" && echo "$idx" | grep -q "run \`run-new\`, 1 task"'
 ( cd "$f" && bash "$RUN" docs --check >/dev/null 2>&1 ); rc=$?
 check "a second docs run changes nothing"   '[ "$rc" = 0 ] && [ "$(cd "$f" && bash "$RUN" docs)" = "docs: generated blocks are up to date" ]'
+( cd "$f" && git checkout -qb c && echo d > src/d.ts && git add -A && git commit -qm "d" && git checkout -q - && git merge -q --no-ff -m "Merge the d file" -m "Run: run-plain
+Task: T3" c && bash "$RUN" docs >/dev/null )
+check "runs are read from the Run trailer, whatever the subject" 'grep -q "run \`run-plain\`, 1 task" "$f/index.md" && grep -q "run \`run-old\`, 1 task" "$f/index.md"'
 ( cd "$f" && git add -A && git commit -qm "docs" && echo d > NOTES.md && git add -A && git commit -qm "d" )
 doc="$(cd "$f" && bash "$RUN" doctor 2>/dev/null)"
 check "doctor warns about a stale block"    'echo "$doc" | grep -q "^warn generated: out of date: index.md"'
 check "doctor warns about undescribed entries" 'echo "$doc" | grep -q "^warn generated: [0-9]* generated entries still say (describe)"'
 ( cd "$f" && printf '# Index\n- `src/` — code\n' > index.md )
 det="$(cd "$f" && bash "$RUN" detect)"
+( cd "$f" && for i in $(seq 1 40); do echo "$i" > "p$i.txt"; git add "p$i.txt"; git commit -qm "Add the p$i notes"; done )
+det="$(cd "$f" && bash "$RUN" detect)"
+check "detect suggests plain subjects for a plain history" 'echo "$det" | grep -q "^suggest commit_format: plain —"'
 check "detect suggests generated blocks for a hand-kept index" 'echo "$det" | grep -q "^suggest generated_docs: index.md —"'
 ( cd "$f" && git checkout -q -- index.md 2>/dev/null; printf '# Index\n<!-- idleflow:generated files -->\n<!-- idleflow:end -->\n' > index.md && echo x > é.txt && git add -A && git commit -qm "é" && bash "$RUN" docs >/dev/null )
 check "the files block names non-ASCII files as they are" 'grep -qxF -- "- \`é.txt\` — (describe)" "$f/index.md"'
@@ -748,6 +784,7 @@ check "the time log exists before the planner reads it" 'grep -q "copy \`templat
 check "human decisions reach the plan through the planner" 'grep -q "decisions.md" "$HERE/../agents/planner.md" && grep -q "Q<n>: answered" "$HERE/../agents/planner.md" && ! grep -q "apply the answer; continue" "$HERE/../commands/feature.md" && ! grep -q "write the answers into plan.md" "$HERE/../commands/feature.md" && grep -q "You never edit plan.md yourself" "$HERE/../commands/feature.md" && grep -q "Q1: <question> (default:" "$HERE/../templates/plan.md"'
 check "attribution is one rule every commit writer gets" '( for a in implementer implementer-hard; do grep -q "in this repo this setting decides" "$HERE/../agents/$a.md" && grep -q "Claude-Session:" "$HERE/../agents/$a.md" || exit 1; done ) && grep -q "Claude-Session:" "$HERE/../agents/review-conform.md" && grep -q "Claude-Session:" "$HERE/../templates/CLAUDE.md" && [ "$(grep -c "co_author_claude: <value>" "$HERE/../commands/feature.md")" = 2 ]'
 check "the doc-keeper edits sentences, never whole files" '! grep -q "^tools:.*Write" "$HERE/../agents/doc-keeper.md" && grep -q "belongs to humans" "$HERE/../agents/doc-keeper.md" && grep -q "as it is on disk now" "$HERE/../templates/CLAUDE.md"'
+check "agents run task commands through run.sh exec" '( for a in implementer implementer-hard review-correct; do grep -q "exec <task-id> -- <command>" "$HERE/../agents/$a.md" || exit 1; done ) && grep -q "IDLEFLOW_PORT" "$HERE/../agents/planner.md" && [ "$(grep -c "exec <task-id> -- <command>\|exec <id> -- <command>" "$HERE/../commands/feature.md")" = 2 ]'
 check "the index limit counts only hand-written text" 'grep -q "outside generated blocks) stays under 80 lines" "$HERE/../agents/retro.md" && grep -q "the text outside its generated blocks stays under 80 lines" "$HERE/../commands/setup.md" && ! grep -q "Under 80 lines\.\|), under 80 lines," "$HERE/../agents/retro.md" "$HERE/../commands/setup.md"'
 check "the designer and design reviewer exist" '[ -f "$HERE/../agents/designer.md" ] && [ -f "$HERE/../agents/review-design.md" ] && grep -q "\"ui\"" "$HERE/../agents/classifier.md" && grep -q "^### 2c. Design" "$HERE/../commands/feature.md"'
 check "the design handbook carries the contrast rule" 'grep -q "4.5:1" "$HERE/../procedures/design.md" && grep -q "0.2126 R + 0.7152 G + 0.0722 B" "$HERE/../procedures/design-data.md"'

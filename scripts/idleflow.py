@@ -16,6 +16,7 @@ Subcommands:
   killguard                               hook on Bash: payload on stdin; exit 2 blocks a kill by name or pattern
   detach <cwd> <log> <pidfile> <command>  runs the command in its own session, output to log; writes its pid
   entries <file> <key>                    one "name<TAB>value" line per entry of the object at that top-level key
+  clip   <n> <text>                       the text cut to at most n characters (not bytes), "..." marking a cut
   unowned <file> <task-id>                NUL-separated paths on stdin; prints those the task may not change
 """
 import json
@@ -874,6 +875,11 @@ def cmd_killguard():
     sys.exit(0)
 
 
+def cmd_clip(n, text):
+    n = int(n)
+    print(text if len(text) <= n else text[: n - 3] + "...")
+
+
 def main(argv):
     # -I (isolated mode) ignores PYTHONUTF8, so on Windows stdout/stderr would be cp1252
     # and a BLOCKED message with a non-ASCII filename would come out garbled.
@@ -889,7 +895,7 @@ def main(argv):
     table = {
         "get": cmd_get, "set": cmd_set, "inc": cmd_inc, "finish": cmd_finish,
         "own": cmd_own, "gate": cmd_gate, "guard": cmd_guard, "killguard": cmd_killguard, "detach": cmd_detach, "entries": cmd_entries,
-        "unowned": cmd_unowned,
+        "unowned": cmd_unowned, "clip": cmd_clip,
     }
     if cmd not in table:
         sys.stderr.write("idleflow.py: unknown subcommand %r\n" % cmd)

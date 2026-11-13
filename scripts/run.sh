@@ -11,6 +11,8 @@
 #   run.sh skip <key>                     -> this run goes without a repo command (gate, gate_quick, worktree_setup, preview)
 #   run.sh unowned <task-id>              -> paths the task's commits change (base..HEAD, what merges) that its globs,
 #                                            .idleflow-run/** and shared_files do not cover; matched as the guard matches
+#   run.sh exec <task-id> -- <command...> -> runs a command in the task's worktree with its own port (IDLEFLOW_PORT) and
+#                                            its own temp folder (IDLEFLOW_TMP, TMPDIR)
 #   run.sh get <key>                      -> prints a value from run.json (dotted keys ok)
 #   run.sh set <key> <json>               -> sets a value in run.json (dotted keys ok)
 #   run.sh inc <key> [n]                  -> adds n (default 1) to a counter in run.json
@@ -60,6 +62,11 @@ source "$HERE/rt.sh"
 source "$HERE/conf.sh"
 
 REPO="$(git rev-parse --show-toplevel)"
+# Called from inside a linked worktree (an agent's `run.sh exec`), the run still lives in the main
+# checkout. git itself names it: the common git dir's parent. No file in the checkout is trusted
+# for this, since a committed one could point anywhere.
+_git_dir="$(git rev-parse --path-format=absolute --git-dir)"; _common="$(git rev-parse --path-format=absolute --git-common-dir)"
+if [ "$_git_dir" != "$_common" ] && [ "$(basename "$_common")" = .git ]; then REPO="$(dirname "$_common")"; fi
 idleflow_load_conf "$REPO"
 IDLE="$REPO/.idleflow"
 CONVENTIONS="$IDLE/conventions.md"
@@ -78,6 +85,12 @@ native_path() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; els
 json_str() { printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')"; }
 
 plugin_version() { idleflow_rt get "$HERE/../.claude-plugin/plugin.json" version 2>/dev/null || echo unknown; }
+
+# the title in the plan's "### <task-id>: <title>" heading, empty when there is none
+plan_title() { # plan_title <task-id>
+  [ -f "$ACTIVE/plan.md" ] || return 0
+  H="### $1:" awk 'index($0, ENVIRON["H"]) == 1 { print substr($0, length(ENVIRON["H"]) + 1); exit }' "$ACTIVE/plan.md" | tr -d '\r'
+}
 
 active_id() {
   [ -f "$ACTIVE/run.json" ] || { echo "no active run (run.sh new <slug> first)" >&2; exit 1; }
@@ -302,9 +315,10 @@ gen_dependencies() {
   [ -f go.mod ] && awk '/^require \(/{ r = 1; next } r && /^\)/{ r = 0 } r && NF >= 2 { print "- `" $1 "` " $2 " — go.mod" } /^require [^(]/{ print "- `" $2 "` " $3 " — go.mod" }' go.mod | LC_ALL=C sort
   return 0
 }
-gen_runs() { # the last ten idleflow runs merged here, newest first, from both merge-commit formats
-  { "${G[@]}" log --date=short --format='%ad%x09%an%x09%s%x09%(trailers:key=Run,valueonly,separator=)' \
-      --grep='^idleflow: merge ' --grep='^chore(idleflow): merge task ' || true; } |
+gen_runs() { # the last ten idleflow runs merged here, newest first: merge commits with a Run trailer,
+  # plus older merges whose subject held the run id
+  { "${G[@]}" log --merges --date=short --format='%ad%x09%an%x09%s%x09%(trailers:key=Run,valueonly,separator=)' || true; } |
+    awk -F'\t' '$4 != "" || $3 ~ /^idleflow: merge / || $3 ~ /^chore\(idleflow\): merge task /' |
     awk -F'\t' '{ id = $4; if (id == "" && match($3, /\(([^)]+)\)$/)) id = substr($3, RSTART + 1, RLENGTH - 2)
                   if (id == "") next; if (!(id in n)) { order[++k] = id; when[id] = $1; who[id] = $2 } n[id]++ }
                 END { for (i = 1; i <= k && i <= 10; i++) { id = order[i]; print "- " when[id] " " who[id] ": run `" id "`, " n[id] " task(s) merged" } }'
@@ -338,6 +352,27 @@ command_hash() { printf '%s' "$1" | git hash-object --stdin; }
 approval_key() { echo "idleflow.approved-$(echo "$1" | tr '_' '-')"; }   # git config names allow no underscore
 command_approved() { # command_approved <key> <command>
   [ "$("${G[@]}" config --local --get "$(approval_key "$1")" 2>/dev/null || true)" = "$(command_hash "$2")" ]
+}
+
+# A worktree isolates files. What a task's commands share at run time is handled here: each task
+# gets its own port and temp folder.
+task_port() { idleflow_rt get "$ACTIVE/run.json" "tasks.$1.port" 2>/dev/null || true; }
+task_tmp() { echo "$ACTIVE/tasks/$1/tmp"; }
+# The lowest PORT_BASE + n no other task of this run holds; a task keeps its port when re-added.
+allocate_port() { # allocate_port <task-id>
+  local mine used n=0; mine="$(task_port "$1")"
+  case "$mine" in ""|null) ;; *) echo "$mine"; return;; esac
+  used="$(idleflow_rt entries "$ACTIVE/run.json" tasks 2>/dev/null | sed -n 's/.*"port":\([0-9]*\).*/\1/p')"
+  while printf '%s\n' "$used" | grep -qx "$(( ${PORT_BASE:-4400} + n ))"; do n=$((n + 1)); done
+  echo $(( ${PORT_BASE:-4400} + n ))
+}
+# Runs a command for a task: in its worktree, with its port and temp folder.
+in_task() { # in_task <task-id> <dir> <command...>
+  local tid="$1" dir="$2" port tmp rc=0; shift 2
+  port="$(task_port "$tid")"; tmp="$(task_tmp "$tid")"; mkdir -p "$tmp"
+  # the caller decides what a failure means; errexit is left as the caller set it
+  (cd "$dir" && MAIN="$REPO" IDLEFLOW_TASK="$tid" IDLEFLOW_PORT="$port" IDLEFLOW_TMP="$tmp" TMPDIR="$tmp" "$@") || rc=$?
+  return "$rc"
 }
 
 # The repo's own preparation for a fresh worktree (link shared folders, copy fixtures).
@@ -504,6 +539,8 @@ JSON
         # the task's own base: groups merged earlier move the branch, so gate/review must diff from here, not from the run start
         idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.base_sha" "\"$("${G[@]}" rev-parse "$base")\""
         idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.worktree" "$(json_str "$(native_path "$p")")"
+        idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.port" "$(allocate_port "$tid")"
+        mkdir -p "$(task_tmp "$tid")"
         # epoch seconds, so the retro's time log can subtract them without date parsing
         idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.t_start" "$(date +%s)"
         # the commit the first tasks branch from is the base a later gate is compared against
@@ -544,6 +581,14 @@ JSON
     # old path too, and the task must own both
     git -C "$p" diff -z --no-renames --name-only "$base" HEAD | idleflow_rt unowned "$ACTIVE/ownership.json" "$tid"
     ;;
+  exec)
+    tid="${1:?task-id}"; shift; [ "${1:-}" = -- ] && shift
+    [ "$#" -gt 0 ] || { echo "usage: run.sh exec <task-id> -- <command...>" >&2; exit 1; }
+    active_id >/dev/null
+    dir="$(wt_path "$tid")"; [ -d "$dir" ] || { echo "exec: no worktree for $tid (run.sh wt add $tid first)" >&2; exit 1; }
+    rc=0; in_task "$tid" "$dir" "$@" || rc=$?
+    exit "$rc"
+    ;;
   get)
     key="${1:?key}"; active_id >/dev/null
     idleflow_rt get "$ACTIVE/run.json" "$key"
@@ -574,17 +619,26 @@ JSON
     ;;
   merge)
     tid="${1:?task-id}"; id="$(active_id)"
+    # The task's title says what the merge brings. It is read here from the plan, never passed on a
+    # command line: a title with `code` or $name in it would be expanded by the shell that runs the
+    # command. One line; the ids go in the body.
+    title="$(plan_title "$tid" | tr '\n\r\t' '   ' | sed 's/  */ /g; s/^ //; s/ $//')"; [ -n "$title" ] || title="task $tid"
     br="idleflow/$id/$tid"; p="$(wt_path "$tid")"
     # the "never merge an unapproved task" rule, enforced here and not only in the prompt
     st="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$tid.status" 2>/dev/null || true)"
     [ "$st" = "approved" ] || { echo "refusing to merge $tid: status is '${st:-unset}', not approved" >&2; exit 4; }
-    # `commit_format: conventional` repos often check every subject in CI (type(scope): ..., at most
-    # 72 characters), so the run id moves to the body there.
-    if [ "$(conventions_value commit_format)" = conventional ]; then
-      merge_msg=(-m "chore(idleflow): merge task $tid" -m "Run: $id")
-    else
-      merge_msg=(-m "idleflow: merge $tid ($id)")
-    fi
+    # The subject follows the repo's style and says what merged; only the `idleflow` format, the
+    # tool's own, names it. `conventional` repos often check every subject in CI (at most 72
+    # characters), so ids live in the body, as trailers every format carries (gen_runs reads them).
+    # --no-log: a merge.log setting would append a shortlog after them, and they would stop being
+    # the message's trailers.
+    case "$(conventions_value commit_format)" in
+      conventional) subject="$(idleflow_rt clip 72 "chore: merge $title")";;
+      plain) subject="$(idleflow_rt clip 72 "Merge $title")";;
+      *) subject="idleflow: merge $tid ($id)";;
+    esac
+    merge_msg=(-m "$subject" -m "Run: $id
+Task: $tid")
     # What merges is the task's commits, the ones the gate measured and the reviewers approved.
     # Anything uncommitted in the worktree (a setup script's output, a cache) stays there.
     if [ -d "$p" ]; then
@@ -592,7 +646,7 @@ JSON
       left="${left% }"
       [ -z "$left" ] || echo "merge $tid: uncommitted in the worktree, not merged: $left" >&2
     fi
-    if "${G[@]}" ${IDENTITY[@]+"${IDENTITY[@]}"} merge --no-ff -q "${merge_msg[@]}" "$br"; then
+    if "${G[@]}" ${IDENTITY[@]+"${IDENTITY[@]}"} merge --no-ff --no-log -q "${merge_msg[@]}" "$br"; then
       idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.t_merge" "$(date +%s)"
       echo "merged $tid"
     elif [ -f "$("${G[@]}" rev-parse --absolute-git-dir)/MERGE_HEAD" ]; then
@@ -793,6 +847,9 @@ JSON
       total="$(printf '%s' "$subjects" | grep -c . || true)"
       cc="$(printf '%s\n' "$subjects" | grep -Ec '^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([A-Za-z0-9_./-]+\))?!?: ' || true)"
       if [ "${total:-0}" -ge 10 ] && [ $((cc * 100 / total)) -ge 80 ]; then say commit_format conventional "$cc of the last $total commit subjects are Conventional Commits"; fi
+      # plain sentences: no type prefix and no `<id>: ` prefix, starting with a capital letter
+      capital="$(printf '%s\n' "$subjects" | grep -Ev '^[A-Za-z0-9_()./!-]+: ' | grep -c '^[A-Z]' || true)"
+      if [ "${total:-0}" -ge 10 ] && [ $((capital * 100 / total)) -ge 80 ]; then say commit_format plain "$capital of the last $total commit subjects are plain sentences with no prefix"; fi
     fi
     if unset_key lessons_in && [ -f "$REPO/lessons.md" ] && [ ! -f "$IDLE/lessons.md" ]; then say lessons_in lessons.md "the repo already keeps lessons.md"; fi
     if unset_key progress_file && [ ! -f "$REPO/progress.md" ] && [ -f "$REPO/docs/progress.md" ]; then say progress_file docs/progress.md "the repo keeps docs/progress.md"; fi
@@ -905,7 +962,10 @@ JSON
     echo "repo $key ($target): $cmd" >&2
     started="$(date +%s)"
     set +e
-    (cd "$dir" && MAIN="$REPO" bash -c "$cmd") > "$log" 2>&1
+    case "$target" in
+      base|main) (cd "$dir" && MAIN="$REPO" bash -c "$cmd") > "$log" 2>&1;;
+      *) in_task "$target" "$dir" bash -c "$cmd" > "$log" 2>&1;;
+    esac
     rc=$?
     set -e
     secs=$(( $(date +%s) - started ))
@@ -934,13 +994,16 @@ JSON
     cmd="$(idleflow_rt get "$ACTIVE/run.json" preview 2>/dev/null || true)"
     case "$cmd" in ""|null) echo "preview: none"; exit 0;; esac
     command_approved preview "$cmd" || { echo "preview is not approved on this clone; nothing ran. The command is: $cmd" >&2; exit 7; }
-    url="$(conventions_value preview_url)"
+    url="$(conventions_value preview_url)"; port="$(task_port "$tid")"
+    url="${url//\$\{IDLEFLOW_PORT\}/$port}"
     [[ "$url" =~ ^https?://(localhost|127\.0\.0\.1|\[::1\])(:[0-9]+)?(/[^[:space:]]*)?$ ]] \
       || { echo "preview_url must be a localhost address (got '$url')" >&2; exit 1; }
     dir="$(wt_path "$tid")"; [ -d "$dir" ] || { echo "preview: no worktree for $tid" >&2; exit 1; }
     mkdir -p "$ACTIVE/tasks/$tid"
     echo "preview ($tid): $cmd" >&2
-    MAIN="$REPO" idleflow_rt detach "$dir" "$ACTIVE/tasks/$tid/preview.log" "$pidf" "$cmd"
+    mkdir -p "$(task_tmp "$tid")"
+    MAIN="$REPO" IDLEFLOW_TASK="$tid" IDLEFLOW_PORT="$port" IDLEFLOW_TMP="$(task_tmp "$tid")" TMPDIR="$(task_tmp "$tid")" \
+      idleflow_rt detach "$dir" "$ACTIVE/tasks/$tid/preview.log" "$pidf" "$cmd"
     echo "preview $tid: serving at $url (log: $(native_path "$ACTIVE/tasks/$tid/preview.log"); stop with: run.sh preview $tid stop)"
     ;;
   commands)
@@ -1205,7 +1268,7 @@ JSON
     fi
     ;;
   conf)
-    for v in DIFF_LIMIT DIFF_SLACK MAX_IMPLEMENTERS SIZE_M_IMPLEMENTERS DEBATE_ROUNDS MAX_RETRIES SIZE_S_MAX SIZE_M_MAX SIZE_S_OVERRUN LARGE_REPO_LOC STEP_DEBATE STEP_STACK STEP_LIBRARIES STEP_TOOLING STEP_DOC_KEEPER STEP_MUTATION STEP_DESIGN SLOW_GATE_SECONDS; do
+    for v in DIFF_LIMIT DIFF_SLACK MAX_IMPLEMENTERS SIZE_M_IMPLEMENTERS DEBATE_ROUNDS MAX_RETRIES SIZE_S_MAX SIZE_M_MAX SIZE_S_OVERRUN LARGE_REPO_LOC STEP_DEBATE STEP_STACK STEP_LIBRARIES STEP_TOOLING STEP_DOC_KEEPER STEP_MUTATION STEP_DESIGN SLOW_GATE_SECONDS PORT_BASE; do
       echo "$v=${!v:-}"
     done
     echo "RUNTIME=$(idleflow_rt_name)"
