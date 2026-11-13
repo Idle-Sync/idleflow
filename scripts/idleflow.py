@@ -355,31 +355,196 @@ def cmd_unowned(path, tid):
             print(rel)
 
 
+# --- kill guard ---------------------------------------------------------------
 # A kill by name or pattern matches every process on the machine with that text, other Claude Code
-# sessions' included, so only a kill by a PID the agent kept is allowed. Same in idleflow.js.
-KILL_BY_PATTERN = [
-    # in command position: at the start, after ; & | ( or a backtick, or after sudo, exec or xargs
-    r"(^|[;&|`(]\s*|\b(sudo|exec)\s+|\bxargs\s+(-\S+\s+)*)(pkill|killall)\b",
-    r"(^|[;&|`(]\s*|\b(sudo|exec)\s+)kill\b[^;&|\n]*(\$\(|`)\s*(pgrep|pidof)\b",
-    r"\b(pgrep|pidof)\b[^;&\n]*\|\s*(sudo\s+)?xargs\b[^;&|\n]*\bkill\b",
-    r"(^|[;&|`(]\s*|\b(sudo|exec)\s+)fuser\b[^;&|\n]*\s-[a-zA-Z]*k",
-]
+# sessions' included, so only a kill by a PID the agent kept is allowed. The command is read the way
+# a shell reads it: quoted text is data, and $(...), backticks and `bash -c '...'` hold commands.
+# Same in idleflow.js; the two must agree on every input.
+
+SHELLS = ("bash", "sh", "zsh", "dash", "ksh")
+KEYWORDS = ("then", "do", "else", "elif", "if", "while", "until", "!", "{", "}", "time")
+# wrappers that run the rest of the line as a command, and their options that take a value
+WRAPPERS = {
+    "sudo": "ugChpUrtTD", "doas": "uC", "exec": "a", "command": "", "builtin": "", "nohup": "",
+    "env": "uSCP", "nice": "n", "ionice": "cnp", "timeout": "sk", "watch": "nd", "stdbuf": "ioe",
+    "setsid": "", "xargs": "IinPLdsaE",
+}
+NAME_KILLERS = ("pkill", "killall", "killall5", "skill")
+PID_FINDERS = ("pgrep", "pidof")
+
+
+def _close(s, i, opener):
+    # index just past the match of the opener at s[i] ("$(" or "`"), quotes and nesting respected
+    if opener == "`":
+        j = i + 1
+        while j < len(s) and s[j] != "`":
+            j += 2 if s[j] == "\\" else 1
+        return j + 1
+    depth, j = 1, i + 2
+    while j < len(s) and depth:
+        c = s[j]
+        if c == "\\":
+            j += 2
+            continue
+        if c == "'":
+            k = s.find("'", j + 1)
+            j = len(s) if k < 0 else k + 1
+            continue
+        if c == '"':
+            j += 1
+            while j < len(s) and s[j] != '"':
+                j += 2 if s[j] == "\\" else 1
+            j += 1
+            continue
+        if s.startswith("$(", j):
+            depth += 1
+            j += 2
+            continue
+        if c == ")":
+            depth -= 1
+        j += 1
+    return j
+
+
+def shell_commands(s, depth=0):
+    # [[ (word, from_substitution), ... ], ...]: every simple command in s, nested ones too
+    cmds, words, word, subst, in_word = [], [], "", False, False
+    if depth > 8:
+        return cmds
+
+    def end_word():
+        nonlocal word, subst, in_word
+        if in_word:
+            words.append((word, subst))
+        word, subst, in_word = "", False, False
+
+    def end_cmd():
+        nonlocal words
+        end_word()
+        if words:
+            cmds.append(words)
+        words = []
+
+    i = 0
+    while i < len(s):
+        c = s[i]
+        if c in " \t":
+            end_word()
+        elif c in "\n;&|()":
+            end_cmd()
+        elif c == "#" and not in_word:
+            k = s.find("\n", i)
+            i = len(s) if k < 0 else k
+            continue
+        elif c == "\\":
+            if s[i + 1:i + 2] == "\n":
+                i += 2
+                continue
+            word += s[i + 1:i + 2]
+            in_word = True
+            i += 2
+            continue
+        elif c == "'":
+            k = s.find("'", i + 1)
+            k = len(s) if k < 0 else k
+            word += s[i + 1:k]
+            in_word = True
+            i = k + 1
+            continue
+        elif c == '"':
+            j = i + 1
+            while j < len(s) and s[j] != '"':
+                if s[j] == "\\":
+                    word += s[j + 1:j + 2]
+                    j += 2
+                elif s.startswith("$(", j) or s[j] == "`":
+                    k = _close(s, j, "$(" if s[j] == "$" else "`")
+                    inner = s[j + 2:k - 1] if s[j] == "$" else s[j + 1:k - 1]
+                    cmds.extend(shell_commands(inner, depth + 1))
+                    word += s[j:k]
+                    subst = True
+                    j = k
+                else:
+                    word += s[j]
+                    j += 1
+            in_word = True
+            i = j + 1
+            continue
+        elif s.startswith("$(", i) or c == "`":
+            k = _close(s, i, "$(" if c == "$" else "`")
+            inner = s[i + 2:k - 1] if c == "$" else s[i + 1:k - 1]
+            cmds.extend(shell_commands(inner, depth + 1))
+            word += s[i:k]
+            subst = in_word = True
+            i = k
+            continue
+        else:
+            word += c
+            in_word = True
+        i += 1
+    end_cmd()
+    # `bash -c '<script>'` runs its script as commands
+    for words in list(cmds):
+        names = [w for w, _ in words]
+        if os.path.basename(names[0]) in SHELLS and "-c" in names:
+            k = names.index("-c")
+            if k + 1 < len(names):
+                cmds.extend(shell_commands(names[k + 1], depth + 1))
+    return cmds
+
+
+def _program(words):
+    # (program name, its words, whether xargs runs it) after keywords, assignments and wrappers
+    via_xargs, i = False, 0
+    while i < len(words):
+        w = words[i][0]
+        if w in KEYWORDS or re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", w):
+            i += 1
+            continue
+        name = os.path.basename(w)
+        if name not in WRAPPERS:
+            return name, words[i:], via_xargs
+        via_xargs = via_xargs or name == "xargs"
+        takes, i = WRAPPERS[name], i + 1
+        while i < len(words) and words[i][0].startswith("-") and words[i][0] != "-":
+            flag = words[i][0]
+            i += 1
+            if len(flag) == 2 and flag[1] in takes and i < len(words):
+                i += 1
+        if name == "timeout" and i < len(words):
+            i += 1  # the duration
+    return "", [], via_xargs
+
+
+def kill_by_pattern(command):
+    cmds = shell_commands(command)
+    progs = [_program(words) for words in cmds]
+    finds_pids = any(
+        name in PID_FINDERS or (name == "lsof" and any(w.startswith("-") and "t" in w for w, _ in ws[1:]))
+        for name, ws, _ in progs)
+    for name, ws, via_xargs in progs:
+        if name in NAME_KILLERS:
+            return True
+        if name == "fuser" and any(w.startswith("-") and not w.startswith("--") and "k" in w for w, _ in ws[1:]):
+            return True
+        if name == "kill" and (via_xargs or finds_pids or any(sub for _, sub in ws[1:])):
+            return True
+    return False
 
 
 def cmd_killguard():
     try:
         payload = json.loads(sys.stdin.buffer.read().decode("utf-8", "replace"))
+        cmd = (payload.get("tool_input") or {}).get("command")
     except Exception:
         sys.exit(0)
-    cmd = (payload.get("tool_input") or {}).get("command") or ""
-    for pat in KILL_BY_PATTERN:
-        if re.search(pat, cmd):
-            sys.stderr.write(
-                "[idleflow] BLOCKED: this ends processes by name or pattern, which also ends other "
-                "sessions' work on this machine. End only a process you started, by the PID you kept "
-                "(kill <pid>, or kill -- -<pid> for its group); give a command that may hang the Bash "
-                "tool's timeout instead of killing it afterwards.\n")
-            sys.exit(2)
+    if isinstance(cmd, str) and kill_by_pattern(cmd):
+        sys.stderr.write(
+            "[idleflow] BLOCKED: this ends processes by name or pattern, which also ends other "
+            "sessions' work on this machine. End only a process you started, by the PID you kept "
+            "(kill <pid>, or kill -- -<pid> for its group); give a command that may hang the Bash "
+            "tool's timeout instead of killing it afterwards.\n")
+        sys.exit(2)
     sys.exit(0)
 
 

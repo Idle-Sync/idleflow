@@ -187,13 +187,16 @@ bash "$RUN" wt rm "Té"
 echo "--- kill guard"
 KILLG="$HERE/kill-guard.sh"
 kill_rc() { # kill_rc <command> -> exit code of the hook
-  local j; j="$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+  local j; j="$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')"; j="${j//$'\n'/\\n}"
   printf '{"tool_input":{"command":"%s"}}' "$j" | bash "$KILLG" 2>/dev/null; echo $?
 }
-for c in 'pkill -f "docker ps --format"' 'killall node' 'sudo pkill vite' 'ls; pkill -9 x' 'kill $(pgrep -f vite)' 'pgrep -f x | xargs kill' 'fuser -k 4321/tcp'; do
+for c in 'pkill -f "docker ps --format"' 'killall node' 'sudo pkill vite' 'ls; pkill -9 x' 'kill $(pgrep -f vite)' 'pgrep -f x | xargs kill' 'fuser -k 4321/tcp' \
+         "$(printf 'ls\npkill x')" 'sudo -u root pkill x' 'if true; then pkill x; fi' '/usr/bin/pkill x' 'timeout 5 pkill x' 'nohup pkill x &' \
+         "bash -c 'pkill x'" 'kill -9 $(lsof -t -i:4321)' 'for p in $(pgrep vite); do kill $p; done' 'pgrep vite | while read p; do kill "$p"; done' 'xargs -I{} kill {} < pids'; do
   check "refuses a kill by name or pattern: $c" '[ "$(kill_rc "$c")" = 2 ]'
 done
-for c in 'kill 1234' 'kill -- -4242' 'grep -n pkill agents/*.md' 'echo "never use pkill"' 'pgrep -f vite'; do
+for c in 'kill 1234' 'kill -- -4242' 'grep -n pkill agents/*.md' 'echo "never use pkill"' 'pgrep -f vite' \
+         "grep 'a;pkill' file" 'echo "x; killall y"' 'git commit -m "refuse pkill and killall"' 'sleep 300 & pid=$!; kill "$pid"' 'echo hi # pkill x'; do
   check "allows: $c" '[ "$(kill_rc "$c")" = 0 ]'
 done
 check "the kill guard is a Bash hook" 'grep -q "kill-guard.sh" "$HERE/../hooks/hooks.json" && idleflow_rt get "$HERE/../hooks/hooks.json" hooks.PreToolUse | grep -q "\"matcher\":\"Bash\""'

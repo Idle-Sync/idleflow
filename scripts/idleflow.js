@@ -345,24 +345,138 @@ function cmdUnowned(p, tid) {
     if (rel && !globMatch(WIN ? rel.toLowerCase() : rel, allowed)) process.stdout.write(rel + "\n");
   }
 }
+// --- kill guard ---------------------------------------------------------------
 // A kill by name or pattern matches every process on the machine with that text, other Claude Code
-// sessions' included, so only a kill by a PID the agent kept is allowed. Same in idleflow.py.
-const KILL_BY_PATTERN = [
-  // in command position: at the start, after ; & | ( or a backtick, or after sudo, exec or xargs
-  /(^|[;&|`(]\s*|\b(sudo|exec)\s+|\bxargs\s+(-\S+\s+)*)(pkill|killall)\b/,
-  /(^|[;&|`(]\s*|\b(sudo|exec)\s+)kill\b[^;&|\n]*(\$\(|`)\s*(pgrep|pidof)\b/,
-  /\b(pgrep|pidof)\b[^;&\n]*\|\s*(sudo\s+)?xargs\b[^;&|\n]*\bkill\b/,
-  /(^|[;&|`(]\s*|\b(sudo|exec)\s+)fuser\b[^;&|\n]*\s-[a-zA-Z]*k/,
-];
+// sessions' included, so only a kill by a PID the agent kept is allowed. The command is read the way
+// a shell reads it: quoted text is data, and $(...), backticks and `bash -c '...'` hold commands.
+// Same in idleflow.py; the two must agree on every input.
+const SHELLS = ["bash", "sh", "zsh", "dash", "ksh"];
+const KEYWORDS = ["then", "do", "else", "elif", "if", "while", "until", "!", "{", "}", "time"];
+// wrappers that run the rest of the line as a command, and their options that take a value
+const WRAPPERS = {
+  sudo: "ugChpUrtTD", doas: "uC", exec: "a", command: "", builtin: "", nohup: "",
+  env: "uSCP", nice: "n", ionice: "cnp", timeout: "sk", watch: "nd", stdbuf: "ioe",
+  setsid: "", xargs: "IinPLdsaE",
+};
+const NAME_KILLERS = ["pkill", "killall", "killall5", "skill"];
+const PID_FINDERS = ["pgrep", "pidof"];
+const baseName = (w) => w.slice(w.lastIndexOf("/") + 1);
+
+// index just past the match of the opener at s[i] ("$(" or "`"), quotes and nesting respected
+function closeAt(s, i, opener) {
+  if (opener === "`") {
+    let j = i + 1;
+    while (j < s.length && s[j] !== "`") j += s[j] === "\\" ? 2 : 1;
+    return j + 1;
+  }
+  let depth = 1, j = i + 2;
+  while (j < s.length && depth) {
+    const c = s[j];
+    if (c === "\\") { j += 2; continue; }
+    if (c === "'") { const k = s.indexOf("'", j + 1); j = k < 0 ? s.length : k + 1; continue; }
+    if (c === '"') {
+      j += 1;
+      while (j < s.length && s[j] !== '"') j += s[j] === "\\" ? 2 : 1;
+      j += 1;
+      continue;
+    }
+    if (s.startsWith("$(", j)) { depth += 1; j += 2; continue; }
+    if (c === ")") depth -= 1;
+    j += 1;
+  }
+  return j;
+}
+
+// [[ [word, fromSubstitution], ... ], ...]: every simple command in s, nested ones too
+function shellCommands(s, depth = 0) {
+  const cmds = [];
+  let words = [], word = "", subst = false, inWord = false;
+  if (depth > 8) return cmds;
+  const endWord = () => { if (inWord) words.push([word, subst]); word = ""; subst = false; inWord = false; };
+  const endCmd = () => { endWord(); if (words.length) cmds.push(words); words = []; };
+  let i = 0;
+  while (i < s.length) {
+    const c = s[i];
+    if (c === " " || c === "\t") endWord();
+    else if ("\n;&|()".includes(c)) endCmd();
+    else if (c === "#" && !inWord) { const k = s.indexOf("\n", i); i = k < 0 ? s.length : k; continue; }
+    else if (c === "\\") {
+      if (s.slice(i + 1, i + 2) === "\n") { i += 2; continue; }
+      word += s.slice(i + 1, i + 2); inWord = true; i += 2; continue;
+    } else if (c === "'") {
+      let k = s.indexOf("'", i + 1); if (k < 0) k = s.length;
+      word += s.slice(i + 1, k); inWord = true; i = k + 1; continue;
+    } else if (c === '"') {
+      let j = i + 1;
+      while (j < s.length && s[j] !== '"') {
+        if (s[j] === "\\") { word += s.slice(j + 1, j + 2); j += 2; }
+        else if (s.startsWith("$(", j) || s[j] === "`") {
+          const k = closeAt(s, j, s[j] === "$" ? "$(" : "`");
+          const inner = s[j] === "$" ? s.slice(j + 2, k - 1) : s.slice(j + 1, k - 1);
+          cmds.push(...shellCommands(inner, depth + 1));
+          word += s.slice(j, k); subst = true; j = k;
+        } else { word += s[j]; j += 1; }
+      }
+      inWord = true; i = j + 1; continue;
+    } else if (s.startsWith("$(", i) || c === "`") {
+      const k = closeAt(s, i, c === "$" ? "$(" : "`");
+      const inner = c === "$" ? s.slice(i + 2, k - 1) : s.slice(i + 1, k - 1);
+      cmds.push(...shellCommands(inner, depth + 1));
+      word += s.slice(i, k); subst = true; inWord = true; i = k; continue;
+    } else { word += c; inWord = true; }
+    i += 1;
+  }
+  endCmd();
+  // `bash -c '<script>'` runs its script as commands
+  for (const ws of [...cmds]) {
+    const names = ws.map((w) => w[0]);
+    const k = names.indexOf("-c");
+    if (SHELLS.includes(baseName(names[0])) && k >= 0 && k + 1 < names.length) cmds.push(...shellCommands(names[k + 1], depth + 1));
+  }
+  return cmds;
+}
+
+// [program name, its words, whether xargs runs it] after keywords, assignments and wrappers
+function programOf(words) {
+  let viaXargs = false, i = 0;
+  while (i < words.length) {
+    const w = words[i][0];
+    if (KEYWORDS.includes(w) || /^[A-Za-z_][A-Za-z0-9_]*=/.test(w)) { i += 1; continue; }
+    const name = baseName(w);
+    if (!(name in WRAPPERS)) return [name, words.slice(i), viaXargs];
+    viaXargs = viaXargs || name === "xargs";
+    const takes = WRAPPERS[name];
+    i += 1;
+    while (i < words.length && words[i][0].startsWith("-") && words[i][0] !== "-") {
+      const flag = words[i][0];
+      i += 1;
+      if (flag.length === 2 && takes.includes(flag[1]) && i < words.length) i += 1;
+    }
+    if (name === "timeout" && i < words.length) i += 1; // the duration
+  }
+  return ["", [], viaXargs];
+}
+
+function killByPattern(command) {
+  const progs = shellCommands(command).map(programOf);
+  const findsPids = progs.some(([name, ws]) =>
+    PID_FINDERS.includes(name) || (name === "lsof" && ws.slice(1).some(([w]) => w.startsWith("-") && w.includes("t"))));
+  for (const [name, ws, viaXargs] of progs) {
+    if (NAME_KILLERS.includes(name)) return true;
+    if (name === "fuser" && ws.slice(1).some(([w]) => w.startsWith("-") && !w.startsWith("--") && w.includes("k"))) return true;
+    if (name === "kill" && (viaXargs || findsPids || ws.slice(1).some(([, sub]) => sub))) return true;
+  }
+  return false;
+}
+
 function cmdKillguard() {
-  let payload;
+  let cmd;
   try {
-    payload = JSON.parse(fs.readFileSync(0, "utf8"));
+    cmd = (JSON.parse(fs.readFileSync(0, "utf8")).tool_input || {}).command;
   } catch {
     process.exit(0);
   }
-  const cmd = (payload.tool_input || {}).command || "";
-  if (KILL_BY_PATTERN.some((re) => re.test(cmd))) {
+  if (typeof cmd === "string" && killByPattern(cmd)) {
     process.stderr.write(
       "[idleflow] BLOCKED: this ends processes by name or pattern, which also ends other " +
         "sessions' work on this machine. End only a process you started, by the PID you kept " +
