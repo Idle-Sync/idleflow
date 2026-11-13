@@ -72,11 +72,11 @@ Spawn `idleflow:doc-keeper` with the repo root and the absolute paths of `progre
 
 ## 3. Plan (Fable)
 
-Spawn `idleflow:planner` with: context.md path, the `$LESSONS` path, conventions path, plan template path, output path `.idleflow/runs/active/plan.md`, the size, `greenfield`, the implementer cap for this size, the diff limit for this run, `STEP_MUTATION` from `conf`, the time log path (`bash "$RUN" path time-log`), the `design.md` and `DESIGN_SYSTEM` paths when step 2c ran, whether R3 and R4 ran (when they did not, a plan that adds a dependency anyway lists it under "Open questions" for the human), and when `docs: yes` the paths of `prd.md`, `progress.md`, `index.md` plus `templates/prd.md`. Wait.
+Spawn `idleflow:planner` with: the issue path (`.idleflow/runs/active/issue.md`), context.md path, the `$LESSONS` path, conventions path, plan template path, output path `.idleflow/runs/active/plan.md`, the size, `greenfield`, the implementer cap for this size, the diff limit for this run, `STEP_MUTATION` from `conf`, the time log path (`bash "$RUN" path time-log`), the `design.md` and `DESIGN_SYSTEM` paths when step 2c ran, whether R3 and R4 ran (when they did not, a plan that adds a dependency anyway lists it under "Open questions" for the human), and when `docs: yes` the paths of `prd.md`, `progress.md`, `index.md` plus `templates/prd.md`. Every later planner call (a revision, a one-task revision) gets the issue path too. Wait.
 
 Read `plan.md` once now; keep the task list, groups, owned globs, models and merge order in working memory and do not re-read the plan unless it is revised.
 
-If "Open questions for the human" is non-empty, ask them now with AskUserQuestion and append one line per answer to `.idleflow/runs/active/decisions.md`: `Q<n>: <answer>`. If the human is not present, write `Q<n>: default (human not present)` for each and say so. When any answer differs from the planner's stated default, spawn `idleflow:planner` in revision mode with the decisions path: it carries each answer into every section that depends on it (the Goal, each task's acceptance, notes and levers, "Verification after merge"), so the section an implementer gets matches the decision. Then re-read plan.md. You never edit plan.md yourself.
+If "Open questions for the human" is non-empty, ask them now with AskUserQuestion and append one line per answer to `.idleflow/runs/active/decisions.md`: `Q<n>: <answer>`. If the human is not present, write `Q<n>: default (human not present)` for each and say so. When any answer differs from the planner's stated default, spawn `idleflow:planner` in revision mode with the issue and decisions paths: it carries each answer into every section that depends on it (the Goal, each task's acceptance, notes and levers, "Verification after merge"), so the section an implementer gets matches the decision. Then re-read plan.md. You never edit plan.md yourself.
 
 Reject a plan that puts `prd.md`, `progress.md`, `index.md`, `CLAUDE.md`, anything under `.idleflow/` or `.claude/`, or the lessons file in any task's `owns:`; send it back to the planner once with that single instruction.
 
@@ -84,13 +84,13 @@ Reject a plan that puts `prd.md`, `progress.md`, `index.md`, `CLAUDE.md`, anythi
 
 Otherwise skip to the "Plan locked" line at the end of this step.
 
-Round 1, both in parallel: `idleflow:red-team` → `debate/round-1-red.md` and `idleflow:cost-critic` → `debate/round-1-cost.md`, each with the plan.md and context.md paths.
+Round 1, both in parallel: `idleflow:red-team` → `debate/round-1-red.md` and `idleflow:cost-critic` → `debate/round-1-cost.md`, each with the issue, plan.md and context.md paths.
 
 Round 2, both in parallel: same agents, each also given the *other's* round-1 path, writing `round-2-*.md`. Rounds are capped at `DEBATE_ROUNDS`; never run a third.
 
 Before the revision, the human decides what gets cut. Read the four debate files and list every cost cut (`C<n>`) still standing after round 2 (not withdrawn) and every red-team finding whose fix the cost critic contested, one line each: what it changes, what it saves (from `saves:`), what it risks (from `risk:` or the red team's `claim:`), with its id last in parentheses. Ask with AskUserQuestion, `multiSelect: true`, one option per item (label = the change in plain words with the id in parentheses; description = saves and risks), at most four options per question and four questions per call; use more calls when there are more items. Selected means accepted. Append the answers to `decisions.md`, one line per item: `<id>: accepted` or `<id>: rejected`. If the human is not present, skip the question and write no line for these items; the planner adjudicates them as before. Red-team findings nobody contested are not asked about.
 
-Then spawn `idleflow:planner` in revision mode with the four debate paths and the `decisions.md` path; it rewrites plan.md with a "Debate resolution" section. Re-read plan.md. If any resolution is `deferred to human`, ask now, append `<id>: <answer>` to `decisions.md`, and spawn the planner in revision mode once more with only the decisions path; re-read plan.md.
+Then spawn `idleflow:planner` in revision mode with the issue path, the four debate paths and the `decisions.md` path; it rewrites plan.md with a "Debate resolution" section. Re-read plan.md. If any resolution is `deferred to human`, ask now, append `<id>: <answer>` to `decisions.md`, and spawn the planner in revision mode once more with only the issue and decisions paths; re-read plan.md.
 
 Tell the human: `Plan locked: <N> tasks in <G> groups, est <L> lines. Building.` If there is more than one group, one line per group.
 
@@ -110,7 +110,7 @@ Steps 5 to 8 run once per group, in plan order: a group's tasks are built, gated
 
    **Retries are per task.** A task may be retried while `bash "$RUN" get tasks.<task-id>.retries` is below `MAX_RETRIES` (unset counts as 0). Each retry runs `bash "$RUN" inc tasks.<task-id>.retries` and `bash "$RUN" inc retries` (the run total, kept for the log). A task out of retries stops the run as in step 7.
    - `blocked` → if the needed file belongs to another task in this group, finish and merge the group, then re-run the blocked task in group N+1, in a new worktree (`wt rm <task-id>`, then `wt add <task-id>`, so it starts from the merged group), with the extra glob added by `bash "$RUN" own` **and** in the task's `owns:` list in plan.md (reviewers read `ownership.json`; the plan is for humans). If the file belongs to no task, add it the same way and re-spawn once. Count it as a retry.
-   - `partial` with deviations → a plan defect, and a retry: send the deviation to the planner for a one-task revision, then re-spawn on `idleflow:implementer-hard` as every retry is.
+   - `partial` with deviations → a plan defect, and a retry: send the deviation and the issue path to the planner for a one-task revision, then re-spawn on `idleflow:implementer-hard` as every retry is.
    - `done` → continue.
 
 ## 6. Gate each task
@@ -121,7 +121,7 @@ For each done task: `bash "$RUN" gate <task-id> [limit]` → JSON (pass the gree
 - `audit` or `split` → `bash "$RUN" inc gate_trips`; spawn `idleflow:diff-auditor` with the task's plan extract, the gate JSON, the worktree path and the task's base sha. Then:
   - `accept` → review.
   - `reject` → `bash "$RUN" set tasks.<id>.status '"building"'`, send the auditor's reason to the implementer as a retry (step 5's retry rule), re-gate.
-  - `split` → `bash "$RUN" set tasks.<id>.status '"split"'`, `bash "$RUN" wt rm <task-id>`; send the auditor's sub-tasks and globs to `idleflow:planner` for a one-task revision that replaces the task with a new group; re-read the plan; register ownership. The new group runs steps 5 to 8 after the rest of the current group is merged and before the next group of the plan. You never edit the task list yourself.
+  - `split` → `bash "$RUN" set tasks.<id>.status '"split"'`, `bash "$RUN" wt rm <task-id>`; send the auditor's sub-tasks and globs and the issue path to `idleflow:planner` for a one-task revision that replaces the task with a new group; re-read the plan; register ownership. The new group runs steps 5 to 8 after the rest of the current group is merged and before the next group of the plan. You never edit the task list yourself.
 
 **Retroactive upgrade:** if size was S and any gate `total` exceeds `SIZE_S_OVERRUN`, set size to M so step 7 runs the conformance reviewer as well. The debate does not run after the fact; it follows `risk`, which a bigger diff does not change.
 
