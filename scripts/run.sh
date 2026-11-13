@@ -11,9 +11,11 @@
 #   run.sh skip <key>                     -> this run goes without a repo command (gate, gate_quick, worktree_setup, preview)
 #   run.sh unowned <task-id>              -> paths the task's commits change (base..HEAD, what merges) that its globs,
 #                                            .idleflow-run/** and shared_files do not cover; matched as the guard matches
-#   run.sh exec <task-id> -- <command...> -> runs a command in the task's worktree with its own port (IDLEFLOW_PORT) and
-#                                            its own temp folder (IDLEFLOW_TMP, TMPDIR), as a job; prints its output and exits
-#                                            with its code, or exits 75 while it still runs after EXEC_WAIT_SECONDS.
+#   run.sh exec <task-id> [--limit <s>] -- <command...> -> runs a command in the task's worktree with its own port
+#                                            (IDLEFLOW_PORT) and its own temp folder (IDLEFLOW_TMP, TMPDIR), as a job; prints
+#                                            its output and exits with its code, or exits 75 while it still runs after
+#                                            EXEC_WAIT_SECONDS. With --limit, a job still running <s> seconds after it started
+#                                            is stopped by the next exec or wait of it, which exits 124.
 #                                            Python bytecode of the checkout's own code is cleared first, so the source runs as it is
 #   run.sh wait <task-id> <job>           -> waits for a job again, the same way
 #   run.sh stop <task-id> <job>           -> ends a job and every process it started
@@ -472,14 +474,19 @@ stop_job() { # stop_job <job dir>: TERM to the whole group, KILL after 5 s; 143 
   while group_alive "$1" && [ "$n" -lt 25 ]; do sleep 0.2; n=$((n + 1)); done
   if group_alive "$1"; then signal_job "$1" KILL; sleep 0.5; fi
   if group_alive "$1"; then echo "[idleflow] job in $(native_path "$1") still has processes after KILL" >&2; return 1; fi
-  [ -f "$1/status" ] || { echo 143 > "$1/status.tmp" && mv "$1/status.tmp" "$1/status"; }
+  [ -f "$1/status" ] || { echo 143 > "$1/status.tmp" && mv "$1/status.tmp" "$1/status"; : > "$1/stopped"; }
   : > "$1/ended"
 }
-await_job() { # await_job <task-id> <job>: the command's output and exit code, or 75 while it runs
-  local d end n=0; d="$(job_dir "$1" "$2")"
+# A job started with a limit keeps its deadline (epoch seconds) in .../deadline. A command that never
+# ends (a hung test, a fault that loops) is stopped there, with its whole process group, so it cannot
+# hold a port, a lock or a shared database until someone notices.
+await_job() { # await_job <task-id> <job>: the command's output and exit code, 75 while it runs, 124 past its limit
+  local d end deadline="" n=0; d="$(job_dir "$1" "$2")"
   [ -d "$d" ] || { echo "no job $2 for task $1" >&2; exit 1; }
   while [ ! -f "$d/pid" ] && [ ! -f "$d/status" ] && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
   end=$(( $(date +%s) + ${EXEC_WAIT_SECONDS:-100} ))
+  [ -f "$d/deadline" ] && deadline="$(cat "$d/deadline")"
+  if [ -n "$deadline" ] && [ "$deadline" -lt "$end" ]; then end="$deadline"; fi
   while [ ! -f "$d/status" ] && [ "$(date +%s)" -lt "$end" ]; do
     if ! group_alive "$d"; then
       sleep 0.2; [ -f "$d/status" ] || { echo 1 > "$d/status.tmp" && mv "$d/status.tmp" "$d/status"; echo "[idleflow] job $2 of $1 ended without an exit code" >&2; }
@@ -489,11 +496,23 @@ await_job() { # await_job <task-id> <job>: the command's output and exit code, o
   done
   if [ -f "$d/status" ]; then
     cat "$d/log"
+    if [ -f "$d/started" ] && [ -f "$d/finished" ]; then echo "[idleflow] job $2 of $1 ran for $(( $(cat "$d/finished") - $(cat "$d/started") )) s" >&2; fi
     # the command is over; a process it left behind (a server it started) is said, not waited for
     job_ended "$d" || echo "[idleflow] job $2 of $1 ended, but processes it started still run; end them with: bash \"$0\" stop $1 $2" >&2
     exit "$(cat "$d/status")"
   fi
-  tail -n 20 "$d/log"
+  if [ ! -f "$d/status" ] && [ -n "$deadline" ] && [ "$(date +%s)" -ge "$deadline" ]; then
+    local left=""
+    stop_job "$d" || left=1
+    # a command that ended on its own between the last check and the stop keeps its exit code
+    if [ -n "$left" ] || [ -f "$d/stopped" ]; then
+      echo 124 > "$d/status.tmp" && mv "$d/status.tmp" "$d/status"
+      tail -n 20 "$d/log"
+      echo "[idleflow] job $2 of $1 passed its limit of $(cat "$d/limit") s and was stopped; its own cleanup (teardown, afterEach) did not run" >&2
+      [ -z "$left" ] || echo "[idleflow] processes job $2 of $1 started survived KILL and still run; nothing they hold is free yet" >&2
+      exit 124
+    fi
+  fi
   echo "[idleflow] job $2 of $1 is still running (log: $(native_path "$d/log")). Wait for it: bash \"$0\" wait $1 $2. End it: bash \"$0\" stop $1 $2. Do not start it again while it runs." >&2
   exit 75
 }
@@ -711,17 +730,26 @@ JSON
     git -C "$p" diff -z --no-renames --name-only "$base" HEAD | idleflow_rt unowned "$ACTIVE/ownership.json" "$tid"
     ;;
   exec)
-    tid="${1:?task-id}"; check_task_id "$tid"; shift; [ "${1:-}" = -- ] && shift
-    [ "$#" -gt 0 ] || { echo "usage: run.sh exec <task-id> -- <command...>" >&2; exit 1; }
+    tid="${1:?task-id}"; check_task_id "$tid"; shift
+    limit=""
+    if [ "${1:-}" = --limit ]; then
+      limit="${2:-}"; shift 2 || shift
+      [[ "$limit" =~ ^[1-9][0-9]{0,5}$ ]] || { echo "exec: --limit takes whole seconds, 1 or more" >&2; exit 1; }
+    fi
+    [ "${1:-}" = -- ] && shift
+    [ "$#" -gt 0 ] || { echo "usage: run.sh exec <task-id> [--limit <seconds>] -- <command...>" >&2; exit 1; }
     active_id >/dev/null
     dir="$(wt_path "$tid")"; [ -d "$dir" ] || { echo "exec: no worktree for $tid (run.sh wt add $tid first)" >&2; exit 1; }
     jobs="$ACTIVE/tasks/$tid/jobs"; mkdir -p "$jobs"
     n=1; while ! mkdir "$jobs/$n" 2>/dev/null; do n=$((n + 1)); done
     jd="$jobs/$n"; printf -v q '%q ' "$@"; printf -v st '%q' "$jd/status"
+    # the start is a whole second, so the deadline is one more: a job always gets its full limit
+    date +%s > "$jd/started"
+    if [ -n "$limit" ]; then echo "$limit" > "$jd/limit"; echo $(( $(cat "$jd/started") + limit + 1 )) > "$jd/deadline"; fi
     # the exit code is written to a temp name and moved, so a reader never sees half of it
-    printf -v pf '%q' "$jd/pid"
+    printf -v pf '%q' "$jd/pid"; printf -v fin '%q' "$jd/finished"
     in_task "$tid" "$dir" idleflow_rt detach "$dir" "$jd/log" "$jd/pid.runtime" \
-      "echo \$\$ > $pf.tmp && mv $pf.tmp $pf; $q; rc=\$?; echo \$rc > $st.tmp && mv $st.tmp $st" || { echo "exec: could not start the command" >&2; exit 1; }
+      "echo \$\$ > $pf.tmp && mv $pf.tmp $pf; $q; rc=\$?; date +%s > $fin; echo \$rc > $st.tmp && mv $st.tmp $st" || { echo "exec: could not start the command" >&2; exit 1; }
     # the number first, so an agent whose call is cut short still knows which job to wait for
     echo "[idleflow] job $n of $tid started" >&2
     await_job "$tid" "$n"
