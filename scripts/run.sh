@@ -15,7 +15,8 @@
 #                                            (IDLEFLOW_PORT) and its own temp folder (IDLEFLOW_TMP, TMPDIR), as a job; prints
 #                                            its output and exits with its code, or exits 75 while it still runs after
 #                                            EXEC_WAIT_SECONDS. With --limit, a job still running <s> seconds after it started
-#                                            is stopped by the next exec or wait of it, which exits 124. With --base, it runs
+#                                            is stopped then by a watcher of its own, even when no one waits; the exec or
+#                                            wait that sees it exits 124. With --base, it runs
 #                                            in a checkout of the task's base commit instead, to show a failure is already there
 #                                            Python bytecode of the checkout's own code is cleared first, so the source runs as it is
 #   run.sh wait <task-id> <job>           -> waits for a job again, the same way
@@ -496,13 +497,14 @@ stop_job() { # stop_job <job dir>: TERM to the whole group, KILL after 5 s; 143 
 # A job started with a limit keeps its deadline (epoch seconds) in .../deadline. A command that never
 # ends (a hung test, a fault that loops) is stopped there, with its whole process group, so it cannot
 # hold a port, a lock or a shared database until someone notices.
-await_job() { # await_job <task-id> <job>: the command's output and exit code, 75 while it runs, 124 past its limit
+await_job() { # await_job <task-id> <job> [watch]: the command's output and exit code, 75 while it runs, 124 past
+  # its limit; with watch, it waits up to the job's deadline rather than EXEC_WAIT_SECONDS
   local d end deadline="" n=0; d="$(job_dir "$1" "$2")"
   [ -d "$d" ] || { echo "no job $2 for task $1" >&2; exit 1; }
   while [ ! -f "$d/pid" ] && [ ! -f "$d/status" ] && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
   end=$(( $(date +%s) + ${EXEC_WAIT_SECONDS:-100} ))
   [ -f "$d/deadline" ] && deadline="$(cat "$d/deadline")"
-  if [ -n "$deadline" ] && [ "$deadline" -lt "$end" ]; then end="$deadline"; fi
+  if [ -n "$deadline" ] && { [ "$deadline" -lt "$end" ] || [ "${3:-}" = watch ]; }; then end="$deadline"; fi
   while [ ! -f "$d/status" ] && [ "$(date +%s)" -lt "$end" ]; do
     if ! group_alive "$d"; then
       sleep 0.2; [ -f "$d/status" ] || { echo 1 > "$d/status.tmp" && mv "$d/status.tmp" "$d/status"; echo "[idleflow] job $2 of $1 ended without an exit code" >&2; }
@@ -510,17 +512,11 @@ await_job() { # await_job <task-id> <job>: the command's output and exit code, 7
     fi
     sleep 0.2
   done
-  if [ -f "$d/status" ]; then
-    cat "$d/log"
-    if [ -f "$d/started" ] && [ -f "$d/finished" ]; then echo "[idleflow] job $2 of $1 ran for $(( $(cat "$d/finished") - $(cat "$d/started") )) s" >&2; fi
-    # the command is over; a process it left behind (a server it started) is said, not waited for
-    job_ended "$d" || echo "[idleflow] job $2 of $1 ended, but processes it started still run; end them with: bash \"$0\" stop $1 $2" >&2
-    exit "$(cat "$d/status")"
-  fi
   if [ ! -f "$d/status" ] && [ -n "$deadline" ] && [ "$(date +%s)" -ge "$deadline" ]; then
     local left=""
     stop_job "$d" || left=1
-    # a command that ended on its own between the last check and the stop keeps its exit code
+    # a command that ended on its own between the last check and the stop keeps its exit code, and
+    # is reported below like any job that ended
     if [ -n "$left" ] || [ -f "$d/stopped" ]; then
       echo 124 > "$d/status.tmp" && mv "$d/status.tmp" "$d/status"
       tail -n 20 "$d/log"
@@ -528,6 +524,13 @@ await_job() { # await_job <task-id> <job>: the command's output and exit code, 7
       [ -z "$left" ] || echo "[idleflow] processes job $2 of $1 started survived KILL and still run; nothing they hold is free yet" >&2
       exit 124
     fi
+  fi
+  if [ -f "$d/status" ]; then
+    cat "$d/log"
+    if [ -f "$d/started" ] && [ -f "$d/finished" ]; then echo "[idleflow] job $2 of $1 ran for $(( $(cat "$d/finished") - $(cat "$d/started") )) s" >&2; fi
+    # the command is over; a process it left behind (a server it started) is said, not waited for
+    job_ended "$d" || echo "[idleflow] job $2 of $1 ended, but processes it started still run; end them with: bash \"$0\" stop $1 $2" >&2
+    exit "$(cat "$d/status")"
   fi
   echo "[idleflow] job $2 of $1 is still running (log: $(native_path "$d/log")). Wait for it: bash \"$0\" wait $1 $2. End it: bash \"$0\" stop $1 $2. Do not start it again while it runs." >&2
   exit 75
@@ -836,12 +839,19 @@ JSON
       "echo \$\$ > $pf.tmp && mv $pf.tmp $pf; $q; rc=\$?; date +%s > $fin; echo \$rc > $st.tmp && mv $st.tmp $st" || { echo "exec: could not start the command" >&2; exit 1; }
     # the number first, so an agent whose call is cut short still knows which job to wait for
     echo "[idleflow] job $n of $tid started" >&2
+    # The limit holds even when no one waits again: a watcher of its own waits up to the deadline,
+    # and the wait stops the job there as any wait would.
+    if [ -n "$limit" ]; then
+      printf -v watch 'bash %q wait %q %q --watch' "$HERE/run.sh" "$tid" "$n"
+      idleflow_rt detach "$REPO" "$jd/watch.log" "$jd/watch.pid" "$watch" || echo "[idleflow] job $n of $tid: could not start the watcher of its limit; the next exec or wait of it enforces it" >&2
+    fi
     await_job "$tid" "$n"
     ;;
   wait|stop)
     tid="${1:?task-id}"; check_task_id "$tid"; job="${2:?job number}"; active_id >/dev/null
     [[ "$job" =~ ^[0-9]+$ ]] || { echo "$cmd: '$job' is not a job number" >&2; exit 1; }
-    if [ "$cmd" = wait ]; then await_job "$tid" "$job"; fi
+    # --watch is exec's own watcher of a limit: it waits up to the deadline, however long that is
+    if [ "$cmd" = wait ]; then if [ "${3:-}" = --watch ]; then await_job "$tid" "$job" watch; else await_job "$tid" "$job"; fi; fi
     [ -f "$(job_dir "$tid" "$job")/pid" ] || { echo "no job $job for task $tid" >&2; exit 1; }
     stop_job "$(job_dir "$tid" "$job")" || exit 1
     echo "job $job of $tid: stopped"
