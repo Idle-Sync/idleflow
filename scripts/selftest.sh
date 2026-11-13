@@ -630,7 +630,21 @@ check "a declined gate is not proposed again"          '! (cd "$f" && bash "$RUN
 rm -rf "$f"
 echo "--- a worktree builds its own Python environment"
 f="$(mktemp -d)"; ( cd "$f" && git init -q && mkdir -p .idleflow .venv && printf 'mode: repo\nworktree_setup: unset\n' > .idleflow/conventions.md && printf '[project]\nname = "x"\n' > pyproject.toml )
-check "detect suggests a worktree venv when main has one" '(cd "$f" && bash "$RUN" detect) | grep -qxF "suggest worktree_setup: python3 -m venv .venv && .venv/bin/pip install -q -e . — the main checkout has .venv/ and a task worktree starts without one; borrowing the main one runs the main checkout'"'"'s code in subprocesses"'
+check "detect suggests a worktree venv when main has one" '(cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup: py=.*-m venv .venv.*\.venv/Scripts/python\.exe.* -m pip install -q -e \. — the main checkout has .venv/"'
+# a Windows-style python: no python3 on PATH, and its venv keeps the interpreter in Scripts/
+cmd="$(cd "$f" && bash "$RUN" detect | sed -n 's/^suggest worktree_setup: \(.*\) — the main.*/\1/p')"
+t="$(mktemp -d)"; mkdir -p "$t/bin" "$t/w"; ln -s "$(command -v mkdir)" "$t/bin/mkdir"; ln -s "$(command -v chmod)" "$t/bin/chmod"
+cat > "$t/bin/python" <<'PY'
+#!/bin/sh
+if [ "$1" = -m ] && [ "$2" = venv ]; then
+  mkdir -p "$3/Scripts"
+  printf '#!/bin/sh\necho "$@" > ran\n' > "$3/Scripts/python.exe"; chmod +x "$3/Scripts/python.exe"
+fi
+PY
+chmod +x "$t/bin/python"
+( cd "$t/w" && PATH="$t/bin" "$(command -v bash)" -c "$cmd" )
+check "the proposed venv command runs on a Windows layout" 'grep -qx -- "-m pip install -q -e ." "$t/w/ran"'
+rm -rf "$t"
 touch "$f/uv.lock"
 check "a uv project syncs its own environment"   '(cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup: uv sync --frozen —"'
 printf 'worktree_setup: make env\n' >> "$f/.idleflow/conventions.md"; sed -i.bak '/^worktree_setup: unset$/d' "$f/.idleflow/conventions.md"
