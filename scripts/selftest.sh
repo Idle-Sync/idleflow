@@ -573,6 +573,12 @@ for _ in $(seq 1 40); do [ -f "$jd2/ended" ] && break; sleep 0.25; done
 check "a job past its --limit is stopped by its own watcher when no one waits" '[ -n "$job" ] && [ "$(cat "$jd2/status")" = 124 ] && ! kill -0 "$(cat "$wa/child2.pid")" 2>/dev/null'
 bash "$RUN" wait TA "$job" >/dev/null 2> "$scratch/job.err"; rc=$?
 check "a later wait on a job its watcher stopped says it passed its limit" '[ "$rc" = 124 ] && grep -q "passed its limit of 2 s" "$scratch/job.err"'
+bash "$RUN" exec TA --limit 3 -- sh -c 'sleep 60 & echo "$!" > child3.pid; wait' >/dev/null 2> "$scratch/job.err"
+job="$(sed -n 's/.*job \([0-9]*\) of TA is still running.*/\1/p' "$scratch/job.err")"
+sh -c 'exit 0' & dead=$!; wait "$dead"
+mkdir ".idleflow/runs/active/tasks/TA/jobs/$job/stopping" && echo "$dead" > ".idleflow/runs/active/tasks/TA/jobs/$job/stopping/pid"
+for _ in 1 2 3 4 5 6; do bash "$RUN" wait TA "$job" >/dev/null 2> "$scratch/job.err"; rc=$?; [ "$rc" = 75 ] || break; done
+check "a stop lock left by a process that died is taken over" '[ "$rc" = 124 ] && grep -q "passed its limit of 3 s" "$scratch/job.err" && ! kill -0 "$(cat "$wa/child3.pid")" 2>/dev/null'
 check "a job within its --limit passes its exit code" 'bash "$RUN" exec TA --limit 30 -- sh -c "exit 3" 2>/dev/null; [ $? = 3 ]'
 bash "$RUN" exec TA --limit 2 -- sleep 1.5 >/dev/null 2> "$scratch/job.err"; rc=$?
 job="$(sed -n 's/.*job \([0-9]*\) of TA started.*/\1/p' "$scratch/job.err")"

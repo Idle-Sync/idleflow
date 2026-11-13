@@ -15,8 +15,8 @@
 #                                            (IDLEFLOW_PORT) and its own temp folder (IDLEFLOW_TMP, TMPDIR), as a job; prints
 #                                            its output and exits with its code, or exits 75 while it still runs after
 #                                            EXEC_WAIT_SECONDS. With --limit, a job still running <s> seconds after it started
-#                                            is stopped then by a watcher of its own, even when no one waits; the exec or
-#                                            wait that sees it exits 124. With --base, it runs
+#                                            is stopped at that point by a watcher of its own, even when no one
+#                                            waits; the exec or wait that sees it exits 124. With --base, it runs
 #                                            in a checkout of the task's base commit instead, to show a failure is already there
 #                                            Python bytecode of the checkout's own code is cleared first, so the source runs as it is
 #   run.sh wait <task-id> <job>           -> waits for a job again, the same way
@@ -522,19 +522,29 @@ await_job() { # await_job <task-id> <job> [watch]: the command's output and exit
     fi
     sleep 0.2
   done
-  if [ ! -f "$d/status" ] && [ -n "$deadline" ] && [ "$(date +%s)" -ge "$deadline" ] && mkdir "$d/stopping" 2>/dev/null; then
-    local left=""
-    stop_job "$d" || left=1
-    # a command that ended on its own between the last check and the stop keeps its exit code, and
-    # is reported below like any job that ended
-    if [ -n "$left" ] || [ -f "$d/stopped" ]; then
-      [ -z "$left" ] || : > "$d/survived"
-      : > "$d/limit-stopped"; write_status "$d" 124
-    fi
-    : > "$d/stop-done"
-  fi
-  if [ -d "$d/stopping" ]; then
-    n=0; while [ ! -f "$d/stop-done" ] && [ "$n" -lt 100 ]; do sleep 0.2; n=$((n + 1)); done
+  # the stop at the limit: taken by one process, waited for by the others; a holder that died before
+  # finishing (an interrupted exec or wait) leaves its lock to the next one, which stops the job itself
+  if { [ ! -f "$d/status" ] && [ -n "$deadline" ] && [ "$(date +%s)" -ge "$deadline" ]; } || [ -d "$d/stopping" ]; then
+    local holder="" left="" tries=0
+    while [ ! -f "$d/stop-done" ]; do
+      if mkdir "$d/stopping" 2>/dev/null; then
+        echo $$ > "$d/stopping/pid"
+        stop_job "$d" || left=1
+        # a command that ended on its own between the last check and the stop keeps its exit code, and
+        # is reported below like any job that ended
+        if [ -n "$left" ] || [ -f "$d/stopped" ]; then
+          [ -z "$left" ] || : > "$d/survived"
+          : > "$d/limit-stopped"; write_status "$d" 124
+        fi
+        : > "$d/stop-done"
+        break
+      fi
+      holder="$(cat "$d/stopping/pid" 2>/dev/null || true)"
+      if { [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; } || { [ -z "$holder" ] && [ "$tries" -ge 10 ]; }; then
+        rm -f "$d/stopping/pid"; rmdir "$d/stopping" 2>/dev/null || true; tries=0; continue
+      fi
+      sleep 0.2; tries=$((tries + 1))
+    done
   fi
   if [ -f "$d/limit-stopped" ]; then
     tail -n 20 "$d/log"
