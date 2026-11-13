@@ -72,7 +72,7 @@ gate: <none | exit <code>, run after the last change, and its last lines>
 mutations: <not required | one line per fault: file:function — fault — caught by <test> | survived: <added test / reason> | not run — <file> is not owned by this task>
 base_failures: <none | one line each: <test or check> — fails | flaky <k> of <n> — "<the failure line>" — base job <n>[, <n>...], task job <n>>
 deviations: <none | list>
-blocked_on: <none | file + reason>
+blocked_on: <none | file + reason | environment: <the cause> — <the quoted output line>>
 notes_for_reviewer: <anything non-obvious, max 5 lines>
 ```
 
