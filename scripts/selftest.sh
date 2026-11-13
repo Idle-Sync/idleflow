@@ -479,6 +479,17 @@ check "exec runs the command without the agent's markers" '[ "$(CLAUDECODE=1 CLA
 check "exec passes the command's exit code"    'bash "$RUN" exec TA -- sh -c "exit 3"; [ $? = 3 ]'
 inside="$(cd "$wa" && bash "$RUN" exec TA -- sh -c 'echo "$IDLEFLOW_PORT"')"
 check "exec works from inside the task worktree" "[ '$inside' = 4400 ]"
+# a same-size edit within the same second (mtime pinned here) is invisible to Python's bytecode cache
+if command -v python3 >/dev/null 2>&1; then
+  mkdir -p "$scratch/pyc"; echo 'x = 1' > "$scratch/pyc/m.py"; touch "$scratch/pyc/stamp"; touch -r "$scratch/pyc/stamp" "$scratch/pyc/m.py"
+  import_m=(python3 -c "import sys; sys.path.insert(0, sys.argv[1]); import m; print(m.x)" "$scratch/pyc")
+  "${import_m[@]}" >/dev/null
+  echo 'x = 2' > "$scratch/pyc/m.py"; touch -r "$scratch/pyc/stamp" "$scratch/pyc/m.py"
+  check "a same-size edit runs stale bytecode outside exec (the case below is real)" '[ "$("${import_m[@]}")" = 1 ]'
+  check "exec runs the source as it is, not an earlier cache" '[ "$(bash "$RUN" exec TA -- "${import_m[@]}")" = 2 ]'
+  echo 'x = 3' > "$scratch/pyc/m.py"; touch -r "$scratch/pyc/stamp" "$scratch/pyc/m.py"
+  check "the next exec runs the next same-size edit" '[ "$(bash "$RUN" exec TA -- "${import_m[@]}")" = 3 ]'
+fi
 [ ! -f .idleflow/idleflow.conf ] || cp .idleflow/idleflow.conf "$scratch/conf.bak"
 printf 'EXEC_WAIT_SECONDS=1\n' >> .idleflow/idleflow.conf
 bash "$RUN" exec TA -- sh -c 'sleep 3; echo slow-done; exit 4' > "$scratch/job.out" 2> "$scratch/job.err"; rc=$?
