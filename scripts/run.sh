@@ -254,7 +254,9 @@ gen_files() { # $1: the block's current text; descriptions written there are kep
   while IFS= read -r e; do
     desc="$(grep -F -- "- \`$e\` — " "$1" 2>/dev/null | head -1 | sed "s/^- \`[^\`]*\` — //" || true)"
     echo "- \`$e\` — ${desc:-(describe)}"
-  done < <({ "${G[@]}" ls-files || true; } | awk -F/ '{ print (NF > 1) ? $1 "/" : $1 }' | LC_ALL=C sort -u)
+  done < <({ "${G[@]}" ls-files -z || true; } | while IFS= read -r -d '' e; do
+             case "$e" in */*) printf '%s\n' "${e%%/*}/";; *) printf '%s\n' "$e";; esac
+           done | LC_ALL=C sort -u)
 }
 gen_commands() {
   local pm=npm k v c
@@ -540,7 +542,7 @@ JSON
     if [ ! -d "$p" ] || [ -z "$base" ] || [ "$base" = null ]; then echo "task $tid has no worktree or base sha (run.sh wt add $tid first)" >&2; exit 1; fi
     # only the task's commits merge, so only they are checked; --no-renames: a rename changes the
     # old path too, and the task must own both
-    git -C "$p" diff --no-renames --name-only "$base" HEAD | sort -u | idleflow_rt unowned "$ACTIVE/ownership.json" "$tid"
+    git -C "$p" diff -z --no-renames --name-only "$base" HEAD | idleflow_rt unowned "$ACTIVE/ownership.json" "$tid"
     ;;
   get)
     key="${1:?key}"; active_id >/dev/null
@@ -586,7 +588,8 @@ JSON
     # What merges is the task's commits, the ones the gate measured and the reviewers approved.
     # Anything uncommitted in the worktree (a setup script's output, a cache) stays there.
     if [ -d "$p" ]; then
-      left="$(git -C "$p" status --porcelain -- . ':(exclude).idleflow-run' | cut -c4- | head -8 | paste -sd ' ' -)"
+      left="$(git -C "$p" status -z --no-renames --porcelain -- . ':(exclude).idleflow-run' | { n=0; while IFS= read -r -d '' r && [ "$n" -lt 8 ]; do printf '%s ' "${r:3}"; n=$((n + 1)); done; })"
+      left="${left% }"
       [ -z "$left" ] || echo "merge $tid: uncommitted in the worktree, not merged: $left" >&2
     fi
     if "${G[@]}" ${IDENTITY[@]+"${IDENTITY[@]}"} merge --no-ff -q "${merge_msg[@]}" "$br"; then
