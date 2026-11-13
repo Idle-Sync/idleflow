@@ -143,6 +143,17 @@ check "allows docs/ while building"                 '[ "$(guard_rc "$dn/docs/res
 bash "$RUN" set tasks.T1.status '"approved"'
 check "allows main checkout when not building"      '[ "$(guard_rc "$dn/src/a.txt" "$dn")" = "0" ]'
 bash "$RUN" set tasks.T1.status '"building"'
+# brackets in a glob are literal: framework routes are named [slug].astro, [...id]/+page.svelte
+bash "$RUN" own T1 '["src/**","tests/**","pages/[slug].astro"]'
+check "allows a bracketed route file it owns"   '[ "$(guard_rc "$wtn/pages/[slug].astro" "$wtn")" = "0" ]'
+check "brackets are not a character class"      '[ "$(guard_rc "$wtn/pages/s.astro" "$wtn")" = "2" ]'
+mkdir -p "$wt/pages" && touch "$wt/pages/[slug].astro" "$wt/pages/s.astro" "$wt/other.txt"
+git -C "$wt" add pages other.txt && git -C "$wt" -c user.name=t -c user.email=t@t commit -qm "T1: pages"
+touch "$wt/setup-output.txt"
+check "unowned lists only what the task may not change" '[ "$(bash "$RUN" unowned T1 | paste -sd, -)" = "other.txt,pages/s.astro" ]'
+git -C "$wt" reset -q --hard HEAD~1 && rm -f "$wt/setup-output.txt"
+check "unowned fails on an unknown task"        '! bash "$RUN" unowned T9 >/dev/null 2>&1'
+bash "$RUN" own T1 '["src/**","tests/**"]'
 check "allows outside any repo"           '[ "$(guard_rc "/nowhere/x.txt" "/nowhere")" = "0" ]'
 check "allows on garbage payload"         '[ "$(echo "not json" | bash "$GUARD" 2>/dev/null; echo $?)" = "0" ]'
 check "no-runtime still allows"           '[ "$(printf "{}" | IDLEFLOW_RUNTIME=/no/such/bin bash "$GUARD" 2>/dev/null; echo $?)" = "0" ]'
@@ -154,7 +165,7 @@ bash "$RUN" wt rm "Té"
 
 echo "--- report / gate"
 check "report fails when none written"  '! bash "$RUN" report T1 2>/dev/null'
-( cd "$wt" && printf 'x\ny\nz\n' > src/code.py && printf '%s\n' $(seq 1 50) > README.md && printf 'task: T1\nstatus: done\n' > .idleflow-run/result.md )
+( cd "$wt" && printf 'x\ny\nz\n' > src/code.py && printf '%s\n' $(seq 1 50) > README.md && printf 'task: T1\nstatus: done\n' > .idleflow-run/result.md && git add src/code.py README.md && commit -m "T1: code" )
 r="$(bash "$RUN" report T1)"
 check "report copied into run dir"     '[ -f .idleflow/runs/active/tasks/T1/report.md ] && grep -q "status: done" "$r"'
 touch -t 200001010000 "$wt/.idleflow-run/result.md"; echo "edited: yes" >> "$r"
@@ -167,7 +178,12 @@ check "gate verdict ok"                'echo "$g" | grep -q "\"verdict\":\"ok\""
 check "gate counts code lines (3)"     'echo "$g" | grep -q "\"total\":3,"'
 check "gate excludes .md (50+1)"       'echo "$g" | grep -q "\"excluded_total\":51"'
 check "gate.json written"              '[ -f .idleflow/runs/active/tasks/T1/gate.json ]'
-( cd "$wt" && seq 1 40 > src/big.py )
+# what is not committed never merges, so the gate does not count it and does not stage it
+( cd "$wt" && seq 1 500 > src/generated.py && echo w >> src/code.py )
+g="$(bash "$RUN" gate T1)"
+check "gate counts only the task's commits" 'echo "$g" | grep -q "\"total\":3," && echo "$g" | grep -q "\"uncommitted\":2," && echo "$g" | grep -q "src/generated.py"'
+check "gate leaves the task's index alone"  'git -C "$wt" diff --cached --quiet && [ -z "$(git -C "$wt" ls-files src/generated.py)" ]'
+( cd "$wt" && seq 1 40 > src/big.py && git add src/big.py && commit -m "T1: big" )
 check "gate limit override -> audit"   'bash "$RUN" gate T1 10 | grep -q "\"verdict\":\"audit\""'
 ( cd "$wt" && mkdir -p .idleflow && printf 'DIFF_LIMIT=100000\n' > .idleflow/idleflow.conf )
 g2="$(bash "$HERE/diff-gate.sh" "$wt" "$(git rev-parse HEAD)" 2>/dev/null)"
@@ -186,10 +202,11 @@ echo "--- merge, then a second group gates against its own base"
 check "merge refuses an unapproved task" 'bash "$RUN" merge T1 >/dev/null 2>&1; [ $? -eq 4 ]'
 bash "$RUN" set tasks.T1.status '"approved"'
 mkdir -p "$wt/.pytest_cache" && echo v > "$wt/.pytest_cache/v"
-m="$(bash "$RUN" merge T1)"
+m="$(bash "$RUN" merge T1 2>"$scratch/merge.err")"
 check "merge stamps the task's merge"     '[[ "$(bash "$RUN" get tasks.T1.t_merge 2>/dev/null)" =~ ^[0-9]{10}$ ]]'
 check "merge reports merged"           '[ "$m" = "merged T1" ]'
 check "merged file on main"            '[ -f src/code.py ]'
+check "merge takes commits, never uncommitted work" '[ ! -e src/generated.py ] && [ "$(cat src/code.py)" = "$(printf "x\ny\nz")" ] && grep -q "not merged: .*src/generated.py" "$scratch/merge.err"'
 check "merge leaves untracked caches out" '[ ! -e .pytest_cache ] && ! git ls-files | grep -q pytest_cache'
 check "merge keeps the human identity" '[ "$(git log -1 --format=%an)" = "Human" ]'
 bash "$RUN" set tasks.NOPE.status '"approved"'
@@ -205,10 +222,10 @@ rm -f docs/new.md; sed -i '/^docs\/$/d' .gitignore; git add .gitignore; commit -
 wt2="$(bash "$RUN" wt add T2 HEAD)"
 bash "$RUN" own T2 '["src/**"]'
 bash "$RUN" set tasks.T2.status '"approved"'
-( cd "$wt2" && printf '1\n2\n3\n4\n5\n' > src/second.py )
+( cd "$wt2" && printf '1\n2\n3\n4\n5\n' > src/second.py && git add src/second.py && commit -m "T2: second" )
 g2="$(bash "$RUN" gate T2)"
 check "T2 gate sees only T2 lines (5)" 'echo "$g2" | grep -q "\"total\":5,"'
-check "merge conflict exits 3"         '( cd "$wt2" && printf "changed\n" > src/code.py ); printf "other\n" > src/code.py; git add -A; commit -m main-change; bash "$RUN" merge T2 >/dev/null 2>&1; [ $? -eq 3 ]'
+check "merge conflict exits 3"         '( cd "$wt2" && printf "changed\n" > src/code.py && git add src/code.py && commit -m "T2: change" ); printf "other\n" > src/code.py; git add -A; commit -m main-change; bash "$RUN" merge T2 >/dev/null 2>&1; [ $? -eq 3 ]'
 check "conflict left no MERGE_HEAD"    '[ ! -f .git/MERGE_HEAD ]'
 
 echo "--- finish, then worktrees can still be removed"
@@ -294,6 +311,15 @@ git config --local --unset idleflow.person
 rm -rf docs
 sed -i.bak 's#^progress_file: .*#progress_file: ../outside.md#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
 check "a path outside the repo falls back"  'p="$(bash "$RUN" path progress 2>/dev/null)"; [ "$p" = "$top/progress.md" ] && bash "$RUN" path progress 2>&1 >/dev/null | grep -q "not a relative path"'
+sed -i.bak 's#^progress_file: .*#progress_file: /abs/progress.md#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
+check "an absolute path falls back"  'p="$(bash "$RUN" path progress 2>/dev/null)"; [ "$p" = "$top/progress.md" ] && bash "$RUN" path progress 2>&1 >/dev/null | grep -q "not a relative path"'
+for bad in .git/hooks/post-commit docs/.GIT/x.md -progress.md; do
+  sed -i.bak "s#^progress_file: .*#progress_file: $bad#" .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
+  check "a path under .git or starting with - falls back ($bad)" '[ "$(bash "$RUN" path progress 2>/dev/null)" = "$top/progress.md" ]'
+done
+sed -i.bak 's#^progress_file: .*#progress_file: ./.docs/notes..md#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
+printf 'time_log: .idleflow/time-log.md\n' >> .idleflow/conventions.md
+check "a path in a dot folder is used without a warning" '[ "$(bash "$RUN" path time-log)" = "$top/.idleflow/time-log.md" ] && [ -z "$(bash "$RUN" path time-log 2>&1 >/dev/null)" ] && [ "$(bash "$RUN" path progress 2>/dev/null)" = "$top/.docs/notes..md" ] && [ -z "$(bash "$RUN" path progress 2>&1 >/dev/null)" ]'
 cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"
 
 echo "--- worktrees inside the repo, with an approved setup command"
@@ -347,6 +373,26 @@ check "a setup that links main's node_modules is refused" '[ "$rc" = 6 ] && echo
 rm -rf node_modules
 bash "$RUN" wt rm T7; bash "$RUN" finish done >/dev/null
 rm -rf shared-big; cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"; git add .idleflow/conventions.md && commit -q -m "restore conventions"
+
+echo "--- setup after new: the run uses what setup committed"
+cp .idleflow/conventions.md "$d-conv.bak"
+sed -i.bak '/^shared_files:/d; /^gate:/d; /^preview:/d' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
+git add .idleflow/conventions.md && commit -q -m "no shared files, no gate"
+bash "$RUN" new late-setup >/dev/null 2>&1
+check "new copies what conventions say now" '[ "$(idleflow_rt get .idleflow/runs/active/ownership.json shared)" = "[]" ] && [ -z "$(bash "$RUN" get gate)" ]'
+printf 'shared_files: CHANGELOG.md\ngate: echo gate-ok\npreview: echo preview-ok\n' >> .idleflow/conventions.md
+bash "$RUN" skip preview
+bash "$RUN" snapshot >/dev/null
+check "snapshot gives the run the shared files setup chose" '[ "$(idleflow_rt get .idleflow/runs/active/ownership.json shared)" = "[\"CHANGELOG.md\"]" ]'
+check "snapshot gives the run the gate setup committed"     '[ "$(bash "$RUN" get gate)" = "echo gate-ok" ]'
+check "a skipped command stays skipped after snapshot"      '[ -z "$(bash "$RUN" get preview)" ]'
+check "skip refuses a key that is not a command"            '! bash "$RUN" skip mode 2>/dev/null'
+bash "$RUN" wt add T8 >/dev/null 2>&1
+sed -i.bak 's#^gate: .*#gate: echo changed#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
+bash "$RUN" snapshot >/dev/null
+check "once a task exists, the run's copy stays put"        '[ "$(bash "$RUN" get gate)" = "echo gate-ok" ]'
+bash "$RUN" wt rm T8; bash "$RUN" finish done >/dev/null
+cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"; git add .idleflow/conventions.md && commit -q -m "restore conventions"
 
 echo "--- the repo's gate"
 git add -u && commit -q -m "tidy before the gate"
@@ -413,13 +459,12 @@ cp .idleflow/conventions.md "$d-conv.bak"
 printf 'commit_format: conventional\n' >> .idleflow/conventions.md
 bash "$RUN" new conventional-commits-with-a-long-slug-name >/dev/null 2>&1
 wc6="$(bash "$RUN" wt add T6 2>/dev/null)"
-( cd "$wc6" && echo y >> src/keep.py )
+( cd "$wc6" && echo y >> src/keep.py && git add src/keep.py && commit -m "fix: keep y" )
 bash "$RUN" set tasks.T6.status '"approved"'; bash "$RUN" merge T6 >/dev/null 2>&1
-# the merge and its second parent by name: commits made in the same second sort either way in git log
-subjects="$(git log -1 --format=%s HEAD; git log -1 --format=%s HEAD^2)"; bodies="$(git log -1 --format=%b HEAD; git log -1 --format=%b HEAD^2)"
+subjects="$(git log -1 --format=%s HEAD)"; bodies="$(git log -1 --format=%b HEAD)"
 cc_re='^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([A-Za-z0-9_./-]+\))?!?: [^ ]'
-check "merge and finish commits are Conventional Commits" '[ "$(echo "$subjects" | grep -Ec "$cc_re")" = 2 ] && [ "$(echo "$subjects" | awk "length > 72" | wc -l | tr -d " ")" = 0 ]'
-check "the run id moves to the commit body" '[ "$(echo "$bodies" | grep -c "^Run: ")" = 2 ]'
+check "the merge commit is a Conventional Commit" '[ "$(echo "$subjects" | grep -Ec "$cc_re")" = 1 ] && [ "$(echo "$subjects" | awk "length > 72" | wc -l | tr -d " ")" = 0 ]'
+check "the run id moves to the commit body" '[ "$(echo "$bodies" | grep -c "^Run: ")" = 1 ]'
 bash "$RUN" wt rm T6; bash "$RUN" finish done >/dev/null
 cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"
 
@@ -428,8 +473,23 @@ check "session notes are named by time and author" 'bash "$RUN" session-name | g
 mkdir -p docs/sessions && touch "$(bash "$RUN" session-name)"
 check "a second note in the same minute gets a suffix" 'bash "$RUN" session-name | grep -q -- "-human-2\.md$"'
 rm -rf docs
+cp .idleflow/conventions.md "$d-conv.bak"
+sed -i.bak '/^ignore_in:/d' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak; printf 'ignore_in: gitignore\n' >> .idleflow/conventions.md
 bash "$RUN" snapshot >/dev/null
 check "snapshot sets union merges for shared logs" 'grep -qx ".idleflow/lessons.md merge=union" .gitattributes && grep -qx "progress.md merge=union" .gitattributes && git ls-files --error-unmatch .gitattributes >/dev/null 2>&1'
+# ignore_in: exclude keeps idleflow out of committed files, merge rules included
+cp .gitattributes "$d-attrs.bak"
+sed -i.bak 's#^ignore_in: .*#ignore_in: exclude#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
+git add .idleflow/conventions.md && commit -q -m "local rules"
+attrs="$(git rev-parse --git-common-dir)/info/attributes"; rm -f "$attrs"
+printf '.idleflow/suggestions.md\n' >> .git/info/exclude
+bash "$RUN" snapshot >/dev/null
+check "local merge rules go to .git/info/attributes" 'grep -qx "progress.md merge=union" "$attrs" && grep -qx ".idleflow/lessons.md merge=union" "$attrs" && cmp -s .gitattributes "$d-attrs.bak" && git diff --quiet HEAD -- .gitattributes'
+check "an ignored record gets no merge rule"          '! grep -q "suggestions.md" "$attrs"'
+doc="$(bash "$RUN" doctor 2>/dev/null)"
+check "doctor reads the local merge rules"            'echo "$doc" | grep -q "^ok merges"'
+grep -vxF '.idleflow/suggestions.md' .git/info/exclude > "$scratch/exclude"; cp "$scratch/exclude" .git/info/exclude; rm -f "$attrs"
+cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak" "$d-attrs.bak"; git add .idleflow/conventions.md && commit -q -m "shared rules again"
 printf '{"permissions":{"allow":["Bash(ls)"]}}' > .claude/settings.json
 bash "$RUN" team-install >/dev/null
 check "team-install recommends idleflow, keeps the rest" '[ "$(idleflow_rt get .claude/settings.json enabledPlugins.idleflow@idlesync)" = "true" ] && [ "$(idleflow_rt get .claude/settings.json extraKnownMarketplaces.idlesync.source.repo)" = "Idle-Sync/idleflow" ] && grep -q "Bash(ls)" .claude/settings.json'
@@ -556,6 +616,22 @@ rm -rf "$f/.venv"; sed -i.bak '/^worktree_setup:/d' "$f/.idleflow/conventions.md
 check "no venv in main, no suggestion"           '! (cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup"'
 rm -rf "$f"
 check "agents never borrow the main checkout's environment" 'grep -q "never the main checkout" "$HERE/../agents/implementer.md" && grep -q "never the main checkout" "$HERE/../agents/implementer-hard.md" && grep -q "never the main checkout" "$HERE/../agents/review-correct.md"'
+echo "--- which files run.sh docs keeps"
+f="$(mktemp -d)"; ( cd "$f" && git init -q && git config user.name Ada && git config user.email a@a && mkdir -p .idleflow docs templates \
+  && printf 'mode: repo\nindex_file: docs/index.md\n' > .idleflow/conventions.md && printf 'docs/\n' >> .git/info/exclude \
+  && printf '# Progress\n\n## Milestones\n\n### M1: Sign in\n- [x] a\n- [x] b\n- [ ] c\n' > progress.md \
+  && printf '# Index\n<!-- idleflow:generated milestones -->\n<!-- idleflow:end -->\n' > docs/index.md \
+  && printf '# Index template\n<!-- idleflow:generated files -->\n<!-- idleflow:end -->\n' > templates/index.md \
+  && printf '# Readme\n<!-- idleflow:generated milestones -->\n<!-- idleflow:end -->\n' > README.md \
+  && git add -A && git commit -qm start )
+out="$(cd "$f" && bash "$RUN" docs)"
+check "docs fills an index kept out of git"   'echo "$out" | grep -q "docs/index.md" && grep -qxF -- "- M1: Sign in: 2/3" "$f/docs/index.md"'
+( cd "$f" && git checkout -q -- templates README.md && printf 'generated_docs: README.md\n' >> .idleflow/conventions.md && git add -A && git commit -qm named )
+out="$(cd "$f" && bash "$RUN" docs)"
+check "generated_docs names the files kept"   '[ "$out" = "docs: regenerated README.md" ] && [ -z "$(cd "$f" && git status --porcelain templates)" ]'
+( cd "$f" && git checkout -q -- README.md && sed -i.bak "s/^generated_docs: .*/generated_docs: none/" .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak )
+check "generated_docs: none keeps no file"    '[ "$(cd "$f" && bash "$RUN" docs)" = "docs: generated blocks are up to date" ] && [ -z "$(cd "$f" && git status --porcelain README.md templates)" ]'
+rm -rf "$f"
 
 echo "--- prompt contracts"
 researcher="$HERE/../agents/stack-researcher.md"
@@ -576,6 +652,7 @@ check "fix sizing ignores module count"   '! grep -q "more than one module" "$fi
 check "ignore rules go through run.sh ignore" 'grep -q "^ignore_in: unset" "$conventions" && grep -q "\"\$RUN\" ignore" "$setup" && grep -q "\"\$RUN\" ignore" "$init"'
 check "repo readability mode is offered and enforced" 'grep -q "^| \`repo\` |" "$conventions" && grep -q "Match this repo" "$setup" && grep -q "Match this repo" "$HERE/../commands/style.md" && grep -q "\`repo\`" "$HERE/../agents/implementer.md" && grep -q "\`repo\`" "$HERE/../agents/implementer-hard.md" && grep -q "\`repo\`" "$HERE/../agents/review-conform.md"'
 check "both reviewers allow shared files" 'grep -q "top-level \`shared\` list" "$HERE/../agents/review-conform.md" && grep -q "top-level \`shared\` list" "$HERE/../agents/review-correct.md"'
+check "the doc-keeper edits sentences, never whole files" '! grep -q "^tools:.*Write" "$HERE/../agents/doc-keeper.md" && grep -q "belongs to humans" "$HERE/../agents/doc-keeper.md" && grep -q "as it is on disk now" "$HERE/../templates/CLAUDE.md"'
 check "the designer and design reviewer exist" '[ -f "$HERE/../agents/designer.md" ] && [ -f "$HERE/../agents/review-design.md" ] && grep -q "\"ui\"" "$HERE/../agents/classifier.md" && grep -q "^### 2c. Design" "$HERE/../commands/feature.md"'
 check "the design handbook carries the contrast rule" 'grep -q "4.5:1" "$HERE/../procedures/design.md" && grep -q "0.2126 R + 0.7152 G + 0.0722 B" "$HERE/../procedures/design-data.md"'
 check "STEP_DESIGN is a setting" 'grep -q STEP_DESIGN "$HERE/conf.sh" && grep -q "^STEP_DESIGN=auto" "$HERE/../config/idleflow.conf"'

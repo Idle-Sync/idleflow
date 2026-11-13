@@ -8,6 +8,9 @@
 #   run.sh wt rm <task-id>                -> removes the worktree (keeps the branch); works with or without an active run
 #   run.sh wt list                        -> lists idleflow worktrees
 #   run.sh own <task-id> '<globs json>'   -> registers file ownership for the guard hook
+#   run.sh skip <key>                     -> this run goes without a repo command (gate, gate_quick, worktree_setup, preview)
+#   run.sh unowned <task-id>              -> paths the task's commits change (base..HEAD, what merges) that its globs,
+#                                            .idleflow-run/** and shared_files do not cover; matched as the guard matches
 #   run.sh get <key>                      -> prints a value from run.json (dotted keys ok)
 #   run.sh set <key> <json>               -> sets a value in run.json (dotted keys ok)
 #   run.sh inc <key> [n]                  -> adds n (default 1) to a counter in run.json
@@ -89,12 +92,30 @@ active_id() {
   echo "$id"
 }
 
+# A path from the conventions that stays inside the repo's files: not absolute (/, ~, a drive letter),
+# no `..` folder, nothing under `.git` (hooks there run code), no leading `-` (a command would read it
+# as an option), and only characters that need no quoting. Prints it without a leading ./ or a
+# trailing /, or fails. Other dot folders such as .idleflow/ and .github/ are fine.
+# repo_relative_path <path> [extra allowed characters, e.g. '*' for globs]
+repo_relative_path() {
+  local p="${1#./}" extra="${2:-}" part
+  p="${p%/}"
+  [ -n "$p" ] || return 1
+  case "$p" in /*|'~'*|-*|[A-Za-z]:*) return 1;; esac
+  [[ "$p" =~ ^[A-Za-z0-9_./${extra}-]+$ ]] || return 1
+  local -a parts
+  IFS=/ read -ra parts <<< "$p"
+  for part in "${parts[@]}"; do
+    case "$(printf '%s' "$part" | tr '[:upper:]' '[:lower:]')" in ..|.git|.git.*) return 1;; esac
+  done
+  echo "$p"
+}
 # A repo can keep its records where it already keeps them (conventions "Records"). A value must be
 # a plain relative path inside the repo; anything else falls back to the default, with a warning.
 record_path() { # record_path <conventions key> <default>
   local v; v="$(conventions_value "$1")"
   case "$v" in ""|unset) echo "$2"; return;; esac
-  if [[ "$v" =~ ^[A-Za-z0-9_][A-Za-z0-9_./-]*$ ]] && [[ "$v" != *..* ]]; then echo "${v%/}"; return; fi
+  repo_relative_path "$v" && return
   echo "[idleflow] $1: '$v' is not a relative path inside the repo; using $2" >&2
   echo "$2"
 }
@@ -116,7 +137,7 @@ shared_files() {
   local v f; v="$(conventions_value shared_files)"
   case "$v" in ""|unset|none) return 0;; esac
   for f in $(set -f; echo $v); do
-    if [[ "$f" =~ ^[A-Za-z0-9_.*][A-Za-z0-9_.*/-]*$ ]] && [[ "$f" != *..* ]]; then echo "$f"; else echo "[idleflow] shared_files: skipped '$f'" >&2; fi
+    repo_relative_path "$f" '*' || echo "[idleflow] shared_files: skipped '$f'" >&2
   done
 }
 
@@ -171,9 +192,23 @@ set_project_conf() { # set_project_conf <KEY> [value]: no value removes the key
 # Several people (or parallel tasks) add to these files at the same spot (new lessons at the end,
 # new progress entries at the top); git's built-in union driver keeps both sides instead of conflicting.
 union_merge_files() { { lessons_rel; progress_rel; echo .idleflow/suggestions.md; time_log_rel; shared_files; } 2>/dev/null | awk '!seen[$0]++'; }
-ensure_union_merge() {
+# Only files git tracks ever merge, so an ignored record (kept local) needs no rule.
+union_merge_targets() {
   local f
-  while IFS= read -r f; do add_ignore "$REPO/.gitattributes" "$f merge=union"; done < <(union_merge_files)
+  while IFS= read -r f; do "${G[@]}" check-ignore -q --no-index -- "$f" || echo "$f"; done < <(union_merge_files)
+}
+# idleflow's merge rules go where its ignore rules go (ignore_in): the committed .gitattributes,
+# or .git/info/attributes when nothing about idleflow may appear in a committed file.
+attributes_file() {
+  if grep -q '^ignore_in: *gitignore' "$CONVENTIONS" 2>/dev/null; then
+    echo "$REPO/.gitattributes"
+  else
+    local f; f="$(exclude_file)"; echo "${f%/exclude}/attributes"
+  fi
+}
+ensure_union_merge() {
+  local f attrs; attrs="$(attributes_file)"
+  while IFS= read -r f; do add_ignore "$attrs" "$f merge=union"; done < <(union_merge_targets)
 }
 
 # Who is writing, for per-person session folders: idleflow.person in git config (set it to name the
@@ -195,6 +230,24 @@ author_slug() { git config user.name 2>/dev/null | tr 'A-Z' 'a-z' | tr -cs 'a-z0
 DOC_START_RE='^<!-- idleflow:generated ([a-z-]+) -->$'
 DOC_END='<!-- idleflow:end -->'
 md_code() { printf '%s' "$1" | tr '`' "'"; }
+# The Markdown files run.sh docs keeps, one per line. `generated_docs:` in conventions names them
+# (`none` for no file); unset means every tracked Markdown file with a block, plus idleflow's own
+# records (the index, the progress file, CLAUDE.md), which a repo may keep out of git.
+generated_doc_files() {
+  local v f list
+  v="$(conventions_value generated_docs)"
+  case "$v" in
+    none) return 0;;
+    ""|unset) { "${G[@]}" grep -l -e '<!-- idleflow:generated ' -- '*.md' 2>/dev/null || true; printf '%s\n' "$(index_rel)" "$(progress_rel)" CLAUDE.md; };;
+    *) read -ra list <<< "$v"
+       for f in "${list[@]}"; do
+         case "$f" in /*|*..*) echo "[idleflow] generated_docs: skipped '$f' (not a path inside the repo)" >&2;; *) echo "$f";; esac
+       done;;
+  esac | LC_ALL=C sort -u | while IFS= read -r f; do
+    [ -f "$REPO/$f" ] && grep -q '<!-- idleflow:generated ' "$REPO/$f" && echo "$f"
+  done
+  return 0
+}
 
 gen_files() { # $1: the block's current text; descriptions written there are kept
   local e desc
@@ -246,7 +299,7 @@ gen_runs() { # the last ten idleflow runs merged here, newest first, from both m
 }
 gen_settings() {
   local k v
-  for k in mode docs lessons_in progress_file index_file index_rewrite sessions_dir session_names time_log shared_files \
+  for k in mode docs lessons_in progress_file index_file index_rewrite sessions_dir session_names time_log shared_files generated_docs \
            worktrees_in worktree_setup commit_format gate gate_quick gate_runs preview preview_url language tone; do
     v="$(conventions_value "$k")"; [ -n "$v" ] && echo "- \`$k\`: $(md_code "$v")"
   done
@@ -377,6 +430,23 @@ copy_report() {
   native_path "$dst"
 }
 
+# The run keeps its own copy of what the conventions say about commands and shared files, so the
+# conventions can change on main mid-run without changing this run. The copy is taken at `new` and
+# again at the snapshot that ends setup (R1–R6 write and commit conventions after `new`), as long as
+# no task exists yet. A command the human chose to run without (`run.sh skip`) stays empty.
+conventions_to_run() {
+  local key val skipped shared
+  skipped="$(idleflow_rt get "$ACTIVE/run.json" skipped 2>/dev/null || true)"
+  for key in $REPO_COMMANDS; do
+    val="$(repo_command "$key")"
+    case "$skipped" in *"\"$key\""*) val="";; esac
+    idleflow_rt set "$ACTIVE/run.json" "$key" "$(json_str "$val")"
+  done
+  shared="$(shared_files | while IFS= read -r f; do json_str "$f"; echo; done | paste -sd, -)"
+  idleflow_rt set "$ACTIVE/ownership.json" shared "[${shared}]"
+}
+run_has_tasks() { [ "$(idleflow_rt get "$ACTIVE/run.json" tasks 2>/dev/null || echo '{}')" != "{}" ]; }
+
 cmd="${1:-}"; shift || true
 case "$cmd" in
   new)
@@ -390,10 +460,10 @@ case "$cmd" in
     base="$("${G[@]}" symbolic-ref --short -q HEAD || echo HEAD)"
     base_sha="$("${G[@]}" rev-parse -q --verify HEAD 2>/dev/null || true)"
     cat > "$ACTIVE/run.json" <<JSON
-{"id":"$id","worktree_setup":$(json_str "$(repo_command worktree_setup)"),"gate":$(json_str "$(repo_command gate)"),"gate_quick":$(json_str "$(repo_command gate_quick)"),"preview":$(json_str "$(repo_command preview)"),"plugin_version":$(json_str "$(plugin_version)"),"by":$(json_str "$(git config user.name || echo unknown)"),"slug":"$safe","base":$(json_str "$base"),"base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"gate_trips":0,"review_findings":0}
+{"id":"$id","plugin_version":$(json_str "$(plugin_version)"),"by":$(json_str "$(git config user.name || echo unknown)"),"slug":"$safe","base":$(json_str "$base"),"base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"gate_trips":0,"review_findings":0}
 JSON
-    shared="$(shared_files | while IFS= read -r f; do json_str "$f"; echo; done | paste -sd, -)"
-    echo "{\"repo\":$(json_str "$(native_path "$REPO")"),\"shared\":[${shared}],\"tasks\":{}}" > "$ACTIVE/ownership.json"
+    echo "{\"repo\":$(json_str "$(native_path "$REPO")"),\"shared\":[],\"tasks\":{}}" > "$ACTIVE/ownership.json"
+    conventions_to_run
     add_ignore "$(ignore_file)" '.idleflow/runs/'
     # worktree marker dir: excluded locally (shared by all worktrees), never committed or merged
     add_ignore "$(exclude_file)" '.idleflow-run/'
@@ -441,9 +511,26 @@ JSON
       *) echo "unknown wt subcommand" >&2; exit 1;;
     esac
     ;;
+  skip)
+    key="${1:?worktree_setup|gate|gate_quick|preview}"; active_id >/dev/null
+    case " $REPO_COMMANDS " in *" $key "*) ;; *) echo "skip: $key is not a repo command ($REPO_COMMANDS)" >&2; exit 1;; esac
+    list="$(idleflow_rt get "$ACTIVE/run.json" skipped 2>/dev/null || true)"
+    case "$list" in ""|null) list="[]";; esac
+    case "$list" in *"\"$key\""*) ;; "[]") list="[\"$key\"]";; *) list="${list%]},\"$key\"]";; esac
+    idleflow_rt set "$ACTIVE/run.json" skipped "$list"
+    idleflow_rt set "$ACTIVE/run.json" "$key" '""'
+    ;;
   own)
     tid="${1:?task-id}"; globs="${2:?json array}"; active_id >/dev/null
     idleflow_rt own "$ACTIVE/ownership.json" "$tid" "$(native_path "$(wt_path "$tid")")" "$globs"
+    ;;
+  unowned)
+    tid="${1:?task-id}"; active_id >/dev/null
+    p="$(wt_path "$tid")"; base="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$tid.base_sha")"
+    if [ ! -d "$p" ] || [ -z "$base" ] || [ "$base" = null ]; then echo "task $tid has no worktree or base sha (run.sh wt add $tid first)" >&2; exit 1; fi
+    # only the task's commits merge, so only they are checked; --no-renames: a rename changes the
+    # old path too, and the task must own both
+    git -C "$p" diff --no-renames --name-only "$base" HEAD | sort -u | idleflow_rt unowned "$ACTIVE/ownership.json" "$tid"
     ;;
   get)
     key="${1:?key}"; active_id >/dev/null
@@ -482,17 +569,15 @@ JSON
     # `commit_format: conventional` repos often check every subject in CI (type(scope): ..., at most
     # 72 characters), so the run id moves to the body there.
     if [ "$(conventions_value commit_format)" = conventional ]; then
-      finish_msg=(-m "chore(idleflow): finish task $tid" -m "Run: $id")
       merge_msg=(-m "chore(idleflow): merge task $tid" -m "Run: $id")
     else
-      finish_msg=(-m "$tid: finish task")
       merge_msg=(-m "idleflow: merge $tid ($id)")
     fi
-    # commit tracked changes the implementer left uncommitted; untracked files (test caches,
-    # scratch) stay out, since the reviewers already rejected anything that should have been added
+    # What merges is the task's commits, the ones the gate measured and the reviewers approved.
+    # Anything uncommitted in the worktree (a setup script's output, a cache) stays there.
     if [ -d "$p" ]; then
-      git -C "$p" add -u
-      git -C "$p" diff --cached --quiet || git -C "$p" ${IDENTITY[@]+"${IDENTITY[@]}"} commit -q ${finish_msg[@]+"${finish_msg[@]}"}
+      left="$(git -C "$p" -c core.quotePath=false status --porcelain -- . ':(exclude).idleflow-run' | cut -c4- | head -8 | paste -sd ' ' -)"
+      [ -z "$left" ] || echo "merge $tid: uncommitted in the worktree, not merged: $left" >&2
     fi
     if "${G[@]}" ${IDENTITY[@]+"${IDENTITY[@]}"} merge --no-ff -q "${merge_msg[@]}" "$br"; then
       idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.t_merge" "$(date +%s)"
@@ -534,6 +619,8 @@ JSON
       gcommit -m "docs: project conventions and run inputs" -- "${paths[@]}"
       echo "snapshot: committed $("${G[@]}" rev-parse --short HEAD)"
     fi
+    # setup is over: the run now uses the conventions it just committed
+    if [ -f "$ACTIVE/run.json" ] && ! run_has_tasks; then conventions_to_run; fi
     ;;
   finish)
     status="${1:-done}"; id="$(active_id)"
@@ -652,7 +739,7 @@ JSON
     # Regenerates every generated block in the repo's Markdown; --check only reports stale ones (exit 1).
     mode="${1:-write}"; cd "$REPO"
     stale=(); changed=()
-    files="$({ "${G[@]}" grep -l -e '<!-- idleflow:generated ' -- '*.md' 2>/dev/null || true; } | LC_ALL=C sort -u)"
+    files="$(generated_doc_files)"
     tmp_doc="$(mktemp)"; tmp_block="$(mktemp)"
     while IFS= read -r f; do
       [ -n "$f" ] && [ -f "$f" ] || continue
@@ -1023,7 +1110,8 @@ JSON
     else check_line ok team "one contributor so far (run.sh team-install when others join)"; fi
     union_missing=""
     # only files that exist yet: a log no run has written cannot conflict, and snapshot adds its rule anyway
-    while IFS= read -r f; do [ -e "$REPO/$f" ] || continue; grep -qxF "$f merge=union" "$REPO/.gitattributes" 2>/dev/null || union_missing="$union_missing $f"; done < <(union_merge_files)
+    attrs="$(attributes_file)"
+    while IFS= read -r f; do [ -e "$REPO/$f" ] || continue; grep -qxF "$f merge=union" "$attrs" 2>/dev/null || union_missing="$union_missing $f"; done < <(union_merge_targets)
     if [ -n "$union_missing" ]; then check_line warn merges "no union merge for:$union_missing, so concurrent entries conflict" "run.sh snapshot"; else check_line ok merges "lessons, progress and suggestions merge without conflicts"; fi
 
     while IFS= read -r line; do

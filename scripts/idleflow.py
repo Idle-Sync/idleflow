@@ -11,16 +11,16 @@ Subcommands:
   inc    <file> <dotted.key> [n]          add n (default 1) to a number
   finish <file> <status> <log.jsonl>      stamp status+finished, append to log
   own    <file> <task-id> <worktree> <globs-json>
-  gate   <limit> <slack> <numstat-all-file> <numstat-code-file>
+  gate   <limit> <slack> <numstat-all-file> <numstat-code-file> [uncommitted-paths-file]
   guard                                   hook: payload on stdin; exit 2 blocks
   detach <cwd> <log> <pidfile> <command>  runs the command in its own session, output to log; writes its pid
   entries <file> <key>                    one "name<TAB>value" line per entry of the object at that top-level key
+  unowned <file> <task-id>                paths on stdin, one per line; prints those the task may not change
 """
 import json
 import os
 import re
 import sys
-import fnmatch
 import datetime
 
 WIN = os.name == "nt"
@@ -129,7 +129,7 @@ def parse_numstat(text):
     return rows
 
 
-def cmd_gate(limit, slack, all_file, code_file):
+def cmd_gate(limit, slack, all_file, code_file, uncommitted_file=None):
     limit, slack = int(limit), int(slack)
     with open(all_file, "r", encoding="utf-8", errors="replace") as f:
         all_rows = parse_numstat(f.read())
@@ -146,12 +146,17 @@ def cmd_gate(limit, slack, all_file, code_file):
     else:
         verdict = "split"
     top = sorted(((p, a + d) for p, a, d in code_rows), key=lambda x: -x[1])[:8]
+    uncommitted = []
+    if uncommitted_file:
+        with open(uncommitted_file, "r", encoding="utf-8", errors="replace") as f:
+            uncommitted = [line.strip() for line in f if line.strip()]
     # compact separators so the output is byte-identical to idleflow.js
     print(json.dumps({
         "added": added, "deleted": deleted, "total": total, "files": len(code_rows),
         "limit": limit, "slack": slack, "verdict": verdict,
         "excluded_total": excluded_total, "top": top,
-    }, separators=(",", ":")))
+        "uncommitted": len(uncommitted), "uncommitted_paths": uncommitted[:8],
+    }, separators=(",", ":"), ensure_ascii=False))
 
 
 # --- guard ------------------------------------------------------------------
@@ -195,13 +200,19 @@ def find_map(start):
         d = parent
 
 
+def glob_regex(g):
+    # Ownership globs: '*' and '?' are the only wildcards and both cross '/'. Everything else is
+    # literal, brackets included: routes such as src/pages/[slug].astro are named with them.
+    # Same in idleflow.js.
+    return re.compile("".join(".*" if c == "*" else "." if c == "?" else re.escape(c) for c in g), re.S)
+
+
 def glob_match(rel, globs):
-    # fnmatch semantics: '*' and '?' also cross '/' (same in idleflow.js).
     for g in globs:
         g = g.replace("\\", "/")
         if WIN:
             g = g.lower()
-        if fnmatch.fnmatchcase(rel, g):
+        if glob_regex(g).fullmatch(rel):
             return True
         if g.endswith("/**") and (rel == g[:-3] or rel.startswith(g[:-3] + "/")):
             return True
@@ -320,6 +331,20 @@ def cmd_entries(path, key):
         print("%s\t%s" % (name, text.replace("\t", " ").replace("\n", " ")))
 
 
+def cmd_unowned(path, tid):
+    # The reviewers' ownership check, with the guard's matcher, so the two can never disagree.
+    omap = load(path)
+    task = (omap.get("tasks") or {}).get(tid)
+    if task is None:
+        sys.stderr.write("idleflow.py: task %s is not in %s\n" % (tid, path))
+        sys.exit(1)
+    allowed = list(task.get("owns") or []) + [".idleflow-run/**"] + list(omap.get("shared") or [])
+    for line in sys.stdin.buffer.read().decode("utf-8", "replace").splitlines():
+        rel = line.strip().replace("\\", "/")
+        if rel and not glob_match(rel.lower() if WIN else rel, allowed):
+            print(rel)
+
+
 def main(argv):
     # -I (isolated mode) ignores PYTHONUTF8, so on Windows stdout/stderr would be cp1252
     # and a BLOCKED message with a non-ASCII filename would come out garbled.
@@ -335,6 +360,7 @@ def main(argv):
     table = {
         "get": cmd_get, "set": cmd_set, "inc": cmd_inc, "finish": cmd_finish,
         "own": cmd_own, "gate": cmd_gate, "guard": cmd_guard, "detach": cmd_detach, "entries": cmd_entries,
+        "unowned": cmd_unowned,
     }
     if cmd not in table:
         sys.stderr.write("idleflow.py: unknown subcommand %r\n" % cmd)

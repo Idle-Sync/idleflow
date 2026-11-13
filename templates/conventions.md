@@ -83,8 +83,13 @@ sessions_dir: docs/sessions
 session_names: time-author
 time_log: .idleflow/time-log.md
 shared_files: none
+generated_docs: unset
 
 - `progress_file`, `index_file`, `sessions_dir`, `time_log`: relative paths inside the repo.
+- `generated_docs`: the Markdown files whose generated blocks `run.sh docs` keeps, space-separated,
+  or `none`. Unset means every tracked Markdown file with a block, plus the index, the progress file
+  and `CLAUDE.md` even when they are kept out of git. Name the files when the repo also holds
+  Markdown whose markers are content, such as a template it ships.
 - `index_rewrite`: `yes` lets the retro rewrite the index after a run; `no` leaves it to the
   repo's own process (tasks add their rows through `shared_files`).
 - `session_names`: `time-author` (`s_<YYYYMMDD-HHMM>-<author>.md`, safe with several writers),
@@ -141,16 +146,17 @@ preview_url: none
   reviewer starts it in a task's worktree only through `run.sh preview`, to take screenshots at phone and
   desktop widths when a browser tool is available. Same approval rule as `gate`.
 - `commit_format`: `idleflow` (task commits `T1: ...`, merges `idleflow: merge T1 (<run>)`) or
-  `conventional` (Conventional Commits subjects of at most 72 characters for task, finish and merge
+  `conventional` (Conventional Commits subjects of at most 72 characters for task and merge
   commits, run and task ids in the body), for repos whose CI checks commit subjects.
 
 ## Ignore rules
 
 ignore_in: unset
 
-Where idleflow writes its own ignore rules (`.idleflow/runs/`, a local `docs/`). `exclude` uses
-`.git/info/exclude`: local to this clone, so nothing about idleflow appears in a committed file.
-`gitignore` uses `.gitignore`: shared with every clone and visible to everyone who reads the repo.
+Where idleflow writes its own ignore rules (`.idleflow/runs/`, a local `docs/`) and the
+`merge=union` rules for its records. `exclude` uses `.git/info/exclude` and `.git/info/attributes`:
+local to this clone, so nothing about idleflow appears in a committed file. `gitignore` uses
+`.gitignore` and `.gitattributes`: shared with every clone and visible to everyone who reads the repo.
 Until it is answered, rules go to `.git/info/exclude`. A stack's own entries (`node_modules/`,
 `.venv/`, `dist/`, `.env`) always go in `.gitignore`, because every clone needs them.
 
