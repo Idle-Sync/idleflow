@@ -44,7 +44,7 @@ commit() { git -c user.name=t -c user.email=t@t commit -q "$@"; }
 
 echo "runtime: $(idleflow_rt_name)"
 d="$(mktemp -d)"; d="$(cd "$d" && pwd)"
-cleanup() { cd / ; rm -rf "$d" "${d}__wt" "$d.link" "${d}__wt.link" "$d-mig" 2>/dev/null || true; }
+cleanup() { cd / ; rm -rf "$d" "${d}__wt" "$d.link" "${d}__wt.link" "$d-mig" "$d-human" "${d}-human__wt" "$d-stray" 2>/dev/null || true; }
 trap cleanup EXIT
 
 echo "--- new on a repo with no commits (what /idleflow:init does)"
@@ -507,6 +507,21 @@ bash "$RUN" wt rm TB
 check "wt rm stops the task's jobs" '[ "$(cat .idleflow/runs/active/tasks/TB/jobs/$job/status)" = 143 ] && ! kill -0 "$(cat .idleflow/runs/active/tasks/TB/jobs/$job/pid)" 2>/dev/null'
 rm -f .idleflow/idleflow.conf "$wa/child.pid"; [ ! -f "$scratch/conf.bak" ] || mv "$scratch/conf.bak" .idleflow/idleflow.conf
 bash "$RUN" wt rm TA; bash "$RUN" wt rm TB; bash "$RUN" finish done >/dev/null
+
+echo "--- a run started in a linked checkout"
+hw="$d-human"; git worktree add -q -b human-work "$hw" 2>/dev/null
+( cd "$hw" && bash "$RUN" new linked >/dev/null 2>&1 )
+check "the run lives in the linked checkout it was started from" '[ -f "$hw/.idleflow/runs/active/run.json" ] && [ ! -e .idleflow/runs/active ] && [ "$(cd "$hw" && bash "$RUN" path lessons)" = "$(cd "$hw" && pwd)/.idleflow/lessons.md" ]'
+( cd "$hw" && bash "$RUN" wt add TH > "$scratch/hwt" 2>/dev/null )
+check "its task worktree finds that checkout, not the main one" '[ "$(cd "$(cat "$scratch/hwt")" && bash "$RUN" exec TH -- sh -c "echo \$MAIN" 2>/dev/null)" = "$(cd "$hw" && pwd)" ]'
+( cd "$(cat "$scratch/hwt")" && git checkout -q --detach )
+check "a task worktree on a detached HEAD still finds it" '[ "$(cd "$(cat "$scratch/hwt")" && bash "$RUN" exec TH -- sh -c "echo \$MAIN" 2>/dev/null)" = "$(cd "$hw" && pwd)" ]'
+git worktree add -q -b "idleflow/no-such-run/TX" "$d-stray" 2>/dev/null
+check "a branch named like a task's but of no active run is its own checkout" '[ "$(cd "$d-stray" && bash "$RUN" path lessons)" = "$(cd "$d-stray" && pwd)/.idleflow/lessons.md" ]'
+( cd "$hw" && bash "$RUN" wt rm TH && bash "$RUN" finish "done" >/dev/null )
+check "wt rm forgets the task worktree" '! git config --local --get-regexp "^idleflow\\.worktree\\..*/TH\\.checkout$" >/dev/null 2>&1'
+git worktree remove --force "$d-stray"; git worktree remove --force "$hw"; git branch -q -D human-work "idleflow/no-such-run/TX"
+rmdir "${hw}__wt" 2>/dev/null || true
 
 echo "--- the repo's gate"
 git add -u && commit -q -m "tidy before the gate"
