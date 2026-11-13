@@ -8,6 +8,8 @@
 #   run.sh wt rm <task-id>                -> removes the worktree (keeps the branch); works with or without an active run
 #   run.sh wt list                        -> lists idleflow worktrees
 #   run.sh own <task-id> '<globs json>'   -> registers file ownership for the guard hook
+#   run.sh unowned <task-id>              -> paths the task changed (committed, uncommitted, untracked) that its globs,
+#                                            .idleflow-run/** and shared_files do not cover; matched as the guard matches
 #   run.sh get <key>                      -> prints a value from run.json (dotted keys ok)
 #   run.sh set <key> <json>               -> sets a value in run.json (dotted keys ok)
 #   run.sh inc <key> [n]                  -> adds n (default 1) to a counter in run.json
@@ -447,6 +449,14 @@ JSON
   own)
     tid="${1:?task-id}"; globs="${2:?json array}"; active_id >/dev/null
     idleflow_rt own "$ACTIVE/ownership.json" "$tid" "$(native_path "$(wt_path "$tid")")" "$globs"
+    ;;
+  unowned)
+    tid="${1:?task-id}"; active_id >/dev/null
+    p="$(wt_path "$tid")"; base="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$tid.base_sha")"
+    if [ ! -d "$p" ] || [ -z "$base" ] || [ "$base" = null ]; then echo "task $tid has no worktree or base sha (run.sh wt add $tid first)" >&2; exit 1; fi
+    # --no-renames: a rename changes the old path too, and the task must own both
+    { git -C "$p" diff --no-renames --name-only "$base"; git -C "$p" ls-files --others --exclude-standard; } \
+      | sort -u | idleflow_rt unowned "$ACTIVE/ownership.json" "$tid"
     ;;
   get)
     key="${1:?key}"; active_id >/dev/null
