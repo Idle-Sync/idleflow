@@ -126,6 +126,7 @@ gate_quick: unset
 gate_runs: every-task
 preview: unset
 preview_url: unset
+preview_in: worktree
 
 - `worktrees_in`: `sibling` puts task worktrees next to the repo (`<repo>__wt/<task>`); `inside` puts
   them in `.idleflow/worktrees/` (ignored), for projects that must not write outside their own folder.
@@ -147,6 +148,10 @@ preview_url: unset
   tasks' previews never share a port; `${IDLEFLOW_PORT}` is replaced with the task's port). The design
   reviewer starts it in a task's worktree only through `run.sh preview`, to take screenshots at phone and
   desktop widths when a browser tool is available. Same approval rule as `gate`.
+- `preview_in`: `worktree` serves each task's worktree before review; `main` is for an app that runs only
+  from the main checkout (a dev stack whose containers mount it): the screens are then checked once,
+  from the main checkout, after the last merge, and the plan writes a browser criterion as
+  `verify: browser after merge`.
 - `commit_format`: `idleflow` (task commits `T1: ...`, merges `idleflow: merge T1 (<run>)`),
   `conventional` (Conventional Commits subjects of at most 72 characters, merges `chore: merge
   <task title>`, for repos whose CI checks commit subjects) or `plain` (plain-sentence subjects
