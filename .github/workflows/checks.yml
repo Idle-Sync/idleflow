@@ -68,8 +68,12 @@ jobs:
           fetch-depth: 0
       - name: scripts/shellcheck-new.sh
         env:
-          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
         run: |
           shellcheck --version | head -2
-          if [ -z "$BASE" ] || ! git rev-parse -q --verify "$BASE^{commit}" >/dev/null; then BASE="$(git rev-parse HEAD~1)"; fi
+          # a pull request is checked out as its merge into main: the first parent is the main it merges into.
+          # A push compares with what main was before it, or with the parent when that is unknown.
+          BASE="$(git rev-parse HEAD~1)"
+          if [ "$EVENT" = push ] && git rev-parse -q --verify "$BEFORE^{commit}" >/dev/null; then BASE="$BEFORE"; fi
           bash scripts/shellcheck-new.sh "$BASE"

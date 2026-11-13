@@ -30,15 +30,23 @@ check() { # check <folder> <file...>
 keys() { sed -E 's/^([^:]+):[0-9]+:[0-9]+: /\1: /' | LC_ALL=C sort; }
 
 mapfile -t now < <(git ls-files -- '*.sh')
+# the base's files, each under its name at HEAD when it was renamed since, so its findings match
 mapfile -t was < <(git ls-tree -r --name-only "$base" | grep '\.sh$' || true)
+declare -A renamed=()
+while IFS=$'\t' read -r status old new; do
+  case "$status" in R*) renamed["$old"]="$new";; esac
+done < <(git diff --name-status -M "$base" HEAD)
 mkdir -p "$work/base"
+names=()
 for f in ${was[@]+"${was[@]}"}; do
-  mkdir -p "$work/base/$(dirname "$f")"
-  git show "$base:$f" > "$work/base/$f"
+  to="${renamed[$f]:-$f}"
+  mkdir -p "$work/base/$(dirname "$to")"
+  git show "$base:$f" > "$work/base/$to"
+  names+=("$to")
 done
 
 check . ${now[@]+"${now[@]}"} > "$work/head.txt"
-check "$work/base" ${was[@]+"${was[@]}"} > "$work/base.txt"
+check "$work/base" ${names[@]+"${names[@]}"} > "$work/base.txt"
 keys < "$work/head.txt" > "$work/head.keys"
 keys < "$work/base.txt" > "$work/base.keys"
 
