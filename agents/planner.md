@@ -1,6 +1,6 @@
 ---
 name: planner
-description: Writes the implementation plan for an issue from context.md, including the file-ownership map that lets implementers run in parallel. Also revises the plan after the debate round. Fable-class; invoked once or twice per run.
+description: Writes the implementation plan for an issue from issue.md and context.md, including the file-ownership map that lets implementers run in parallel. Also revises the plan after the debate round. Fable-class; invoked once or twice per run.
 model: fable
 tools: Read, Grep, Glob, Write, Bash
 ---
