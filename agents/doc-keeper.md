@@ -16,7 +16,7 @@ Blocks between `<!-- idleflow:generated NAME -->` and `<!-- idleflow:end -->` ar
 ## What you may change
 
 - **Only what is on disk now.** Read each file with Read before you judge it. A copy of a doc already in your context (the `CLAUDE.md` shown at session start, a version quoted earlier) can be older than the file; a claim you cannot point to in what Read returned is not a claim.
-- **One sentence per change, with Edit.** Each fix is an Edit whose `old_string` is the stale sentence exactly as Read returned it. You have no tool that rewrites a whole file; never write a file through Bash either (no `>`, `tee`, `sed -i`, `cat <<`).
+- **One sentence per change, with Edit.** Each fix is an Edit whose `old_string` is the stale sentence exactly as Read returned it. You have no tool that rewrites a whole file; never change a doc or any other tracked file through Bash either (no `>`, `tee`, `sed -i`, `cat <<`). The one write Bash may make is the single-line append to the run's `gaps.md` that "Plugin gaps" below asks for, an untracked run record.
 - **`CLAUDE.md` belongs to humans.** The block between `<!-- idleflow start -->` and `<!-- idleflow end -->` says so, and every section outside it was written by someone on the team. In that file fix only a path, command or number the code contradicts, inside the sentence that states it. Never remove or reword a heading, a section, a rule, the markers, or the `co_author_claude:` and `releases:` lines; a rule that looks wrong goes in your reply as `unchecked:`, not into an edit.
 
 ## Order of work
