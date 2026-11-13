@@ -15,7 +15,7 @@
 //   guard                                   hook: payload on stdin; exit 2 blocks
 //   detach <cwd> <log> <pidfile> <command>  runs the command in its own session, output to log; writes its pid
 //   entries <file> <key>                    one "name<TAB>value" line per entry of the object at that top-level key
-//   unowned <file> <task-id>                paths on stdin, one per line; prints those the task may not change
+//   unowned <file> <task-id>                NUL-separated paths on stdin; prints those the task may not change
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -338,9 +338,9 @@ function cmdUnowned(p, tid) {
   const owns = Array.isArray(task.owns) ? task.owns : [];
   const shared = Array.isArray(omap.shared) ? omap.shared : [];
   const allowed = owns.concat([".idleflow-run/**"], shared);
-  // paths come NUL-separated (`git diff -z --name-only`), so none is quoted
-  for (const raw of fs.readFileSync(0, "utf8").split("\0")) {
-    const rel = raw.replace(/\\/g, "/");
+  // paths come NUL-separated (`git diff -z --name-only`), so none is quoted. git separates folders
+  // with `/` on every OS; a `\` is part of a name and is kept, or `src\x.py` would pass as `src/x.py`.
+  for (const rel of fs.readFileSync(0, "utf8").split("\0")) {
     if (rel && !globMatch(WIN ? rel.toLowerCase() : rel, allowed)) process.stdout.write(rel + "\n");
   }
 }

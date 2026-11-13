@@ -15,7 +15,7 @@ Subcommands:
   guard                                   hook: payload on stdin; exit 2 blocks
   detach <cwd> <log> <pidfile> <command>  runs the command in its own session, output to log; writes its pid
   entries <file> <key>                    one "name<TAB>value" line per entry of the object at that top-level key
-  unowned <file> <task-id>                paths on stdin, one per line; prints those the task may not change
+  unowned <file> <task-id>                NUL-separated paths on stdin; prints those the task may not change
 """
 import json
 import os
@@ -347,9 +347,9 @@ def cmd_unowned(path, tid):
         sys.stderr.write("idleflow.py: task %s is not in %s\n" % (tid, path))
         sys.exit(1)
     allowed = list(task.get("owns") or []) + [".idleflow-run/**"] + list(omap.get("shared") or [])
-    # paths come NUL-separated (`git diff -z --name-only`), so none is quoted
+    # paths come NUL-separated (`git diff -z --name-only`), so none is quoted. git separates folders
+    # with `/` on every OS; a `\` is part of a name and is kept, or `src\x.py` would pass as `src/x.py`.
     for rel in sys.stdin.buffer.read().decode("utf-8", "replace").split("\0"):
-        rel = rel.replace("\\", "/")
         if rel and not glob_match(rel.lower() if WIN else rel, allowed):
             print(rel)
 

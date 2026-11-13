@@ -167,6 +167,9 @@ odd="$(printf 'src/a"b\\c\td.py')"
 printf 'x\ny\n' > "$wt/$odd"; ( cd "$wt" && git add -- "$odd" && commit -m "T1: odd name" )
 check "unowned reads any file name as it is"      '[ -z "$(bash "$RUN" unowned T1)" ]'
 check "the gate names any file as it is"          'bash "$RUN" gate T1 | grep -qF "\"src/a\\\"b\\\\c\\td.py\",2"'
+bs="$(printf 'src\\x.py')"; echo z > "$wt/$bs"; ( cd "$wt" && git add -- "$bs" && commit -m "T1: backslash" )
+check "a backslash in a name is not a folder"     '[ "$(bash "$RUN" unowned T1)" = "$bs" ]'
+( cd "$wt" && git reset -q --hard HEAD~1 )
 printf '3\t1\t\0old/x.py\0new/x.py\0' > "$scratch/ns-rename"
 check "the gate reads a rename record as the new path" 'idleflow_rt gate 10 5 "$scratch/ns-rename" "$scratch/ns-rename" | grep -qF "\"files\":1," && idleflow_rt gate 10 5 "$scratch/ns-rename" "$scratch/ns-rename" | grep -qF "[[\"new/x.py\",4]]"'
 ( cd "$wt" && git reset -q --hard HEAD~1 )
