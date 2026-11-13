@@ -66,6 +66,7 @@ For work a person sees (the classifier reports `ui: true`, or `STEP_DESIGN=on`),
 | Design | designer before planning and a design reviewer on `ui` tasks; a lasting design system per repo | `STEP_DESIGN`, `agents/designer.md`, `agents/review-design.md`, `procedures/design.md` |
 | Placeholders | code that cannot do its job yet fails loudly; a plausible default is a blocking finding | implementer, correctness reviewer |
 | Checkable findings | each review finding says whether a deterministic check would have caught it; repeats become a lesson | reviewers, `agents/retro.md` |
+| Unverified checks | a check that cannot decide for a cause outside the task is listed, never passed and never retried; an environment cause asks the human, a CI job still owed goes into the run's reports | `agents/review-correct.md`, `agents/review-design.md`, plan `verify: ci <job name>`, `commands/feature.md` §5 and §7 |
 | Lessons | per repo, `.idleflow/lessons.md` or `docs/lessons.md` (`lessons_in:`), ≤1 per run | `agents/retro.md`, `run.sh path lessons` |
 | Metrics | `.idleflow/runs/log.jsonl` per run; the time log (estimate against actual lines, minutes and reported tokens per task, with why) feeds the planner's estimates | `scripts/run.sh finish`, `time_log`, `agents/retro.md` |
 | Priority | quality > tokens > time | retry on Opus; `opus` allowed per task; critics on Opus |

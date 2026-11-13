@@ -35,7 +35,7 @@ owns:                         # globs; no overlap with other tasks in the same g
 entry_points:
   - src/path/file.py: <function/class>
 acceptance:
-  - A1: <observable behaviour>  → verify: <command or test name>
+  - A1: <observable behaviour>  → verify: <command or test name | ci <job name>, only for what needs a service the run cannot start>
   - A2: ...
 notes: <anything the implementer must know that context.md doesn't say; max 5 lines>
 
