@@ -195,6 +195,24 @@ author_slug() { git config user.name 2>/dev/null | tr 'A-Z' 'a-z' | tr -cs 'a-z0
 DOC_START_RE='^<!-- idleflow:generated ([a-z-]+) -->$'
 DOC_END='<!-- idleflow:end -->'
 md_code() { printf '%s' "$1" | tr '`' "'"; }
+# The Markdown files run.sh docs keeps, one per line. `generated_docs:` in conventions names them
+# (`none` for no file); unset means every tracked Markdown file with a block, plus idleflow's own
+# records (the index, the progress file, CLAUDE.md), which a repo may keep out of git.
+generated_doc_files() {
+  local v f list
+  v="$(conventions_value generated_docs)"
+  case "$v" in
+    none) return 0;;
+    ""|unset) { "${G[@]}" grep -l -e '<!-- idleflow:generated ' -- '*.md' 2>/dev/null || true; printf '%s\n' "$(index_rel)" "$(progress_rel)" CLAUDE.md; };;
+    *) read -ra list <<< "$v"
+       for f in "${list[@]}"; do
+         case "$f" in /*|*..*) echo "[idleflow] generated_docs: skipped '$f' (not a path inside the repo)" >&2;; *) echo "$f";; esac
+       done;;
+  esac | LC_ALL=C sort -u | while IFS= read -r f; do
+    [ -f "$REPO/$f" ] && grep -q '<!-- idleflow:generated ' "$REPO/$f" && echo "$f"
+  done
+  return 0
+}
 
 gen_files() { # $1: the block's current text; descriptions written there are kept
   local e desc
@@ -246,7 +264,7 @@ gen_runs() { # the last ten idleflow runs merged here, newest first, from both m
 }
 gen_settings() {
   local k v
-  for k in mode docs lessons_in progress_file index_file index_rewrite sessions_dir session_names time_log shared_files \
+  for k in mode docs lessons_in progress_file index_file index_rewrite sessions_dir session_names time_log shared_files generated_docs \
            worktrees_in worktree_setup commit_format gate gate_quick gate_runs preview preview_url language tone; do
     v="$(conventions_value "$k")"; [ -n "$v" ] && echo "- \`$k\`: $(md_code "$v")"
   done
@@ -637,7 +655,7 @@ JSON
     # Regenerates every generated block in the repo's Markdown; --check only reports stale ones (exit 1).
     mode="${1:-write}"; cd "$REPO"
     stale=(); changed=()
-    files="$({ "${G[@]}" grep -l -e '<!-- idleflow:generated ' -- '*.md' 2>/dev/null || true; } | LC_ALL=C sort -u)"
+    files="$(generated_doc_files)"
     tmp_doc="$(mktemp)"; tmp_block="$(mktemp)"
     while IFS= read -r f; do
       [ -n "$f" ] && [ -f "$f" ] || continue

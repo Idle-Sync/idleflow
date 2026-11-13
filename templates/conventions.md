@@ -83,8 +83,13 @@ sessions_dir: docs/sessions
 session_names: time-author
 time_log: .idleflow/time-log.md
 shared_files: none
+generated_docs: unset
 
 - `progress_file`, `index_file`, `sessions_dir`, `time_log`: relative paths inside the repo.
+- `generated_docs`: the Markdown files whose generated blocks `run.sh docs` keeps, space-separated,
+  or `none`. Unset means every tracked Markdown file with a block, plus the index, the progress file
+  and `CLAUDE.md` even when they are kept out of git. Name the files when the repo also holds
+  Markdown whose markers are content, such as a template it ships.
 - `index_rewrite`: `yes` lets the retro rewrite the index after a run; `no` leaves it to the
   repo's own process (tasks add their rows through `shared_files`).
 - `session_names`: `time-author` (`s_<YYYYMMDD-HHMM>-<author>.md`, safe with several writers),
