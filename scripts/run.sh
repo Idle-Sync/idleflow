@@ -405,21 +405,23 @@ without_agent_markers() { unset "${AGENT_MARKERS[@]}"; }
 # one-character fix within the same second) would run the old code. Every repo command therefore
 # starts with no bytecode for the checkout's own sources (the .py files git tracks or would add). It
 # is deleted rather than redirected with PYTHONPYCACHEPREFIX, which tox and `python -I` drop. The
-# list comes from git, so installed packages keep their bytecode, the walk costs no more than
-# reading the index, and a .pyc the repo itself tracks is never touched.
+# list comes from git (submodules included), so installed packages keep their bytecode, the walk
+# costs no more than reading the index, and a .pyc the repo itself tracks is never touched. A file it
+# cannot remove is named on stderr and the command still runs.
 clear_bytecode() { # clear_bytecode <checkout>
   local f dir stem pyc rel tracked
-  tracked="$(git -C "$1" ls-files -z -- '*.pyc' | tr '\0' '\n')"
-  git -C "$1" ls-files -z -co --exclude-standard -- '*.py' | while IFS= read -r -d '' f; do
+  tracked="$(git -C "$1" ls-files -z --recurse-submodules -- '*.pyc' | tr '\0' '\n')" || true
+  { git -C "$1" ls-files -z --recurse-submodules -- '*.py'; git -C "$1" ls-files -z -o --exclude-standard -- '*.py'; } |
+  while IFS= read -r -d '' f; do
     dir="${f%/*}"; [ "$dir" = "$f" ] && dir=.
     stem="${f##*/}"; stem="${stem%.py}"
     for pyc in "$1/$dir/__pycache__/$stem".*.pyc; do
       [ -f "$pyc" ] || continue
       rel="${pyc#"$1"/}"; rel="${rel#./}"
       case $'\n'"$tracked"$'\n' in *$'\n'"$rel"$'\n'*) continue;; esac
-      rm -f -- "$pyc"
+      rm -f -- "$pyc" || echo "[idleflow] could not remove stale bytecode: $pyc" >&2
     done
-  done
+  done || true
 }
 
 # Runs a command for a task: in its worktree, with its port and temp folder and no stale bytecode.

@@ -498,6 +498,12 @@ if [ "$py_ok" = yes ]; then
   bash "$RUN" exec TA -- true >/dev/null 2>&1
   check "exec leaves bytecode the repo tracks alone" '[ -f "$wa/pkg/__pycache__/kept.cpython-0.pyc" ] && [ -z "$(git -C "$wa" status --porcelain --untracked-files=no)" ]'
   git -C "$wa" reset -q --hard HEAD~1
+  if [ "$(id -u)" != 0 ]; then
+    mkdir -p "$wa/pkg/__pycache__"; : > "$wa/pkg/stuck.py"; : > "$wa/pkg/__pycache__/stuck.cpython-0.pyc"; chmod a-w "$wa/pkg/__pycache__"
+    out="$(bash "$RUN" exec TA -- echo ran 2>&1)"
+    check "bytecode exec cannot remove is named and the command still runs" 'echo "$out" | grep -q "could not remove stale bytecode: .*stuck.cpython-0.pyc" && echo "$out" | grep -qx ran'
+    chmod u+w "$wa/pkg/__pycache__"; rm -f "$wa/pkg/stuck.py" "$wa/pkg/__pycache__/stuck.cpython-0.pyc"; rmdir "$wa/pkg/__pycache__" "$wa/pkg"
+  fi
 fi
 [ ! -f .idleflow/idleflow.conf ] || cp .idleflow/idleflow.conf "$scratch/conf.bak"
 printf 'EXEC_WAIT_SECONDS=1\n' >> .idleflow/idleflow.conf
