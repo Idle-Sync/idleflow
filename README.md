@@ -182,8 +182,8 @@ commands/customize.md           per-project settings, step toggles, agent models
 commands/doctor.md              check the repo's idleflow setup and for a newer release; offers the safe fixes
 agents/                         one file per role; frontmatter sets the model
 hooks/hooks.json                PreToolUse → ownership-guard
-scripts/run.sh                  run lifecycle: new / wt / own / get / set / inc / report / gate / merge / snapshot / finish / loc / conf,
-                                plus path / migrate / doctor / update-check / detect / repo-gate / commands / approve /
+scripts/run.sh                  run lifecycle: new / wt / own / get / set / inc / report / keep / gate / merge / snapshot / finish / loc /
+                                conf, plus path / migrate / doctor / update-check / detect / repo-gate / commands / approve /
                                 session-name / behind / team-install / custom / agent (`bash scripts/run.sh` lists them)
 scripts/diff-gate.sh            counts hand-written code lines vs base, emits JSON verdict
 scripts/ownership-guard.sh      the hook; blocks edits outside a task's globs
