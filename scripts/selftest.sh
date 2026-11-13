@@ -186,10 +186,10 @@ bash "$RUN" wt rm "Té"
 
 echo "--- kill guard"
 KILLG="$HERE/kill-guard.sh"
-kill_rc() { # kill_rc <command> [cwd] -> exit code of the hook; the cwd defaults to task T1's worktree
+kill_rc() { # kill_rc <command> [cwd] [project dir] -> exit code of the hook; the cwd defaults to task T1's worktree
   local j c; j="$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')"; j="${j//$'\n'/\\n}"
   c="$(native "${2:-$wt}" | sed 's/\\/\\\\/g; s/"/\\"/g')"
-  printf '{"cwd":"%s","tool_input":{"command":"%s"}}' "$c" "$j" | bash "$KILLG" 2>/dev/null; echo $?
+  printf '{"cwd":"%s","tool_input":{"command":"%s"}}' "$c" "$j" | CLAUDE_PROJECT_DIR="${3:-}" bash "$KILLG" 2>/dev/null; echo $?
 }
 for c in 'pkill -f "docker ps --format"' 'killall node' 'sudo pkill vite' 'ls; pkill -9 x' 'kill $(pgrep -f vite)' 'pgrep -f x | xargs kill' 'fuser -k 4321/tcp' \
          "$(printf 'ls\npkill x')" 'sudo -u root pkill x' 'if true; then pkill x; fi' '/usr/bin/pkill x' 'timeout 5 pkill x' 'nohup pkill x &' \
@@ -217,6 +217,7 @@ check "the kill guard refuses a command too long to check" '[ "$(kill_rc "echo $
 check "the kill guard acts in the main checkout of an active run" '[ "$(kill_rc "pkill -f vite" "$d")" = 2 ]'
 check "outside any idleflow run the kill guard allows a pattern kill" '[ "$(kill_rc "pkill -f vite" /nowhere)" = 0 ] && [ "$(kill_rc "kill \$(lsof -ti :3000)" /nowhere)" = 0 ]'
 check "outside any idleflow run the kill guard allows a long command" '[ "$(kill_rc "echo $(printf "%0100001d" 0)" /nowhere)" = 0 ]'
+check "a cd out of the run leaves the guard on for the run's session" '[ "$(kill_rc "pkill -f vite" /nowhere "$(native "$d")")" = 2 ]'
 kg_start=$(date +%s); kg_rc=$(kill_rc "$(printf "%099999d" 0 | tr 0 "(")"); kg_secs=$(( $(date +%s) - kg_start ))
 check "the kill guard gives up on a run of 99999 '(' within its time" "[ $kg_rc = 2 ] && [ $kg_secs -lt 8 ]"
 check "the kill guard is a Bash hook" 'grep -q "kill-guard.sh" "$HERE/../hooks/hooks.json" && idleflow_rt get "$HERE/../hooks/hooks.json" hooks.PreToolUse | grep -q "\"matcher\":\"Bash\""'

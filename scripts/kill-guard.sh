@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # PreToolUse hook on Bash.
 #
-# Inside an idleflow run (the main checkout of an active run, or one of its task worktrees),
+# Inside an idleflow run (the session's project folder or its cwd is the main checkout of an active
+# run, or one of its task worktrees),
 # refuses a command that ends processes by name or pattern (pkill, killall, kill $(pgrep ...),
 # pgrep ... | xargs kill, fuser -k): those match every process on the machine with that text,
 # including other Claude Code sessions' work. A kill by a PID the agent kept is allowed. A plugin's

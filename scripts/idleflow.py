@@ -854,8 +854,10 @@ def cmd_killguard():
         sys.exit(0)
     # A plugin's hooks run in every session on the machine; this one acts only inside an idleflow
     # run (the main checkout of an active run or one of its task worktrees), as the ownership
-    # guard does, and leaves every other session's commands alone.
-    if find_map(payload.get("cwd") or os.getcwd()) is None:
+    # guard does, and leaves every other session's commands alone. The session's project folder
+    # counts as well as the shell's cwd, so a cd out of the run does not turn the guard off.
+    places = [payload.get("cwd") or os.getcwd(), os.environ.get("CLAUDE_PROJECT_DIR") or ""]
+    if all(not p or find_map(p) is None for p in places):
         sys.exit(0)
     why = kill_by_pattern(cmd) if isinstance(cmd, str) else ""
     if why == "complex":

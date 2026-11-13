@@ -769,8 +769,10 @@ function cmdKillguard() {
   } catch {
     process.exit(0);
   }
-  // only inside an idleflow run, as the ownership guard; see cmd_killguard in idleflow.py
-  if (!payload || findMap(payload.cwd || process.cwd()) === null) process.exit(0);
+  // only inside an idleflow run, from the cwd or the session's project folder; see cmd_killguard
+  if (!payload) process.exit(0);
+  const places = [payload.cwd || process.cwd(), process.env.CLAUDE_PROJECT_DIR || ""];
+  if (places.every((p) => !p || findMap(p) === null)) process.exit(0);
   const cmd = (payload.tool_input || {}).command;
   const why = typeof cmd === "string" ? killByPattern(cmd) : "";
   if (why === "complex") {
