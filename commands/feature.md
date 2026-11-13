@@ -64,7 +64,7 @@ Then, in this order: **R2** (project docs) from `procedures/repo-setup.md`; step
 
 ### 2a. Ground the docs (Sonnet) — when `docs: yes` and not greenfield (or `STEP_DOC_KEEPER` says otherwise)
 
-Spawn `idleflow:doc-keeper` with the repo root and the absolute paths of `progress.md`, `index.md`, `prd.md`, `CLAUDE.md`, `README.md`, `docs/`, `.idleflow/conventions.md`. It checks every claim in the docs against the code, fixes stale ones, and commits `docs: ground stale claims`. Nothing else starts until it replies. Repeat its one-line reply to the human verbatim; carry any `unchecked:` items into the final message.
+Spawn `idleflow:doc-keeper` with the repo root and the absolute paths of `progress.md`, `index.md`, `prd.md`, `CLAUDE.md`, `README.md`, `docs/`, `.idleflow/conventions.md`. It checks every claim in the docs against the code, fixes stale ones one sentence at a time, and commits `docs: ground stale claims`. Nothing else starts until it replies. Repeat its reply to the human verbatim (the count line and one line per fixed sentence); carry any `unchecked:` items into the final message.
 
 ### 2c. Design (Opus) — when `ui: true` or `STEP_DESIGN=on`, never when `STEP_DESIGN=off`
 
