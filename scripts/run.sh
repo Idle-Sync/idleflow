@@ -89,19 +89,22 @@ active_id() {
   echo "$id"
 }
 
-# A path from the conventions that stays inside the repo: not absolute (/, ~, a drive letter), no
-# `..` folder, and only characters that need no quoting. Prints it without a leading ./ or a trailing
-# /, or fails. Dot folders such as .idleflow/ and .github/ are inside the repo like any other.
+# A path from the conventions that stays inside the repo's files: not absolute (/, ~, a drive letter),
+# no `..` folder, nothing under `.git` (hooks there run code), no leading `-` (a command would read it
+# as an option), and only characters that need no quoting. Prints it without a leading ./ or a
+# trailing /, or fails. Other dot folders such as .idleflow/ and .github/ are fine.
 # repo_relative_path <path> [extra allowed characters, e.g. '*' for globs]
 repo_relative_path() {
   local p="${1#./}" extra="${2:-}" part
   p="${p%/}"
   [ -n "$p" ] || return 1
-  case "$p" in /*|'~'*|[A-Za-z]:*) return 1;; esac
+  case "$p" in /*|'~'*|-*|[A-Za-z]:*) return 1;; esac
   [[ "$p" =~ ^[A-Za-z0-9_./${extra}-]+$ ]] || return 1
   local -a parts
   IFS=/ read -ra parts <<< "$p"
-  for part in "${parts[@]}"; do [ "$part" != .. ] || return 1; done
+  for part in "${parts[@]}"; do
+    case "$(printf '%s' "$part" | tr '[:upper:]' '[:lower:]')" in ..|.git|.git.*) return 1;; esac
+  done
   echo "$p"
 }
 # A repo can keep its records where it already keeps them (conventions "Records"). A value must be
