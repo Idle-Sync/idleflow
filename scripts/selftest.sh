@@ -19,8 +19,9 @@
 # fields; ignore rules go through run.sh ignore; the `repo` readability mode is
 # offered and enforced). Exit 0 and a final "PASS" line mean everything worked.
 
-# Every check's test is single-quoted on purpose, so check() expands it when it runs.
-# shellcheck disable=SC2016
+# Every check's test is single-quoted on purpose, so check() expands it when it runs: shellcheck
+# then sees neither the expansion (SC2016) nor the variables the test reads (SC2034).
+# shellcheck disable=SC2016,SC2034
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUN="$HERE/run.sh"
