@@ -277,6 +277,9 @@ check "merged file on main"            '[ -f src/code.py ]'
 check "merge takes commits, never uncommitted work" '[ ! -e src/generated.py ] && [ "$(cat src/code.py)" = "$(printf "x\ny\nz")" ] && grep -q "not merged: .*src/generated.py" "$scratch/merge.err"'
 check "merge leaves untracked caches out" '[ ! -e .pytest_cache ] && ! git ls-files | grep -q pytest_cache'
 check "merge keeps the human identity" '[ "$(git log -1 --format=%an)" = "Human" ]'
+bash "$RUN" wt add TL > "$scratch/wl" 2>/dev/null
+check "a task added after a merge branches from it"  '[ "$(bash "$RUN" get tasks.TL.base_sha)" = "$(git rev-parse HEAD)" ] && [ -f "$(cat "$scratch/wl")/src/code.py" ]'
+bash "$RUN" wt rm TL
 bash "$RUN" set tasks.NOPE.status '"approved"'
 check "merge of unknown branch exits 4" 'bash "$RUN" merge NOPE >/dev/null 2>&1; [ $? -eq 4 ]'
 check "guard blocks .claude/settings.json while building" 'bash "$RUN" set tasks.T2.status "\"building\""; r=$(guard_rc "$dn/.claude/settings.json" "$dn"); bash "$RUN" set tasks.T2.status "\"approved\""; [ "$r" = "2" ]'
