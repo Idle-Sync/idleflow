@@ -465,6 +465,7 @@ bash "$RUN" wt add TA >/dev/null 2>&1
 check "a re-added task keeps its port"         '[ "$(bash "$RUN" get tasks.TA.port)" = 4400 ]'
 out="$(bash "$RUN" exec TA -- sh -c 'echo "$IDLEFLOW_TASK $IDLEFLOW_PORT"; echo "$TMPDIR"; pwd')"
 check "exec runs in the worktree with the task's port and temp folder" '[ "$(echo "$out" | sed -n 1p)" = "TA 4400" ] && echo "$out" | sed -n 2p | grep -q "/tasks/TA/tmp$" && [ "$(echo "$out" | sed -n 3p)" = "$(cd "$wa" && pwd)" ]'
+check "exec runs the command without the agent's markers" '[ "$(CLAUDECODE=1 AI_AGENT=claude CLAUDE_CODE_ENTRYPOINT=cli bash "$RUN" exec TA -- sh -c "echo \${CLAUDECODE-none} \${AI_AGENT-none} \${CLAUDE_CODE_ENTRYPOINT-none}")" = "none none none" ]'
 check "exec passes the command's exit code"    'bash "$RUN" exec TA -- sh -c "exit 3"; [ $? = 3 ]'
 inside="$(cd "$wa" && bash "$RUN" exec TA -- sh -c 'echo "$IDLEFLOW_PORT"')"
 check "exec works from inside the task worktree" "[ '$inside' = 4400 ]"

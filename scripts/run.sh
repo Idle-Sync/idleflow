@@ -366,12 +366,18 @@ allocate_port() { # allocate_port <task-id>
   while printf '%s\n' "$used" | grep -qx "$(( ${PORT_BASE:-4400} + n ))"; do n=$((n + 1)); done
   echo $(( ${PORT_BASE:-4400} + n ))
 }
+# The repo's own commands (setup, gate, tests, preview) run as they would for a person or in CI.
+# Tools change behaviour when they see they run under an agent (Astro's preview detaches, for one),
+# so the variables that say so are removed from every repo command's environment here.
+AGENT_MARKERS=(CLAUDECODE CLAUDE_CODE CLAUDE_CODE_ENTRYPOINT AI_AGENT)
+without_agent_markers() { unset "${AGENT_MARKERS[@]}"; }
+
 # Runs a command for a task: in its worktree, with its port and temp folder.
 in_task() { # in_task <task-id> <dir> <command...>
   local tid="$1" dir="$2" port tmp rc=0; shift 2
   port="$(task_port "$tid")"; tmp="$(task_tmp "$tid")"; mkdir -p "$tmp"
   # the caller decides what a failure means; errexit is left as the caller set it
-  (cd "$dir" && MAIN="$REPO" IDLEFLOW_TASK="$tid" IDLEFLOW_PORT="$port" IDLEFLOW_TMP="$tmp" TMPDIR="$tmp" "$@") || rc=$?
+  (cd "$dir" && without_agent_markers && MAIN="$REPO" IDLEFLOW_TASK="$tid" IDLEFLOW_PORT="$port" IDLEFLOW_TMP="$tmp" TMPDIR="$tmp" "$@") || rc=$?
   return "$rc"
 }
 
@@ -387,7 +393,7 @@ run_worktree_setup() { # run_worktree_setup <task-id> <worktree>
   fi
   log="$ACTIVE/tasks/$1/setup.log"
   echo "worktree setup ($1): $cmd" >&2
-  if ! (cd "$2" && MAIN="$REPO" WORKTREE="$2" bash -c "$cmd") > "$log" 2>&1; then
+  if ! (cd "$2" && without_agent_markers && MAIN="$REPO" WORKTREE="$2" bash -c "$cmd") > "$log" 2>&1; then
     echo "worktree setup failed for $1 (full output: $(native_path "$log")):" >&2
     tail -20 "$log" >&2
     exit 6
@@ -963,7 +969,7 @@ Task: $tid")
     started="$(date +%s)"
     set +e
     case "$target" in
-      base|main) (cd "$dir" && MAIN="$REPO" bash -c "$cmd") > "$log" 2>&1;;
+      base|main) (cd "$dir" && without_agent_markers && MAIN="$REPO" bash -c "$cmd") > "$log" 2>&1;;
       *) in_task "$target" "$dir" bash -c "$cmd" > "$log" 2>&1;;
     esac
     rc=$?
@@ -1002,8 +1008,9 @@ Task: $tid")
     mkdir -p "$ACTIVE/tasks/$tid"
     echo "preview ($tid): $cmd" >&2
     mkdir -p "$(task_tmp "$tid")"
-    MAIN="$REPO" IDLEFLOW_TASK="$tid" IDLEFLOW_PORT="$port" IDLEFLOW_TMP="$(task_tmp "$tid")" TMPDIR="$(task_tmp "$tid")" \
-      idleflow_rt detach "$dir" "$ACTIVE/tasks/$tid/preview.log" "$pidf" "$cmd"
+    ( without_agent_markers
+      MAIN="$REPO" IDLEFLOW_TASK="$tid" IDLEFLOW_PORT="$port" IDLEFLOW_TMP="$(task_tmp "$tid")" TMPDIR="$(task_tmp "$tid")" \
+        idleflow_rt detach "$dir" "$ACTIVE/tasks/$tid/preview.log" "$pidf" "$cmd" )
     echo "preview $tid: serving at $url (log: $(native_path "$ACTIVE/tasks/$tid/preview.log"); stop with: run.sh preview $tid stop)"
     ;;
   commands)
