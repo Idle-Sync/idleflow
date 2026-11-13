@@ -60,7 +60,7 @@ For work a person sees (the classifier reports `ui: true`, or `STEP_DESIGN=on`),
 | Sizing | Haiku reports size, risk and new dependency; size sets implementers and reviewers, risk (or size L) the debate, a new dependency the stack and library research; an S overrun adds the conformance reviewer | `agents/classifier.md`, `SIZE_*` in conf |
 | Fan-out | ≤4 implementers, partitioned by file globs, Sonnet default / Opus when plan says | `MAX_IMPLEMENTERS`, `model:` per task in plan |
 | Diff gate | 1500 code lines per task (+300 slack); `.md`, `.txt`, lockfiles, generated excluded | `DIFF_LIMIT`, `DIFF_SLACK`, `DIFF_EXCLUDE` |
-| Retry | one per task, on Opus, then stop and ask; a reject whose findings need only a report fix, a reworded message or a small edit takes one cheaper round of that kind instead, and a widened ownership map is never a retry | `MAX_RETRIES`, steps 5 and 7 of `commands/feature.md` |
+| Retry | one per task, on Opus, then stop and ask; a reject whose findings need only a reworded message, a report fix or a small edit takes a cheaper round instead (up to two per task), and a widened ownership map is never a retry | `MAX_RETRIES`, steps 5 and 7 of `commands/feature.md` |
 | Findings on approved tasks | counted in `review_findings`, and listed in the run's final message so the human can fix them or file a follow-up | reviewers, `run.sh findings` |
 | Tests | `tests_first: true` forced wherever entry points have no tests | planner §3, conformance reviewer §4 |
 | Mutation sweep | implementers break their own change on purpose; a fault no test catches needs a test or a reason | `STEP_MUTATION`, plan `mutation:`, implementer, correctness reviewer |

@@ -287,16 +287,20 @@ echo "--- reword / findings"
 first="$(git -C "$wt" rev-parse HEAD~1)"; second="$(git -C "$wt" rev-parse HEAD)"; tree="$(git -C "$wt" rev-parse "HEAD^{tree}")"
 author="$(git -C "$wt" log -1 --format='%an <%ae> %ad' "$first")"
 printf 'T1: add the code\n\nTask: T1\n' > "$scratch/m1"; printf "T1: add the big file, it's \"quoted\"\n" > "$scratch/m2"
-check "reword refuses a commit outside the task" '! bash "$RUN" reword T1 "$(git rev-parse HEAD)" "$scratch/m1" 2>/dev/null && ! bash "$RUN" reword T1 "$first" "$scratch/none" 2>/dev/null && ! bash "$RUN" reword T1 "$first" 2>/dev/null'
+printf '\n  \n' > "$scratch/blank"
+check "reword refuses a commit outside the task, a blank message, a sha twice" '! bash "$RUN" reword T1 "$(git rev-parse HEAD)" "$scratch/m1" 2>/dev/null && ! bash "$RUN" reword T1 "$first" "$scratch/none" 2>/dev/null && ! bash "$RUN" reword T1 "$first" 2>/dev/null && ! bash "$RUN" reword T1 "$first" "$scratch/blank" 2>/dev/null && ! bash "$RUN" reword T1 "$first" "$scratch/m1" "$first" "$scratch/m2" 2>/dev/null && [ "$(git -C "$wt" rev-parse HEAD)" = "$second" ]'
 bash "$RUN" reword T1 "$first" "$scratch/m1" "$second" "$scratch/m2" >/dev/null
 check "reword gives every flagged commit its message, older ones too" '[ "$(git -C "$wt" log -1 --format=%B HEAD~1)" = "$(cat "$scratch/m1")" ] && [ "$(git -C "$wt" log -1 --format=%s HEAD)" = "$(head -n1 "$scratch/m2")" ] && [ "$(git -C "$wt" rev-list --count "$(bash "$RUN" get tasks.T1.base_sha)..HEAD")" = 2 ]'
 check "reword changes no file, author or uncommitted work" '[ "$(git -C "$wt" rev-parse HEAD^{tree})" = "$tree" ] && [ "$(git -C "$wt" log -1 --format="%an <%ae> %ad" HEAD~1)" = "$author" ] && ! git -C "$wt" diff --quiet -- src/code.py && [ -f "$wt/src/generated.py" ]'
 printf 'verdict: approve\nremedy: none\nfindings:\n### F1. A weak assertion   severity: minor\n### F2. A leak on the error path   severity: major\n' > .idleflow/runs/active/review/T1-correct.md
 printf '### F9. Fixed since   severity: blocking\n' > .idleflow/runs/active/review/T1-correct.1.md
 printf '### F1. Not this task   kind: convention\n' > .idleflow/runs/active/review/T10-conform.md
+printf '### F1. Nor this one   kind: convention\n' > .idleflow/runs/active/review/T1-ui-conform.md
+printf '### D1. A dotted task id   severity: minor\n' > .idleflow/runs/active/review/T1.2-design.md
 f="$(bash "$RUN" findings T1)"
-check "findings lists the current reviews' findings only" '[ "$(echo "$f" | wc -l | tr -d " ")" = 2 ] && echo "$f" | grep -qx "T1: F2. A leak on the error path   severity: major (review/T1-correct.md)" && ! echo "$f" | grep -q "F9\|Not this task"'
-rm .idleflow/runs/active/review/T1-correct.md .idleflow/runs/active/review/T1-correct.1.md .idleflow/runs/active/review/T10-conform.md
+check "findings lists the current reviews' findings only" '[ "$(echo "$f" | wc -l | tr -d " ")" = 2 ] && echo "$f" | grep -qx "T1: F2. A leak on the error path   severity: major (review/T1-correct.md)" && ! echo "$f" | grep -q "F9\|Not this task\|Nor this one"'
+check "findings reads a dotted task id's current review" '[ "$(bash "$RUN" findings T1.2)" = "T1.2: D1. A dotted task id   severity: minor (review/T1.2-design.md)" ]'
+rm .idleflow/runs/active/review/T1-correct.md .idleflow/runs/active/review/T1-correct.1.md .idleflow/runs/active/review/T10-conform.md .idleflow/runs/active/review/T1-ui-conform.md .idleflow/runs/active/review/T1.2-design.md
 
 echo "--- merge, then a second group gates against its own base"
 check "merge refuses an unapproved task" 'bash "$RUN" merge T1 >/dev/null 2>&1; [ $? -eq 4 ]'

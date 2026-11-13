@@ -816,7 +816,8 @@ JSON
     while [ "$#" -gt 0 ]; do
       full="$("${W[@]}" rev-parse -q --verify "$1^{commit}")" || { echo "reword: $1 is not a commit" >&2; exit 1; }
       case "$range" in *" $full "*) ;; *) echo "reword: $1 is not one of $tid's commits ($base..HEAD)" >&2; exit 1;; esac
-      [ -s "$2" ] || { echo "reword: $2 is empty or missing" >&2; exit 1; }
+      case "$flagged" in *" $full "*) echo "reword: $1 is named twice" >&2; exit 1;; esac
+      if [ ! -f "$2" ] || ! grep -q '[^[:space:]]' "$2"; then echo "reword: $2 is missing or holds no message" >&2; exit 1; fi
       flagged="$flagged$full "; messages+=("$full=$2"); shift 2
     done
     tmp="$(task_tmp "$tid")/reword.msg"; mkdir -p "${tmp%/*}"
@@ -842,10 +843,9 @@ JSON
     active_id >/dev/null
     for tid in "$@"; do
       check_task_id "$tid"
-      for f in "$ACTIVE/review/$tid"-*.md; do
+      for kind in correct conform design; do
+        name="$tid-$kind.md"; f="$ACTIVE/review/$name"
         [ -f "$f" ] || continue
-        name="${f##*/}"
-        case "$name" in *.[0-9]*.md) continue;; esac
         tr -d '\r' < "$f" | R="review/$name" T="$tid" awk '/^### [FD][0-9]+\. / { sub(/^### /, ""); print ENVIRON["T"] ": " $0 " (" ENVIRON["R"] ")" }'
       done
     done
