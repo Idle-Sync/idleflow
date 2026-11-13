@@ -206,6 +206,16 @@ gen_files() { # $1: the block's current text; descriptions written there are kep
 gen_commands() {
   local pm=npm k v c
   [ -f pnpm-lock.yaml ] && pm=pnpm; [ -f yarn.lock ] && pm=yarn; { [ -f bun.lock ] || [ -f bun.lockb ]; } && pm=bun
+  # first the install a fresh clone runs, as its lockfile pins it
+  if [ -f pnpm-lock.yaml ]; then echo "- \`pnpm install --frozen-lockfile\` — install (pnpm-lock.yaml)"
+  elif [ -f yarn.lock ]; then echo "- \`yarn install --frozen-lockfile\` — install (yarn.lock)"
+  elif [ -f bun.lock ] || [ -f bun.lockb ]; then echo "- \`bun install --frozen-lockfile\` — install (bun lockfile)"
+  elif [ -f package-lock.json ]; then echo "- \`npm ci\` — install (package-lock.json)"; fi
+  if [ -f uv.lock ]; then echo "- \`uv sync --frozen\` — install (uv.lock)"
+  elif [ -f poetry.lock ]; then echo "- \`poetry install\` — install (poetry.lock)"
+  elif [ -f requirements.txt ]; then echo "- \`pip install -r requirements.txt\` — install (requirements.txt)"; fi
+  [ -f Cargo.lock ] && echo "- \`cargo build --locked\` — install and build (Cargo.lock)"
+  [ -f go.sum ] && echo "- \`go mod download\` — install (go.sum)"
   if [ -f package.json ]; then
     while IFS=$'\t' read -r k v; do
       case "$pm" in npm|bun) c="$pm run $k";; *) c="$pm $k";; esac

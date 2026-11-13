@@ -110,16 +110,17 @@ words). Internal ids (T2, R3, C1) are never shown on their own in any tone.
 How idleflow fits a repo that already has its own rules. Unset or missing lines keep idleflow's
 defaults. A command here (`worktree_setup`, `gate`) runs only as committed, and only after each
 person approved that exact text on their own clone (`run.sh approve <key>`, kept in local git
-config); a changed command is asked about again.
+config); a changed command is asked about again. `unset` means nobody has decided yet, so setup and
+the end of a run may propose one; `none` means the repo has decided to go without.
 
 worktrees_in: sibling
-worktree_setup: none
+worktree_setup: unset
 commit_format: idleflow
-gate: none
-gate_quick: none
+gate: unset
+gate_quick: unset
 gate_runs: every-task
-preview: none
-preview_url: none
+preview: unset
+preview_url: unset
 
 - `worktrees_in`: `sibling` puts task worktrees next to the repo (`<repo>__wt/<task>`); `inside` puts
   them in `.idleflow/worktrees/` (ignored), for projects that must not write outside their own folder.

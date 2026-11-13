@@ -524,6 +524,7 @@ out="$(cd "$f" && bash "$RUN" docs)"; idx="$(cat "$f/index.md")"
 check "docs regenerates in place"           'echo "$out" | grep -q "^docs: regenerated index.md"'
 check "files keeps written descriptions, drops gone rows" 'echo "$idx" | grep -qxF -- "- \`src/\` — the app source" && ! echo "$idx" | grep -q "gone/" && echo "$idx" | grep -qxF -- "- \`package.json\` — (describe)"'
 check "commands follow the package manager" 'echo "$idx" | grep -qxF -- "- \`pnpm test\` — runs \`vitest '"'"'run'"'"'\`" && echo "$idx" | grep -qxF -- "- \`make build\`" && ! echo "$idx" | grep -q "make VAR"'
+check "commands start with the lockfile's install" 'echo "$idx" | grep -qxF -- "- \`pnpm install --frozen-lockfile\` — install (pnpm-lock.yaml)"'
 check "milestones counted from progress"   'echo "$idx" | grep -qxF -- "- M1: Sign in: 1/2"'
 check "dependencies read from the manifest" 'echo "$idx" | grep -qxF -- "- \`react\` ^19.0.0 — package.json"'
 check "runs read from both merge formats"   'echo "$idx" | grep -q "run \`run-old\`, 1 task" && echo "$idx" | grep -q "run \`run-new\`, 1 task"'
@@ -536,6 +537,15 @@ check "doctor warns about undescribed entries" 'echo "$doc" | grep -q "^warn gen
 ( cd "$f" && printf '# Index\n- `src/` — code\n' > index.md )
 det="$(cd "$f" && bash "$RUN" detect)"
 check "detect suggests generated blocks for a hand-kept index" 'echo "$det" | grep -q "^suggest generated_docs: index.md —"'
+rm -rf "$f"
+
+echo "--- a first run fills Commands and can propose the gate"
+f="$(mktemp -d)"; ( cd "$f" && git init -q && git config user.name Ada && git config user.email a@a && mkdir -p .idleflow \
+  && cp "$HERE/../templates/conventions.md" .idleflow/conventions.md && cp "$HERE/../templates/CLAUDE.md" CLAUDE.md \
+  && printf '{"scripts":{"test":"vitest run"}}' > package.json && printf '{}' > package-lock.json && git add -A && git commit -qm start )
+( cd "$f" && bash "$RUN" docs >/dev/null )
+check "CLAUDE.md Commands is filled from the repo"    'grep -qxF -- "- \`npm ci\` — install (package-lock.json)" "$f/CLAUDE.md" && grep -qxF -- "- \`npm run test\` — runs \`vitest run\`" "$f/CLAUDE.md"'
+check "the template leaves the gate open to a proposal" '(cd "$f" && bash "$RUN" detect) | grep -q "^suggest gate: npm run test —"'
 rm -rf "$f"
 
 echo "--- prompt contracts"
