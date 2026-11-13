@@ -333,6 +333,20 @@ gen_settings() {
   return 0
 }
 
+# A task id names a folder (its worktree, tasks/<id>/) and a branch (idleflow/<run>/<id>), so it is
+# one path segment that git also takes in a ref name: no / \ : * ? " < > | ~ ^ [ ] @ { } and no
+# space or control character, no "..", not ending in "." or ".lock", and not starting with "." or
+# "-" or "_" (idleflow's own worktrees, such as _gate-base, start with "_"), and not a name Windows
+# keeps for a device (CON, NUL, COM1, ...). Every subcommand that takes a task id checks it here
+# before building anything from it.
+check_task_id() { # check_task_id <id>
+  local t="$1" bad='[]/\\:*?"<>|~^[@{}[:space:][:cntrl:]]' device='^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$'
+  if [ -z "$t" ] || [[ "$(printf '%s' "$t" | tr '[:upper:]' '[:lower:]')" =~ $device ]] || [[ "$t" =~ $bad ]] || [[ "$t" == *..* ]] || [[ "$t" == [._-]* ]] || [[ "$t" == *. ]] || [[ "$t" == *.lock ]]; then
+    echo "not a task id: '$t' (one name such as T1, with no path or git ref characters)" >&2
+    exit 1
+  fi
+}
+
 # Sibling by default (<repo>__wt/<task>); `worktrees_in: inside` keeps them in an ignored folder
 # inside the repo, for projects that forbid writing outside their own folder.
 wt_path() {
@@ -522,7 +536,7 @@ JSON
     case "$sub" in
       add)
         id="$(active_id)"
-        tid="${1:?task-id}"; base="${2:-$(idleflow_rt get "$ACTIVE/run.json" base)}"
+        tid="${1:?task-id}"; check_task_id "$tid"; base="${2:-$(idleflow_rt get "$ACTIVE/run.json" base)}"
         p="$(wt_path "$tid")"; br="idleflow/$id/$tid"
         "${G[@]}" rev-parse -q --verify "$base^{commit}" >/dev/null || { echo "base '$base' has no commits yet; commit first (run.sh snapshot)" >&2; exit 1; }
         # a leftover from a crashed run must not make `add` fail
@@ -550,7 +564,7 @@ JSON
         native_path "$p"
         ;;
       rm)
-        tid="${1:?task-id}"; p="$(wt_path "$tid")"
+        tid="${1:?task-id}"; check_task_id "$tid"; p="$(wt_path "$tid")"
         "${G[@]}" worktree remove --force "$p" 2>/dev/null || true
         "${G[@]}" worktree prune
         ;;
@@ -570,11 +584,11 @@ JSON
     idleflow_rt set "$ACTIVE/run.json" "$key" '""'
     ;;
   own)
-    tid="${1:?task-id}"; globs="${2:?json array}"; active_id >/dev/null
+    tid="${1:?task-id}"; check_task_id "$tid"; globs="${2:?json array}"; active_id >/dev/null
     idleflow_rt own "$ACTIVE/ownership.json" "$tid" "$(native_path "$(wt_path "$tid")")" "$globs"
     ;;
   unowned)
-    tid="${1:?task-id}"; active_id >/dev/null
+    tid="${1:?task-id}"; check_task_id "$tid"; active_id >/dev/null
     p="$(wt_path "$tid")"; base="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$tid.base_sha")"
     if [ ! -d "$p" ] || [ -z "$base" ] || [ "$base" = null ]; then echo "task $tid has no worktree or base sha (run.sh wt add $tid first)" >&2; exit 1; fi
     # only the task's commits merge, so only they are checked; --no-renames: a rename changes the
@@ -582,7 +596,7 @@ JSON
     git -C "$p" diff -z --no-renames --name-only "$base" HEAD | idleflow_rt unowned "$ACTIVE/ownership.json" "$tid"
     ;;
   exec)
-    tid="${1:?task-id}"; shift; [ "${1:-}" = -- ] && shift
+    tid="${1:?task-id}"; check_task_id "$tid"; shift; [ "${1:-}" = -- ] && shift
     [ "$#" -gt 0 ] || { echo "usage: run.sh exec <task-id> -- <command...>" >&2; exit 1; }
     active_id >/dev/null
     dir="$(wt_path "$tid")"; [ -d "$dir" ] || { echo "exec: no worktree for $tid (run.sh wt add $tid first)" >&2; exit 1; }
@@ -602,11 +616,11 @@ JSON
     idleflow_rt inc "$ACTIVE/run.json" "$key" "$n"
     ;;
   report)
-    tid="${1:?task-id}"; active_id >/dev/null
+    tid="${1:?task-id}"; check_task_id "$tid"; active_id >/dev/null
     copy_report "$tid"
     ;;
   gate)
-    tid="${1:?task-id}"; active_id >/dev/null
+    tid="${1:?task-id}"; check_task_id "$tid"; active_id >/dev/null
     base="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$tid.base_sha" 2>/dev/null || true)"
     if [ -z "$base" ] || [ "$base" = "null" ]; then base="$(idleflow_rt get "$ACTIVE/run.json" base_sha)"; fi
     [ -n "$base" ] && [ "$base" != "null" ] || { echo "gate $tid: no base sha recorded (was the worktree created with run.sh wt add?)" >&2; exit 1; }
@@ -618,7 +632,7 @@ JSON
     echo "$out"
     ;;
   merge)
-    tid="${1:?task-id}"; id="$(active_id)"
+    tid="${1:?task-id}"; check_task_id "$tid"; id="$(active_id)"
     # The task's title says what the merge brings. It is read here from the plan, never passed on a
     # command line: a title with `code` or $name in it would be expanded by the shell that runs the
     # command. One line; the ids go in the body.
@@ -932,6 +946,7 @@ Task: $tid")
     # The repo's own check, the definition of done: on the base the tasks branch from (so earlier
     # breakage is not blamed on the run), in a task's worktree (--quick: gate_quick), or after merge.
     target="${1:?base|main|<task-id>}"; key=gate; [ "${2:-}" = --quick ] && key=gate_quick
+    case "$target" in base|main) ;; *) check_task_id "$target";; esac
     active_id >/dev/null
     cmd="$(idleflow_rt get "$ACTIVE/run.json" "$key" 2>/dev/null || true)"
     case "$cmd" in ""|null) echo "repo $key: none"; exit 0;; esac
@@ -984,7 +999,7 @@ Task: $tid")
   preview)
     # Serves the app from a task worktree for the design reviewer's screenshots, under the same
     # approval rule as the gate; the address must be on this machine.
-    tid="${1:?task-id}"; act="${2:?start|stop}"; active_id >/dev/null
+    tid="${1:?task-id}"; check_task_id "$tid"; act="${2:?start|stop}"; active_id >/dev/null
     pidf="$ACTIVE/tasks/$tid/preview.pid"
     if [ "$act" = stop ]; then
       # the server runs in its own session, so its whole process group goes (dev servers start children)
