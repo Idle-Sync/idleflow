@@ -15,7 +15,8 @@
 #                                            (IDLEFLOW_PORT) and its own temp folder (IDLEFLOW_TMP, TMPDIR), as a job; prints
 #                                            its output and exits with its code, or exits 75 while it still runs after
 #                                            EXEC_WAIT_SECONDS. With --limit, a job still running <s> seconds after it started
-#                                            is stopped by the next exec or wait of it, which exits 124.
+#                                            is stopped by the next exec or wait of it, which exits 124. With --base, it runs
+#                                            in a checkout of the task's base commit instead, to show a failure is already there
 #                                            Python bytecode of the checkout's own code is cleared first, so the source runs as it is
 #   run.sh wait <task-id> <job>           -> waits for a job again, the same way
 #   run.sh stop <task-id> <job>           -> ends a job and every process it started
@@ -528,6 +529,21 @@ await_job() { # await_job <task-id> <job>: the command's output and exit code, 7
   exit 75
 }
 
+# A checkout of the commit a task started from, so a failure can be shown to exist there before the
+# task changed anything: a claim that a failure is old is then checked, never argued. Made on first
+# use, with the repo's worktree_setup; `wt rm` removes it with the task's worktree.
+base_worktree() { # base_worktree <task-id>: prints its path
+  local base p
+  base="$(task_base "$1")" || return 1
+  p="$(wt_path "_base-$1")"
+  if [ ! -d "$p" ]; then
+    mkdir -p "$(dirname "$p")" "$ACTIVE/tasks/_base-$1"
+    "${G[@]}" worktree add -q --detach "$p" "$base" >/dev/null 2>&1 || { echo "exec --base: could not check out $base for $1" >&2; return 1; }
+    run_worktree_setup "_base-$1" "$p" >&2
+  fi
+  echo "$p"
+}
+
 # The repo's own preparation for a fresh worktree (link shared folders, copy fixtures).
 run_worktree_setup() { # run_worktree_setup <task-id> <worktree>
   local cmd log
@@ -711,6 +727,7 @@ JSON
           "${G[@]}" config --local --remove-section "idleflow.worktree.$("${G[@]}" -C "$p" rev-parse --show-toplevel)" 2>/dev/null || true
         fi
         "${G[@]}" worktree remove --force "$p" 2>/dev/null || true
+        "${G[@]}" worktree remove --force "$(wt_path "_base-$tid")" 2>/dev/null || true
         "${G[@]}" worktree prune
         ;;
       list)
@@ -742,15 +759,21 @@ JSON
     ;;
   exec)
     tid="${1:?task-id}"; check_task_id "$tid"; shift
-    limit=""
-    if [ "${1:-}" = --limit ]; then
-      limit="${2:-}"; shift 2 || shift
-      [[ "$limit" =~ ^[1-9][0-9]{0,5}$ ]] || { echo "exec: --limit takes whole seconds, 1 or more" >&2; exit 1; }
-    fi
+    limit=""; on_base=""
+    while :; do
+      case "${1:-}" in
+        --limit)
+          limit="${2:-}"; shift 2 || shift
+          [[ "$limit" =~ ^[1-9][0-9]{0,5}$ ]] || { echo "exec: --limit takes whole seconds, 1 or more" >&2; exit 1; };;
+        --base) on_base=1; shift;;
+        *) break;;
+      esac
+    done
     [ "${1:-}" = -- ] && shift
-    [ "$#" -gt 0 ] || { echo "usage: run.sh exec <task-id> [--limit <seconds>] -- <command...>" >&2; exit 1; }
+    [ "$#" -gt 0 ] || { echo "usage: run.sh exec <task-id> [--limit <seconds>] [--base] -- <command...>" >&2; exit 1; }
     active_id >/dev/null
     dir="$(wt_path "$tid")"; [ -d "$dir" ] || { echo "exec: no worktree for $tid (run.sh wt add $tid first)" >&2; exit 1; }
+    if [ -n "$on_base" ]; then dir="$(base_worktree "$tid")" || exit 1; fi
     jobs="$ACTIVE/tasks/$tid/jobs"; mkdir -p "$jobs"
     n=1; while ! mkdir "$jobs/$n" 2>/dev/null; do n=$((n + 1)); done
     jd="$jobs/$n"; printf -v q '%q ' "$@"; printf -v st '%q' "$jd/status"

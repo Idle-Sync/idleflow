@@ -572,9 +572,16 @@ job="$(sed -n 's/.*job \([0-9]*\) of TA started.*/\1/p' "$scratch/job.err")"; rm
 echo "$other" > ".idleflow/runs/active/tasks/TA/jobs/$job/pid"
 check "a finished job whose pid was reused is never signalled" 'bash "$RUN" stop TA "$job" >/dev/null && kill -0 "$other" 2>/dev/null'
 kill "$other" 2>/dev/null
+( cd "$wa" && echo new > only-in-task.txt && git add only-in-task.txt && commit -m "TA: a file the base lacks" ) >/dev/null
+for _ in 1 2 3; do out="$(bash "$RUN" exec TA --base -- sh -c 'git rev-parse HEAD; test -e only-in-task.txt && echo has || echo lacks' 2>/dev/null)"; rc=$?; [ "$rc" = 75 ] || break; done
+check "exec --base runs on the task's base commit, not its work" '[ "$(echo "$out" | sed -n 1p)" = "$(bash "$RUN" get tasks.TA.base_sha)" ] && [ "$(echo "$out" | sed -n 2p)" = lacks ] && [ -f "$wa/only-in-task.txt" ]'
+check "exec --base keeps the job under the task and passes the exit code" 'bash "$RUN" exec TA --limit 30 --base -- sh -c "exit 5" 2>/dev/null; [ $? = 5 ]'
+bash "$RUN" exec TB --base -- true >/dev/null 2>&1
+base_tb="$(git worktree list --porcelain | sed -n 's/^worktree \(.*_base-TB\)$/\1/p')"
 bash "$RUN" exec TB -- sleep 60 >/dev/null 2> "$scratch/job.err"
 job="$(sed -n 's/.*job \([0-9]*\) of TB is still running.*/\1/p' "$scratch/job.err")"
 bash "$RUN" wt rm TB
+check "wt rm removes the task's base checkout too" '[ -n "$base_tb" ] && [ ! -d "$base_tb" ]'
 check "wt rm stops the task's jobs" '[ "$(cat .idleflow/runs/active/tasks/TB/jobs/$job/status)" = 143 ] && ! kill -0 "$(cat .idleflow/runs/active/tasks/TB/jobs/$job/pid)" 2>/dev/null'
 rm -f .idleflow/idleflow.conf "$wa/child.pid"; [ ! -f "$scratch/conf.bak" ] || mv "$scratch/conf.bak" .idleflow/idleflow.conf
 bash "$RUN" wt rm TA; bash "$RUN" wt rm TB; bash "$RUN" finish done >/dev/null
