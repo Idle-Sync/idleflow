@@ -300,6 +300,21 @@ run_worktree_setup() { # run_worktree_setup <task-id> <worktree>
     echo "$changed" >&2
     exit 6
   fi
+  # A dependency folder linked to the main checkout's is shared, not borrowed: an install in the
+  # worktree (npm ci, pip) rewrites or empties the main checkout's copy, and Python's editable
+  # install there runs the main checkout's code. The worktree builds its own instead.
+  local dep main_real target
+  main_real="$(cd -P "$REPO" && pwd)"
+  for dep in node_modules .venv venv; do
+    [ -L "$2/$dep" ] || continue
+    target="$(cd -P "$2/$dep" 2>/dev/null && pwd)" || target=""
+    case "$target" in "$main_real"|"$main_real"/*)
+      rm -f "$2/$dep"
+      echo "worktree setup for $1 linked $dep to the main checkout's ($target); the link was removed and the worktree is not ready." >&2
+      echo "an install in the worktree would rewrite the main checkout's $dep; make worktree_setup build the worktree's own (npm ci, uv sync, python3 -m venv)" >&2
+      exit 6;;
+    esac
+  done
 }
 
 exclude_file() {

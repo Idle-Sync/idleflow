@@ -338,6 +338,13 @@ git add .idleflow/conventions.md && commit -q -m "editing setup"; bash "$RUN" ap
 bash "$RUN" new editing >/dev/null 2>&1
 out="$(bash "$RUN" wt add T7 2>&1)"; rc=$?
 check "a setup that edits tracked files is refused and undone" '[ "$rc" = 6 ] && echo "$out" | grep -q "changed tracked files" && [ "$(cat .idleflow/worktrees/T7/src/keep.py)" = x ]'
+sed -i.bak 's#^worktree_setup: .*#worktree_setup: mkdir -p "$MAIN/node_modules" \&\& ln -s "$MAIN/node_modules" node_modules#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
+git add .idleflow/conventions.md && commit -q -m "linking setup"; bash "$RUN" approve worktree_setup >/dev/null
+bash "$RUN" wt rm T7; bash "$RUN" finish done >/dev/null; bash "$RUN" new linking >/dev/null 2>&1
+mkdir -p node_modules && echo keep > node_modules/dep.js
+out="$(bash "$RUN" wt add T7 2>&1)"; rc=$?
+check "a setup that links main's node_modules is refused" '[ "$rc" = 6 ] && echo "$out" | grep -q "linked node_modules to the main checkout" && [ ! -e .idleflow/worktrees/T7/node_modules ] && [ "$(cat node_modules/dep.js)" = keep ]'
+rm -rf node_modules
 bash "$RUN" wt rm T7; bash "$RUN" finish done >/dev/null
 rm -rf shared-big; cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"; git add .idleflow/conventions.md && commit -q -m "restore conventions"
 
