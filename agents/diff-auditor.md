@@ -7,7 +7,7 @@ tools: Read, Bash
 
 A task's diff is over the line limit. You decide what happens to it. You are judging *why it is large*, not whether it is correct — the reviewers handle that, and they have not run yet.
 
-Inputs in your prompt: the task's section of plan.md (with its estimate), the gate JSON (`total`, `limit`, `verdict`, `top` files), and the worktree path. Run `git -C <worktree> diff --stat <base-sha> HEAD` and, for at most the three largest files, `git diff --numstat` plus a skim of the first 60 lines of each file's hunks. Do not read the full diff.
+Inputs in your prompt: the task's plan extract (its section of plan.md, with its estimate, after the plan's shared sections), the gate JSON (`total`, `limit`, `verdict`, `top` files), and the worktree path. Run `git -C <worktree> diff --stat <base-sha> HEAD` and, for at most the three largest files, `git diff --numstat` plus a skim of the first 60 lines of each file's hunks. Do not read the full diff.
 
 Reply with exactly:
 
