@@ -368,6 +368,8 @@ check_task_id() { # check_task_id <id>
     echo "not a task id: '$t' (one name such as T1, with no path or git ref characters)" >&2
     exit 1
   fi
+  # `main` (run.sh preview main) and `merged` (the browser check after merge) name run-wide records
+  case "$t" in main|merged) echo "not a task id: '$t' is reserved" >&2; exit 1;; esac
 }
 
 # Sibling by default (<repo>__wt/<task>); `worktrees_in: inside` keeps them in an ignored folder
@@ -871,7 +873,7 @@ JSON
     [ "$#" -gt 0 ] || { echo "usage: run.sh findings <task-id>..." >&2; exit 1; }
     active_id >/dev/null
     for tid in "$@"; do
-      check_task_id "$tid"
+      [ "$tid" = merged ] || check_task_id "$tid"
       for kind in correct conform design; do
         name="$tid-$kind.md"; f="$ACTIVE/review/$name"
         [ -f "$f" ] || continue

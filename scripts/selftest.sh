@@ -673,6 +673,8 @@ out="$(bash "$RUN" preview main start 2>/dev/null)"; pid="$(cat .idleflow/runs/a
 check "under preview_in: main the main checkout is served" 'echo "$out" | grep -q "^preview main: serving at http://localhost:4173" && kill -0 "$pid" 2>/dev/null && [ "$(cat .idleflow/runs/active/tasks/main/tmp/where 2>/dev/null)" = "$(pwd -P)" ]'
 bash "$RUN" preview main stop >/dev/null; sleep 1
 check "preview main stop ends it" '! kill -0 "$pid" 2>/dev/null'
+check "main and merged are not task ids" '! bash "$RUN" wt add main 2>/dev/null && ! bash "$RUN" wt add merged 2>/dev/null'
+check "findings reads the browser check after merge" 'printf "### D1. A label   severity: minor\n" > .idleflow/runs/active/review/merged-design.md && [ "$(bash "$RUN" findings merged)" = "merged: D1. A label   severity: minor (review/merged-design.md)" ]'
 bash "$RUN" finish "done" >/dev/null
 cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"; git add .idleflow/conventions.md && commit -q -m "restore conventions"
 
