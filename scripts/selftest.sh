@@ -970,6 +970,10 @@ check "docs fills an index kept out of git"   'echo "$out" | grep -q "docs/index
 ( cd "$f" && git checkout -q -- templates README.md && printf 'generated_docs: README.md\n' >> .idleflow/conventions.md && git add -A && git commit -qm named )
 out="$(cd "$f" && bash "$RUN" docs)"
 check "generated_docs names the files kept"   '[ "$out" = "docs: regenerated README.md" ] && [ -z "$(cd "$f" && git status --porcelain templates)" ]'
+( cd "$f" && git checkout -q -- README.md && cp README.md notes..md && mkdir -p .git/x && cp README.md .git/x/y.md && cp README.md ./-x.md && sed -i.bak "s/^generated_docs: .*/generated_docs: notes..md .git\/x\/y.md -x.md/" .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak )
+out="$(cd "$f" && bash "$RUN" docs 2>"$d-gen.err")"
+check "generated_docs judges each path by the one repo path rule" '[ "$out" = "docs: regenerated notes..md" ] && grep -q "skipped .\.git/x/y.md" "$d-gen.err" && grep -q "skipped .-x.md" "$d-gen.err" && ! grep -q "skipped .notes" "$d-gen.err"'
+( cd "$f" && rm -f notes..md ./-x.md .git/x/y.md && rmdir .git/x && git checkout -q -- . )
 ( cd "$f" && git checkout -q -- README.md && sed -i.bak "s/^generated_docs: .*/generated_docs: none/" .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak )
 check "generated_docs: none keeps no file"    '[ "$(cd "$f" && bash "$RUN" docs)" = "docs: generated blocks are up to date" ] && [ -z "$(cd "$f" && git status --porcelain README.md templates)" ]'
 rm -rf "$f"
