@@ -272,7 +272,7 @@ generated_doc_files() {
     ""|unset) { "${G[@]}" grep -l -e '<!-- idleflow:generated ' -- '*.md' 2>/dev/null || true; printf '%s\n' "$(index_rel)" "$(progress_rel)" CLAUDE.md; };;
     *) read -ra list <<< "$v"
        for f in "${list[@]}"; do
-         case "$f" in /*|*..*) echo "[idleflow] generated_docs: skipped '$f' (not a path inside the repo)" >&2;; *) echo "$f";; esac
+         repo_relative_path "$f" || echo "[idleflow] generated_docs: skipped '$f' (not a path inside the repo)" >&2
        done;;
   esac | LC_ALL=C sort -u | while IFS= read -r f; do
     [ -f "$REPO/$f" ] && grep -q '<!-- idleflow:generated ' "$REPO/$f" && echo "$f"
