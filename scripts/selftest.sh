@@ -143,6 +143,15 @@ check "allows docs/ while building"                 '[ "$(guard_rc "$dn/docs/res
 bash "$RUN" set tasks.T1.status '"approved"'
 check "allows main checkout when not building"      '[ "$(guard_rc "$dn/src/a.txt" "$dn")" = "0" ]'
 bash "$RUN" set tasks.T1.status '"building"'
+# brackets in a glob are literal: framework routes are named [slug].astro, [...id]/+page.svelte
+bash "$RUN" own T1 '["src/**","tests/**","pages/[slug].astro"]'
+check "allows a bracketed route file it owns"   '[ "$(guard_rc "$wtn/pages/[slug].astro" "$wtn")" = "0" ]'
+check "brackets are not a character class"      '[ "$(guard_rc "$wtn/pages/s.astro" "$wtn")" = "2" ]'
+mkdir -p "$wt/pages" && touch "$wt/pages/[slug].astro" "$wt/pages/s.astro" "$wt/other.txt"
+check "unowned lists only what the task may not change" '[ "$(bash "$RUN" unowned T1 | paste -sd, -)" = "other.txt,pages/s.astro" ]'
+rm -rf "$wt/pages" "$wt/other.txt"
+check "unowned fails on an unknown task"        '! bash "$RUN" unowned T9 >/dev/null 2>&1'
+bash "$RUN" own T1 '["src/**","tests/**"]'
 check "allows outside any repo"           '[ "$(guard_rc "/nowhere/x.txt" "/nowhere")" = "0" ]'
 check "allows on garbage payload"         '[ "$(echo "not json" | bash "$GUARD" 2>/dev/null; echo $?)" = "0" ]'
 check "no-runtime still allows"           '[ "$(printf "{}" | IDLEFLOW_RUNTIME=/no/such/bin bash "$GUARD" 2>/dev/null; echo $?)" = "0" ]'
@@ -294,6 +303,15 @@ git config --local --unset idleflow.person
 rm -rf docs
 sed -i.bak 's#^progress_file: .*#progress_file: ../outside.md#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
 check "a path outside the repo falls back"  'p="$(bash "$RUN" path progress 2>/dev/null)"; [ "$p" = "$top/progress.md" ] && bash "$RUN" path progress 2>&1 >/dev/null | grep -q "not a relative path"'
+sed -i.bak 's#^progress_file: .*#progress_file: /abs/progress.md#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
+check "an absolute path falls back"  'p="$(bash "$RUN" path progress 2>/dev/null)"; [ "$p" = "$top/progress.md" ] && bash "$RUN" path progress 2>&1 >/dev/null | grep -q "not a relative path"'
+for bad in .git/hooks/post-commit docs/.GIT/x.md -progress.md; do
+  sed -i.bak "s#^progress_file: .*#progress_file: $bad#" .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
+  check "a path under .git or starting with - falls back ($bad)" '[ "$(bash "$RUN" path progress 2>/dev/null)" = "$top/progress.md" ]'
+done
+sed -i.bak 's#^progress_file: .*#progress_file: ./.docs/notes..md#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
+printf 'time_log: .idleflow/time-log.md\n' >> .idleflow/conventions.md
+check "a path in a dot folder is used without a warning" '[ "$(bash "$RUN" path time-log)" = "$top/.idleflow/time-log.md" ] && [ -z "$(bash "$RUN" path time-log 2>&1 >/dev/null)" ] && [ "$(bash "$RUN" path progress 2>/dev/null)" = "$top/.docs/notes..md" ] && [ -z "$(bash "$RUN" path progress 2>&1 >/dev/null)" ]'
 cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"
 
 echo "--- worktrees inside the repo, with an approved setup command"
@@ -577,6 +595,7 @@ check "fix sizing ignores module count"   '! grep -q "more than one module" "$fi
 check "ignore rules go through run.sh ignore" 'grep -q "^ignore_in: unset" "$conventions" && grep -q "\"\$RUN\" ignore" "$setup" && grep -q "\"\$RUN\" ignore" "$init"'
 check "repo readability mode is offered and enforced" 'grep -q "^| \`repo\` |" "$conventions" && grep -q "Match this repo" "$setup" && grep -q "Match this repo" "$HERE/../commands/style.md" && grep -q "\`repo\`" "$HERE/../agents/implementer.md" && grep -q "\`repo\`" "$HERE/../agents/implementer-hard.md" && grep -q "\`repo\`" "$HERE/../agents/review-conform.md"'
 check "both reviewers allow shared files" 'grep -q "top-level \`shared\` list" "$HERE/../agents/review-conform.md" && grep -q "top-level \`shared\` list" "$HERE/../agents/review-correct.md"'
+check "the doc-keeper edits sentences, never whole files" '! grep -q "^tools:.*Write" "$HERE/../agents/doc-keeper.md" && grep -q "belongs to humans" "$HERE/../agents/doc-keeper.md" && grep -q "as it is on disk now" "$HERE/../templates/CLAUDE.md"'
 check "the designer and design reviewer exist" '[ -f "$HERE/../agents/designer.md" ] && [ -f "$HERE/../agents/review-design.md" ] && grep -q "\"ui\"" "$HERE/../agents/classifier.md" && grep -q "^### 2c. Design" "$HERE/../commands/feature.md"'
 check "the design handbook carries the contrast rule" 'grep -q "4.5:1" "$HERE/../procedures/design.md" && grep -q "0.2126 R + 0.7152 G + 0.0722 B" "$HERE/../procedures/design-data.md"'
 check "STEP_DESIGN is a setting" 'grep -q STEP_DESIGN "$HERE/conf.sh" && grep -q "^STEP_DESIGN=auto" "$HERE/../config/idleflow.conf"'

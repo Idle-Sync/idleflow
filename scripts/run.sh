@@ -9,6 +9,8 @@
 #   run.sh wt list                        -> lists idleflow worktrees
 #   run.sh own <task-id> '<globs json>'   -> registers file ownership for the guard hook
 #   run.sh skip <key>                     -> this run goes without a repo command (gate, gate_quick, worktree_setup, preview)
+#   run.sh unowned <task-id>              -> paths the task changed (committed, uncommitted, untracked) that its globs,
+#                                            .idleflow-run/** and shared_files do not cover; matched as the guard matches
 #   run.sh get <key>                      -> prints a value from run.json (dotted keys ok)
 #   run.sh set <key> <json>               -> sets a value in run.json (dotted keys ok)
 #   run.sh inc <key> [n]                  -> adds n (default 1) to a counter in run.json
@@ -90,12 +92,30 @@ active_id() {
   echo "$id"
 }
 
+# A path from the conventions that stays inside the repo's files: not absolute (/, ~, a drive letter),
+# no `..` folder, nothing under `.git` (hooks there run code), no leading `-` (a command would read it
+# as an option), and only characters that need no quoting. Prints it without a leading ./ or a
+# trailing /, or fails. Other dot folders such as .idleflow/ and .github/ are fine.
+# repo_relative_path <path> [extra allowed characters, e.g. '*' for globs]
+repo_relative_path() {
+  local p="${1#./}" extra="${2:-}" part
+  p="${p%/}"
+  [ -n "$p" ] || return 1
+  case "$p" in /*|'~'*|-*|[A-Za-z]:*) return 1;; esac
+  [[ "$p" =~ ^[A-Za-z0-9_./${extra}-]+$ ]] || return 1
+  local -a parts
+  IFS=/ read -ra parts <<< "$p"
+  for part in "${parts[@]}"; do
+    case "$(printf '%s' "$part" | tr '[:upper:]' '[:lower:]')" in ..|.git|.git.*) return 1;; esac
+  done
+  echo "$p"
+}
 # A repo can keep its records where it already keeps them (conventions "Records"). A value must be
 # a plain relative path inside the repo; anything else falls back to the default, with a warning.
 record_path() { # record_path <conventions key> <default>
   local v; v="$(conventions_value "$1")"
   case "$v" in ""|unset) echo "$2"; return;; esac
-  if [[ "$v" =~ ^[A-Za-z0-9_][A-Za-z0-9_./-]*$ ]] && [[ "$v" != *..* ]]; then echo "${v%/}"; return; fi
+  repo_relative_path "$v" && return
   echo "[idleflow] $1: '$v' is not a relative path inside the repo; using $2" >&2
   echo "$2"
 }
@@ -117,7 +137,7 @@ shared_files() {
   local v f; v="$(conventions_value shared_files)"
   case "$v" in ""|unset|none) return 0;; esac
   for f in $(set -f; echo $v); do
-    if [[ "$f" =~ ^[A-Za-z0-9_.*][A-Za-z0-9_.*/-]*$ ]] && [[ "$f" != *..* ]]; then echo "$f"; else echo "[idleflow] shared_files: skipped '$f'" >&2; fi
+    repo_relative_path "$f" '*' || echo "[idleflow] shared_files: skipped '$f'" >&2
   done
 }
 
@@ -456,6 +476,14 @@ JSON
   own)
     tid="${1:?task-id}"; globs="${2:?json array}"; active_id >/dev/null
     idleflow_rt own "$ACTIVE/ownership.json" "$tid" "$(native_path "$(wt_path "$tid")")" "$globs"
+    ;;
+  unowned)
+    tid="${1:?task-id}"; active_id >/dev/null
+    p="$(wt_path "$tid")"; base="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$tid.base_sha")"
+    if [ ! -d "$p" ] || [ -z "$base" ] || [ "$base" = null ]; then echo "task $tid has no worktree or base sha (run.sh wt add $tid first)" >&2; exit 1; fi
+    # --no-renames: a rename changes the old path too, and the task must own both
+    { git -C "$p" diff --no-renames --name-only "$base"; git -C "$p" ls-files --others --exclude-standard; } \
+      | sort -u | idleflow_rt unowned "$ACTIVE/ownership.json" "$tid"
     ;;
   get)
     key="${1:?key}"; active_id >/dev/null
