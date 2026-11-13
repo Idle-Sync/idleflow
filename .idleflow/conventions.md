@@ -61,6 +61,13 @@ docs_in_git: unset
 `yes` commits `docs/` so everyone shares the research and session notes. `no` adds `docs/` to
 `.gitignore` so they stay local to this machine. Asked once, the first time docs are turned on.
 
+## Records
+
+generated_docs: none
+
+idleflow keeps no generated docs of its own (`docs: no`). The generated blocks in `templates/`
+are shipped empty and filled by `run.sh docs` in each project that uses them, never here.
+
 ## Ignore rules
 
 ignore_in: gitignore
