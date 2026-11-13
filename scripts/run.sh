@@ -15,7 +15,8 @@
 #                                            (IDLEFLOW_PORT) and its own temp folder (IDLEFLOW_TMP, TMPDIR), as a job; prints
 #                                            its output and exits with its code, or exits 75 while it still runs after
 #                                            EXEC_WAIT_SECONDS. With --limit, a job still running <s> seconds after it started
-#                                            is stopped by the next exec or wait of it, which exits 124.
+#                                            is stopped by the next exec or wait of it, which exits 124. With --base, it runs
+#                                            in a checkout of the task's base commit instead, to show a failure is already there
 #                                            Python bytecode of the checkout's own code is cleared first, so the source runs as it is
 #   run.sh wait <task-id> <job>           -> waits for a job again, the same way
 #   run.sh stop <task-id> <job>           -> ends a job and every process it started
@@ -528,6 +529,62 @@ await_job() { # await_job <task-id> <job>: the command's output and exit code, 7
   exit 75
 }
 
+# A checkout of the commit a task started from, so a failure can be shown to exist there before the
+# task changed anything: a claim that a failure is old is then checked, never argued. It is made on
+# first use with the repo's worktree_setup and is ready only once that succeeded (the ready file holds
+# the sha it is ready for). A checkout that is not ready, sits on another sha, or has a changed tracked
+# file is made again, so a proof never runs on a half-set-up or edited base. It is registered with no
+# owned globs, so the guard refuses every edit in it. `wt rm` and `wt add` remove it.
+base_worktree() { # base_worktree <task-id>: prints its path; exits as worktree_setup does (6, 7) when that fails
+  local tid="$1" base p d rc n=0 holder jd
+  base="$(task_base "$tid")" || return 1
+  p="$(wt_path "_base-$tid")"; d="$ACTIVE/tasks/_base-$tid"
+  mkdir -p "$d" "$(dirname "$p")"
+  # one creator at a time: a second first use waits instead of running in a half-made checkout; a
+  # lock whose holder has died (killed mid-setup) is taken over
+  until mkdir "$d/lock" 2>/dev/null; do
+    holder="$(cat "$d/lock/pid" 2>/dev/null || true)"
+    if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then rm -f "$d/lock/pid"; rmdir "$d/lock" 2>/dev/null || true; continue; fi
+    n=$((n + 1)); [ "$n" -lt 180 ] || { echo "exec --base: another exec --base of $tid is still making its base checkout; try again" >&2; return 1; }
+    sleep 0.5
+  done
+  echo "$$" > "$d/lock/pid"
+  if [ -d "$p" ] && { [ "$(cat "$d/ready" 2>/dev/null)" != "$base" ] || [ -n "$(git -C "$p" status --porcelain --untracked-files=no 2>/dev/null)" ]; }; then
+    # a base job still running there would lose its checkout mid-run
+    for jd in "$ACTIVE/tasks/$tid/jobs"/*/; do
+      [ -d "$jd" ] || continue
+      case "$(cat "${jd}checkout" 2>/dev/null)" in base*) job_ended "${jd%/}" || {
+        rm -f "$d/lock/pid"; rmdir "$d/lock"; echo "exec --base: job $(basename "$jd") of $tid still runs in the base checkout; wait for it or stop it first" >&2; return 1; };;
+      esac
+    done
+    rm -f "$d/ready"; "${G[@]}" worktree remove --force "$p" 2>/dev/null || true
+  fi
+  if [ ! -d "$p" ]; then
+    rm -f "$d/ready"
+    "${G[@]}" worktree prune
+    if ! "${G[@]}" worktree add -q --detach "$p" "$base" >/dev/null 2>&1; then
+      rmdir "$d/lock"; echo "exec --base: could not check out $base for $tid" >&2; return 1
+    fi
+    idleflow_rt own "$ACTIVE/ownership.json" "_base-$tid" "$(native_path "$p")" '[]'
+    # the marker lets the guard find the ownership map from inside this checkout too
+    mkdir -p "$p/.idleflow-run"; echo "_base-$tid" > "$p/.idleflow-run/task-id"; native_path "$REPO" > "$p/.idleflow-run/repo"
+    rc=0; ( run_worktree_setup "_base-$tid" "$p" ) >&2 || rc=$?
+    if [ "$rc" -ne 0 ]; then
+      "${G[@]}" worktree remove --force "$p" 2>/dev/null || true
+      rm -f "$d/lock/pid"; rmdir "$d/lock"; return "$rc"
+    fi
+    echo "$base" > "$d/ready"
+  fi
+  rm -f "$d/lock/pid"; rmdir "$d/lock"
+  # never run in a checkout that could not be made again: it is a proof only when it is the base
+  if [ "$(cat "$d/ready" 2>/dev/null)" != "$base" ] || [ "$(git -C "$p" rev-parse HEAD 2>/dev/null)" != "$base" ] \
+     || [ -n "$(git -C "$p" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+    echo "exec --base: $(native_path "$p") is not a clean checkout of $base and could not be made again; remove it (git worktree remove --force)" >&2
+    return 1
+  fi
+  echo "$p"
+}
+
 # The repo's own preparation for a fresh worktree (link shared folders, copy fixtures).
 run_worktree_setup() { # run_worktree_setup <task-id> <worktree>
   local cmd log
@@ -678,7 +735,9 @@ JSON
         tid="${1:?task-id}"; check_task_id "$tid"; base="${2:-$(idleflow_rt get "$ACTIVE/run.json" base)}"
         p="$(wt_path "$tid")"; br="idleflow/$id/$tid"
         "${G[@]}" rev-parse -q --verify "$base^{commit}" >/dev/null || { echo "base '$base' has no commits yet; commit first (run.sh snapshot)" >&2; exit 1; }
-        # a leftover from a crashed run must not make `add` fail
+        # a leftover from a crashed run must not make `add` fail, nor a base checkout of an earlier base stay
+        "${G[@]}" worktree remove --force "$(wt_path "_base-$tid")" 2>/dev/null || true
+        rm -f "$ACTIVE/tasks/_base-$tid/ready"
         "${G[@]}" worktree prune
         if [ -d "$p" ]; then
           "${G[@]}" worktree remove --force "$p" 2>/dev/null || true
@@ -711,6 +770,7 @@ JSON
           "${G[@]}" config --local --remove-section "idleflow.worktree.$("${G[@]}" -C "$p" rev-parse --show-toplevel)" 2>/dev/null || true
         fi
         "${G[@]}" worktree remove --force "$p" 2>/dev/null || true
+        "${G[@]}" worktree remove --force "$(wt_path "_base-$tid")" 2>/dev/null || true
         "${G[@]}" worktree prune
         ;;
       list)
@@ -742,18 +802,27 @@ JSON
     ;;
   exec)
     tid="${1:?task-id}"; check_task_id "$tid"; shift
-    limit=""
-    if [ "${1:-}" = --limit ]; then
-      limit="${2:-}"; shift 2 || shift
-      [[ "$limit" =~ ^[1-9][0-9]{0,5}$ ]] || { echo "exec: --limit takes whole seconds, 1 or more" >&2; exit 1; }
-    fi
+    limit=""; on_base=""
+    while :; do
+      case "${1:-}" in
+        --limit)
+          limit="${2:-}"; shift 2 || shift
+          [[ "$limit" =~ ^[1-9][0-9]{0,5}$ ]] || { echo "exec: --limit takes whole seconds, 1 or more" >&2; exit 1; };;
+        --base) on_base=1; shift;;
+        *) break;;
+      esac
+    done
     [ "${1:-}" = -- ] && shift
-    [ "$#" -gt 0 ] || { echo "usage: run.sh exec <task-id> [--limit <seconds>] -- <command...>" >&2; exit 1; }
+    [ "$#" -gt 0 ] || { echo "usage: run.sh exec <task-id> [--limit <seconds>] [--base] -- <command...>" >&2; exit 1; }
     active_id >/dev/null
     dir="$(wt_path "$tid")"; [ -d "$dir" ] || { echo "exec: no worktree for $tid (run.sh wt add $tid first)" >&2; exit 1; }
+    if [ -n "$on_base" ]; then dir="$(base_worktree "$tid")" || exit $?; fi
     jobs="$ACTIVE/tasks/$tid/jobs"; mkdir -p "$jobs"
     n=1; while ! mkdir "$jobs/$n" 2>/dev/null; do n=$((n + 1)); done
     jd="$jobs/$n"; printf -v q '%q ' "$@"; printf -v st '%q' "$jd/status"
+    # what ran and where, so a job cited as evidence can be checked: "base <sha>" or "task"
+    printf '%s\n' "$q" > "$jd/command"
+    if [ -n "$on_base" ]; then echo "base $(task_base "$tid")" > "$jd/checkout"; else echo task > "$jd/checkout"; fi
     # the start is a whole second, so the deadline is one more: a job always gets its full limit
     date +%s > "$jd/started"
     if [ -n "$limit" ]; then echo "$limit" > "$jd/limit"; echo $(( $(cat "$jd/started") + limit + 1 )) > "$jd/deadline"; fi
