@@ -405,27 +405,37 @@ in_task() { # in_task <task-id> <dir> <command...>
 # point where Claude Code moves a subagent's Bash command to the background, where the agent could
 # no longer wait for it or stop it; a job still running is waited on again or stopped by number.
 job_dir() { echo "$ACTIVE/tasks/$1/jobs/$2"; }
+# The job's pid is written by its own shell ($$), so it is one bash's kill understands everywhere
+# (on Git Bash a runtime's pid is a Windows one). The job leads its own process group; it runs
+# while any process of that group is alive, not only while its shell is.
+job_pid() { cat "$1/pid" 2>/dev/null || true; }
 job_running() { # job_running <job dir>
-  [ ! -f "$1/status" ] && [ -f "$1/pid" ] && kill -0 "$(cat "$1/pid")" 2>/dev/null
+  local pid; pid="$(job_pid "$1")"
+  [ -n "$pid" ] && { kill -0 -- "-$pid" 2>/dev/null || kill -0 "$pid" 2>/dev/null; }
 }
-stop_job() { # stop_job <job dir>; the job's whole process group goes (test runners start children)
-  local pid
-  job_running "$1" || return 0
-  pid="$(cat "$1/pid")"; kill -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
-  echo 143 > "$1/status.tmp" && mv "$1/status.tmp" "$1/status"
+stop_job() { # stop_job <job dir>: TERM to the whole group, KILL after 5 s; 143 once nothing is left
+  local pid n=0; pid="$(job_pid "$1")"
+  [ -n "$pid" ] || return 0
+  kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+  while job_running "$1" && [ "$n" -lt 25 ]; do sleep 0.2; n=$((n + 1)); done
+  if job_running "$1"; then kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true; sleep 0.5; fi
+  if job_running "$1"; then echo "[idleflow] job in $(native_path "$1") still has processes after KILL" >&2; return 1; fi
+  [ -f "$1/status" ] || { echo 143 > "$1/status.tmp" && mv "$1/status.tmp" "$1/status"; }
 }
 await_job() { # await_job <task-id> <job>: the command's output and exit code, or 75 while it runs
-  local d end; d="$(job_dir "$1" "$2")"
-  [ -f "$d/pid" ] || { echo "no job $2 for task $1" >&2; exit 1; }
-  end=$(( $(date +%s) + ${EXEC_WAIT_SECONDS:-150} ))
-  while [ ! -f "$d/status" ] && [ "$(date +%s)" -lt "$end" ]; do
-    if ! kill -0 "$(cat "$d/pid")" 2>/dev/null; then
+  local d end n=0; d="$(job_dir "$1" "$2")"
+  [ -d "$d" ] || { echo "no job $2 for task $1" >&2; exit 1; }
+  while [ ! -f "$d/pid" ] && [ ! -f "$d/status" ] && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
+  end=$(( $(date +%s) + ${EXEC_WAIT_SECONDS:-100} ))
+  while [ "$(date +%s)" -lt "$end" ]; do
+    if [ -f "$d/status" ] && ! job_running "$d"; then break; fi
+    if [ ! -f "$d/status" ] && ! job_running "$d"; then
       sleep 0.2; [ -f "$d/status" ] || { echo 1 > "$d/status.tmp" && mv "$d/status.tmp" "$d/status"; echo "[idleflow] job $2 of $1 ended without an exit code" >&2; }
       break
     fi
     sleep 0.2
   done
-  if [ -f "$d/status" ]; then cat "$d/log"; exit "$(cat "$d/status")"; fi
+  if [ -f "$d/status" ] && ! job_running "$d"; then cat "$d/log"; exit "$(cat "$d/status")"; fi
   tail -n 20 "$d/log"
   echo "[idleflow] job $2 of $1 is still running (log: $(native_path "$d/log")). Wait for it: bash \"$0\" wait $1 $2. End it: bash \"$0\" stop $1 $2. Do not start it again while it runs." >&2
   exit 75
@@ -648,7 +658,11 @@ JSON
     n=1; while ! mkdir "$jobs/$n" 2>/dev/null; do n=$((n + 1)); done
     jd="$jobs/$n"; printf -v q '%q ' "$@"; printf -v st '%q' "$jd/status"
     # the exit code is written to a temp name and moved, so a reader never sees half of it
-    in_task "$tid" "$dir" idleflow_rt detach "$dir" "$jd/log" "$jd/pid" "$q; rc=\$?; echo \$rc > $st.tmp && mv $st.tmp $st" || { echo "exec: could not start the command" >&2; exit 1; }
+    printf -v pf '%q' "$jd/pid"
+    in_task "$tid" "$dir" idleflow_rt detach "$dir" "$jd/log" "$jd/pid.runtime" \
+      "echo \$\$ > $pf.tmp && mv $pf.tmp $pf; $q; rc=\$?; echo \$rc > $st.tmp && mv $st.tmp $st" || { echo "exec: could not start the command" >&2; exit 1; }
+    # the number first, so an agent whose call is cut short still knows which job to wait for
+    echo "[idleflow] job $n of $tid started" >&2
     await_job "$tid" "$n"
     ;;
   wait|stop)
@@ -656,7 +670,8 @@ JSON
     [[ "$job" =~ ^[0-9]+$ ]] || { echo "$cmd: '$job' is not a job number" >&2; exit 1; }
     if [ "$cmd" = wait ]; then await_job "$tid" "$job"; fi
     [ -f "$(job_dir "$tid" "$job")/pid" ] || { echo "no job $job for task $tid" >&2; exit 1; }
-    stop_job "$(job_dir "$tid" "$job")"; echo "job $job of $tid: stopped"
+    stop_job "$(job_dir "$tid" "$job")" || exit 1
+    echo "job $job of $tid: stopped"
     ;;
   get)
     key="${1:?key}"; active_id >/dev/null

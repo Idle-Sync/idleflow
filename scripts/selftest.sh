@@ -481,7 +481,7 @@ check "exec works from inside the task worktree" "[ '$inside' = 4400 ]"
 [ ! -f .idleflow/idleflow.conf ] || cp .idleflow/idleflow.conf "$scratch/conf.bak"
 printf 'EXEC_WAIT_SECONDS=1\n' >> .idleflow/idleflow.conf
 bash "$RUN" exec TA -- sh -c 'sleep 3; echo slow-done; exit 4' > "$scratch/job.out" 2> "$scratch/job.err"; rc=$?
-check "exec returns 75 and names the job while a command runs on" '[ "$rc" = 75 ] && grep -q "job [0-9]* of TA is still running" "$scratch/job.err"'
+check "exec returns 75 and names the job while a command runs on" '[ "$rc" = 75 ] && n="$(sed -n "1s/^\[idleflow\] job \([0-9]*\) of TA started$/\1/p" "$scratch/job.err")" && [ -n "$n" ] && grep -q "job $n of TA is still running" "$scratch/job.err"'
 job="$(sed -n 's/.*job \([0-9]*\) of TA is still running.*/\1/p' "$scratch/job.err")"
 for _ in 1 2 3 4 5; do bash "$RUN" wait TA "$job" > "$scratch/job.out" 2>/dev/null; rc=$?; [ "$rc" = 75 ] || break; done
 check "wait gives the same job's output and exit code when it ends" '[ "$rc" = 4 ] && grep -qx slow-done "$scratch/job.out"'
@@ -489,6 +489,9 @@ bash "$RUN" exec TA -- sh -c 'sleep 60 & echo "$!" > child.pid; wait' >/dev/null
 job="$(sed -n 's/.*job \([0-9]*\) of TA is still running.*/\1/p' "$scratch/job.err")"
 bash "$RUN" stop TA "$job" >/dev/null
 check "stop ends the job and the processes it started" '! kill -0 "$(cat "$wa/child.pid")" 2>/dev/null && ! bash "$RUN" wait TA "$job" >/dev/null 2>&1'
+bash "$RUN" exec TA -- sh -c 'sleep 30 >/dev/null 2>&1 &' >/dev/null 2> "$scratch/job.err"; rc=$?
+job="$(sed -n 's/.*job \([0-9]*\) of TA is still running.*/\1/p' "$scratch/job.err")"
+check "a job runs while a process it started runs, after its shell ends" '[ "$rc" = 75 ] && [ -n "$job" ] && bash "$RUN" stop TA "$job" >/dev/null && [ "$(cat .idleflow/runs/active/tasks/TA/jobs/$job/status)" = 0 ]'
 bash "$RUN" exec TB -- sleep 60 >/dev/null 2> "$scratch/job.err"
 job="$(sed -n 's/.*job \([0-9]*\) of TB is still running.*/\1/p' "$scratch/job.err")"
 bash "$RUN" wt rm TB
