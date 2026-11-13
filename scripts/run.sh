@@ -273,7 +273,7 @@ gen_files() { # $1: the block's current text; descriptions written there are kep
     desc="$(grep -F -- "- \`$e\` — " "$1" 2>/dev/null | head -1 | sed "s/^- \`[^\`]*\` — //" || true)"
     echo "- \`$e\` — ${desc:-(describe)}"
   done < <({ "${G[@]}" ls-files -z || true; } | while IFS= read -r -d '' e; do
-             case "$e" in */*) printf '%s\n' "${e%%/*}/";; *) printf '%s\n' "$e";; esac
+             case "$e" in (*/*) printf '%s\n' "${e%%/*}/";; (*) printf '%s\n' "$e";; esac
            done | LC_ALL=C sort -u)
 }
 gen_commands() {
