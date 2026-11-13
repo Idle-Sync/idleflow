@@ -189,7 +189,7 @@ bash "$RUN" wt rm "Té"
 touch "${d}__wt/keep-me"
 check "wt add refuses an id that is a path"       '! bash "$RUN" wt add .. 2>/dev/null && ! bash "$RUN" wt add ../x 2>/dev/null && [ -e "${d}__wt/keep-me" ] && [ ! -e "${d}__wt/x" ]'
 check "every task-id subcommand refuses a path"   '( for c in "wt rm" own unowned report gate merge exec preview repo-gate; do out="$(bash "$RUN" $c ../T1 x y 2>&1)"; case "$out" in "not a task id: "*) ;; *) exit 1;; esac; done )'
-check "an id git or Windows cannot use is refused" '! bash "$RUN" wt add "a~1" 2>/dev/null && ! bash "$RUN" wt add "x.lock" 2>/dev/null && ! bash "$RUN" wt add _gate-base 2>/dev/null && ! bash "$RUN" wt add CON 2>/dev/null'
+check "an id git, Windows or run.json keys cannot use is refused" '! bash "$RUN" wt add "a~1" 2>/dev/null && ! bash "$RUN" wt add "x.lock" 2>/dev/null && ! bash "$RUN" wt add T1.a 2>/dev/null && [ -z "$(bash "$RUN" get tasks.T1.a 2>/dev/null)" ] && ! bash "$RUN" wt add _gate-base 2>/dev/null && ! bash "$RUN" wt add CON 2>/dev/null'
 rm -f "${d}__wt/keep-me"
 
 echo "--- kill guard"
@@ -301,11 +301,11 @@ printf 'verdict: approve\nremedy: none\nfindings:\n### F1. A weak assertion   se
 printf '### F9. Fixed since   severity: blocking\n' > .idleflow/runs/active/review/T1-correct.1.md
 printf '### F1. Not this task   kind: convention\n' > .idleflow/runs/active/review/T10-conform.md
 printf '### F1. Nor this one   kind: convention\n' > .idleflow/runs/active/review/T1-ui-conform.md
-printf '### D1. A dotted task id   severity: minor\n' > .idleflow/runs/active/review/T1.2-design.md
+printf '### D1. A hyphenated task id   severity: minor\n' > .idleflow/runs/active/review/T1-2-design.md
 f="$(bash "$RUN" findings T1)"
 check "findings lists the current reviews' findings only" '[ "$(echo "$f" | wc -l | tr -d " ")" = 2 ] && echo "$f" | grep -qx "T1: F2. A leak on the error path   severity: major (review/T1-correct.md)" && ! echo "$f" | grep -q "F9\|Not this task\|Nor this one"'
-check "findings reads a dotted task id's current review" '[ "$(bash "$RUN" findings T1.2)" = "T1.2: D1. A dotted task id   severity: minor (review/T1.2-design.md)" ]'
-rm .idleflow/runs/active/review/T1-correct.md .idleflow/runs/active/review/T1-correct.1.md .idleflow/runs/active/review/T10-conform.md .idleflow/runs/active/review/T1-ui-conform.md .idleflow/runs/active/review/T1.2-design.md
+check "findings reads a hyphenated task id's current review" '[ "$(bash "$RUN" findings T1-2)" = "T1-2: D1. A hyphenated task id   severity: minor (review/T1-2-design.md)" ]'
+rm .idleflow/runs/active/review/T1-correct.md .idleflow/runs/active/review/T1-correct.1.md .idleflow/runs/active/review/T10-conform.md .idleflow/runs/active/review/T1-ui-conform.md .idleflow/runs/active/review/T1-2-design.md
 
 echo "--- merge, then a second group gates against its own base"
 check "merge refuses an unapproved task" 'bash "$RUN" merge T1 >/dev/null 2>&1; [ $? -eq 4 ]'

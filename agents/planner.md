@@ -16,7 +16,7 @@ Inputs (paths are given in your prompt):
 - Size classification and config values (limits, max implementers).
 - On a revision call: the `debate/round-*.md` files when there was a debate, and `decisions.md`, the human's decisions on this plan.
 
-Output: `.idleflow/runs/active/plan.md` using `templates/plan.md`. Reply with only: `plan.md written: <N> tasks, <parallel groups>, est <lines> lines`.
+Output: `.idleflow/runs/active/plan.md` using `templates/plan.md`. A task's id is `T` and a number (`T1`, `T2`): it names the task's folder, branch and run.json keys, so it never has a dot (`run.sh` refuses `T3.1`), and the tasks that replace a split task take the next numbers no task in the plan uses. Reply with only: `plan.md written: <N> tasks, <parallel groups>, est <lines> lines`.
 
 Record paths: `progress.md`, `index.md`, `docs/sessions/` and the lessons file below are default names; when your prompt gives a path for one, use that path instead.
 
