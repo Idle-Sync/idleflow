@@ -559,15 +559,20 @@ bash "$RUN" exec TA -- sh -c 'sleep 60 & echo "$!" > child.pid; wait' >/dev/null
 job="$(sed -n 's/.*job \([0-9]*\) of TA is still running.*/\1/p' "$scratch/job.err")"
 bash "$RUN" stop TA "$job" >/dev/null
 check "stop ends the job and the processes it started" '! kill -0 "$(cat "$wa/child.pid")" 2>/dev/null && ! bash "$RUN" wait TA "$job" >/dev/null 2>&1'
-bash "$RUN" exec TA --limit 2 -- sh -c 'sleep 60 & echo "$!" > child.pid; wait' >/dev/null 2> "$scratch/job.err"
-job="$(sed -n 's/.*job \([0-9]*\) of TA is still running.*/\1/p' "$scratch/job.err")"
-for _ in 1 2 3 4 5; do bash "$RUN" wait TA "$job" >/dev/null 2> "$scratch/job.err"; rc=$?; [ "$rc" = 75 ] || break; done
-check "a job past its --limit is stopped with what it started and exits 124" '[ "$rc" = 124 ] && grep -q "passed its limit of 2 s" "$scratch/job.err" && ! kill -0 "$(cat "$wa/child.pid")" 2>/dev/null && [ "$(cat .idleflow/runs/active/tasks/TA/jobs/$job/status)" = 124 ]'
+# a waiter and the job's own watcher reach the deadline together; run it a few times so a race shows
+for round in 1 2 3; do
+  bash "$RUN" exec TA --limit 2 -- sh -c 'sleep 60 & echo "$!" > child.pid; wait' >/dev/null 2> "$scratch/job.err"
+  job="$(sed -n 's/.*job \([0-9]*\) of TA is still running.*/\1/p' "$scratch/job.err")"
+  for _ in 1 2 3 4 5; do bash "$RUN" wait TA "$job" >/dev/null 2> "$scratch/job.err"; rc=$?; [ "$rc" = 75 ] || break; done
+  check "a job past its --limit is stopped with what it started and exits 124 ($round)" '[ "$rc" = 124 ] && grep -q "passed its limit of 2 s" "$scratch/job.err" && ! kill -0 "$(cat "$wa/child.pid")" 2>/dev/null && [ "$(cat .idleflow/runs/active/tasks/TA/jobs/$job/status)" = 124 ]'
+done
 bash "$RUN" exec TA --limit 2 -- sh -c 'sleep 60 & echo "$!" > child2.pid; wait' >/dev/null 2> "$scratch/job.err"
 job="$(sed -n 's/.*job \([0-9]*\) of TA is still running.*/\1/p' "$scratch/job.err")"
 jd2=".idleflow/runs/active/tasks/TA/jobs/$job"
 for _ in $(seq 1 40); do [ -f "$jd2/ended" ] && break; sleep 0.25; done
 check "a job past its --limit is stopped by its own watcher when no one waits" '[ -n "$job" ] && [ "$(cat "$jd2/status")" = 124 ] && ! kill -0 "$(cat "$wa/child2.pid")" 2>/dev/null'
+bash "$RUN" wait TA "$job" >/dev/null 2> "$scratch/job.err"; rc=$?
+check "a later wait on a job its watcher stopped says it passed its limit" '[ "$rc" = 124 ] && grep -q "passed its limit of 2 s" "$scratch/job.err"'
 check "a job within its --limit passes its exit code" 'bash "$RUN" exec TA --limit 30 -- sh -c "exit 3" 2>/dev/null; [ $? = 3 ]'
 bash "$RUN" exec TA --limit 2 -- sleep 1.5 >/dev/null 2> "$scratch/job.err"; rc=$?
 job="$(sed -n 's/.*job \([0-9]*\) of TA started.*/\1/p' "$scratch/job.err")"
