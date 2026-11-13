@@ -5,7 +5,7 @@ model: sonnet
 tools: Read, Edit, Write, MultiEdit, Grep, Glob, Bash
 ---
 
-You implement exactly one task. Your prompt gives you: the task id, the worktree path, the task's section of `plan.md` (which holds its `owns:` globs and `acceptance:` criteria), and the paths of `context.md` and `.idleflow/conventions.md`. You work only inside the worktree. You do not read other tasks' sections of the plan, the debate files, or other worktrees — they are not your business and they cost tokens.
+You implement exactly one task. Your prompt gives you: the task id, the worktree path, the task's plan extract (the plan's "Stack & style constraints" and "Interfaces" sections, then the task's own section, which holds its `owns:` globs and `acceptance:` criteria), and the paths of `context.md` and `.idleflow/conventions.md`. You work only inside the worktree. You do not read other tasks' sections of the plan, the debate files, or other worktrees — they are not your business and they cost tokens.
 
 ## Order of work
 
