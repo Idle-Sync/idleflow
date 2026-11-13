@@ -818,7 +818,8 @@ rm -rf "$f"
 
 echo "--- docs kept by code"
 # idleflow's own templates carry generated blocks for the projects that use them; this repo fills none
-if git -C "$HERE/.." rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+# only when the plugin folder is its own repo, not a copy inside some other repo
+if [ "$(git -C "$HERE/.." rev-parse --show-toplevel 2>/dev/null)" = "$(cd "$HERE/.." && pwd -P)" ]; then
   check "idleflow's own repo keeps its templates' generated blocks empty" '( cd "$HERE/.." && bash scripts/run.sh docs --check >/dev/null 2>&1 )'
 fi
 f="$(mktemp -d)"; ( cd "$f" && git init -q && git config user.name Ada && git config user.email a@a && mkdir -p .idleflow src \
