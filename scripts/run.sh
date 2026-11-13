@@ -66,12 +66,26 @@ source "$HERE/rt.sh"
 # shellcheck source=/dev/null
 source "$HERE/conf.sh"
 
+# The run lives in the checkout it was started from, which may itself be a linked worktree. Only
+# from inside one of the run's task worktrees (an agent's `run.sh exec`) does it live elsewhere: in
+# the checkout whose active run made that worktree. git names both: the task worktree is on branch
+# idleflow/<run>/<task>, and the run's checkout is the one in `git worktree list` whose active run
+# has that id. No file in the task worktree is trusted for this, since a committed one could point
+# anywhere.
 REPO="$(git rev-parse --show-toplevel)"
-# Called from inside a linked worktree (an agent's `run.sh exec`), the run still lives in the main
-# checkout. git itself names it: the common git dir's parent. No file in the checkout is trusted
-# for this, since a committed one could point anywhere.
-_git_dir="$(git rev-parse --path-format=absolute --git-dir)"; _common="$(git rev-parse --path-format=absolute --git-common-dir)"
-if [ "$_git_dir" != "$_common" ] && [ "$(basename "$_common")" = .git ]; then REPO="$(dirname "$_common")"; fi
+_branch="$(git symbolic-ref --short -q HEAD || true)"
+case "$_branch" in
+  idleflow/*/*)
+    _run_id="${_branch#idleflow/}"; _run_id="${_run_id%%/*}"
+    while IFS= read -r _line; do
+      case "$_line" in
+        ("worktree "*)
+          _wt="${_line#worktree }"; _rj="$_wt/.idleflow/runs/active/run.json"
+          if [ -f "$_rj" ] && [ "$(idleflow_rt get "$_rj" id 2>/dev/null || true)" = "$_run_id" ]; then REPO="$_wt"; break; fi;;
+      esac
+    done < <(git worktree list --porcelain)
+    ;;
+esac
 idleflow_load_conf "$REPO"
 IDLE="$REPO/.idleflow"
 CONVENTIONS="$IDLE/conventions.md"

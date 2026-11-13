@@ -508,6 +508,17 @@ check "wt rm stops the task's jobs" '[ "$(cat .idleflow/runs/active/tasks/TB/job
 rm -f .idleflow/idleflow.conf "$wa/child.pid"; [ ! -f "$scratch/conf.bak" ] || mv "$scratch/conf.bak" .idleflow/idleflow.conf
 bash "$RUN" wt rm TA; bash "$RUN" wt rm TB; bash "$RUN" finish done >/dev/null
 
+echo "--- a run started in a linked checkout"
+hw="$d-human"; git worktree add -q -b human-work "$hw" 2>/dev/null
+( cd "$hw" && bash "$RUN" new linked >/dev/null 2>&1 )
+check "the run lives in the linked checkout it was started from" '[ -f "$hw/.idleflow/runs/active/run.json" ] && [ ! -e .idleflow/runs/active ] && [ "$(cd "$hw" && bash "$RUN" path lessons)" = "$(cd "$hw" && pwd)/.idleflow/lessons.md" ]'
+hwt="$(cd "$hw" && bash "$RUN" wt add TH 2>/dev/null)"
+check "its task worktree finds that checkout, not the main one" '[ -n "$hwt" ] && [ "$(cd "$hwt" && bash "$RUN" exec TH -- sh -c "echo \$MAIN" 2>/dev/null)" = "$(cd "$hw" && pwd)" ]'
+git worktree add -q -b "idleflow/no-such-run/TX" "$d-stray" 2>/dev/null
+check "a branch named like a task's but of no active run is its own checkout" '[ "$(cd "$d-stray" && bash "$RUN" path lessons)" = "$(cd "$d-stray" && pwd)/.idleflow/lessons.md" ]'
+( cd "$hw" && bash "$RUN" wt rm TH && bash "$RUN" finish "done" >/dev/null )
+git worktree remove --force "$d-stray"; git worktree remove --force "$hw"; git branch -q -D human-work "idleflow/no-such-run/TX"
+
 echo "--- the repo's gate"
 git add -u && commit -q -m "tidy before the gate"
 cp .idleflow/conventions.md "$d-conv.bak"
