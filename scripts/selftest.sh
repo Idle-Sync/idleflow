@@ -162,6 +162,14 @@ echo hooked > hooked.txt; git add hooked.txt; bash "$RUN" snapshot >/dev/null 2>
 ( cd "$wt" && echo h > src/hook.txt && git add src/hook.txt && bash -c 'source "$0"; git commit -q -m "T1: hook"' "$HERE/conf.sh" )
 check "the repo's hooks keep the repo's git settings" '[ -s "$scratch/hook.env" ] && ! grep -q quotePath "$scratch/hook.env"'
 rm -f "$hk/pre-commit"; ( cd "$wt" && git reset -q --hard HEAD~1 )
+# names git quotes even with quotePath off: a double quote, a backslash, a tab
+odd="$(printf 'src/a"b\\c\td.py')"
+printf 'x\ny\n' > "$wt/$odd"; ( cd "$wt" && git add -- "$odd" && commit -m "T1: odd name" )
+check "unowned reads any file name as it is"      '[ -z "$(bash "$RUN" unowned T1)" ]'
+check "the gate names any file as it is"          'bash "$RUN" gate T1 | grep -qF "\"src/a\\\"b\\\\c\\td.py\",2"'
+printf '3\t1\t\0old/x.py\0new/x.py\0' > "$scratch/ns-rename"
+check "the gate reads a rename record as the new path" 'idleflow_rt gate 10 5 "$scratch/ns-rename" "$scratch/ns-rename" | grep -qF "\"files\":1," && idleflow_rt gate 10 5 "$scratch/ns-rename" "$scratch/ns-rename" | grep -qF "[[\"new/x.py\",4]]"'
+( cd "$wt" && git reset -q --hard HEAD~1 )
 check "unowned fails on an unknown task"        '! bash "$RUN" unowned T9 >/dev/null 2>&1'
 bash "$RUN" own T1 '["src/**","tests/**"]'
 check "allows outside any repo"           '[ "$(guard_rc "/nowhere/x.txt" "/nowhere")" = "0" ]'
@@ -616,6 +624,8 @@ det="$(cd "$f" && bash "$RUN" detect)"
 check "detect suggests generated blocks for a hand-kept index" 'echo "$det" | grep -q "^suggest generated_docs: index.md —"'
 ( cd "$f" && git checkout -q -- index.md 2>/dev/null; printf '# Index\n<!-- idleflow:generated files -->\n<!-- idleflow:end -->\n' > index.md && echo x > é.txt && git add -A && git commit -qm "é" && bash "$RUN" docs >/dev/null )
 check "the files block names non-ASCII files as they are" 'grep -qxF -- "- \`é.txt\` — (describe)" "$f/index.md"'
+( cd "$f" && printf '# Index\n<!-- idleflow:generated files -->\n<!-- idleflow:end -->\n' > index.md && echo x > 'q"uote.txt' && git add -A && git commit -qm quote && bash "$RUN" docs >/dev/null )
+check "the files block names any file as it is" 'grep -qxF -- "- \`q\"uote.txt\` — (describe)" "$f/index.md"'
 rm -rf "$f"
 
 echo "--- a first run fills Commands and can propose the gate"

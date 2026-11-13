@@ -94,14 +94,21 @@ function cmdOwn(p, tid, wt, globs) {
 
 // --- gate -------------------------------------------------------------------
 
+// `git diff -z --numstat`: "added<TAB>deleted<TAB>path<NUL>", or, for a rename, an empty path
+// followed by "old<NUL>new<NUL>". NUL-separated paths are never quoted, so any name arrives as is.
 function parseNumstat(text) {
+  const toks = text.split("\0");
   const rows = [];
-  for (const line of text.split(/\r?\n/)) {
-    const parts = line.split("\t");
-    if (parts.length < 3) continue;
-    const a = parts[0] === "-" ? 0 : parseInt(parts[0], 10); // binary files
-    const d = parts[1] === "-" ? 0 : parseInt(parts[1], 10);
-    rows.push([parts[2], a, d]);
+  for (let i = 0; i < toks.length; ) {
+    const t = toks[i++];
+    const tab1 = t.indexOf("\t");
+    const tab2 = tab1 < 0 ? -1 : t.indexOf("\t", tab1 + 1);
+    if (tab2 < 0) continue;
+    let p = t.slice(tab2 + 1);
+    if (p === "" && i + 1 < toks.length) { p = toks[i + 1]; i += 2; }
+    const a = t.slice(0, tab1) === "-" ? 0 : parseInt(t.slice(0, tab1), 10); // binary files
+    const d = t.slice(tab1 + 1, tab2) === "-" ? 0 : parseInt(t.slice(tab1 + 1, tab2), 10);
+    rows.push([p, a, d]);
   }
   return rows;
 }
@@ -120,7 +127,7 @@ function cmdGate(limit, slack, allFile, codeFile, uncommittedFile) {
     .sort((x, y) => y[1] - x[1])
     .slice(0, 8);
   const uncommitted = uncommittedFile
-    ? fs.readFileSync(uncommittedFile, "utf8").split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+    ? fs.readFileSync(uncommittedFile, "utf8").split("\0").filter((r) => r.length > 3).map((r) => r.slice(3)) // "XY path<NUL>"
     : [];
   console.log(
     JSON.stringify({
@@ -331,8 +338,9 @@ function cmdUnowned(p, tid) {
   const owns = Array.isArray(task.owns) ? task.owns : [];
   const shared = Array.isArray(omap.shared) ? omap.shared : [];
   const allowed = owns.concat([".idleflow-run/**"], shared);
-  for (const line of fs.readFileSync(0, "utf8").split(/\r?\n/)) {
-    const rel = line.trim().replace(/\\/g, "/");
+  // paths come NUL-separated (`git diff -z --name-only`), so none is quoted
+  for (const raw of fs.readFileSync(0, "utf8").split("\0")) {
+    const rel = raw.replace(/\\/g, "/");
     if (rel && !globMatch(WIN ? rel.toLowerCase() : rel, allowed)) process.stdout.write(rel + "\n");
   }
 }
