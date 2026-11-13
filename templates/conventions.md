@@ -125,7 +125,9 @@ preview_url: none
   them in `.idleflow/worktrees/` (ignored), for projects that must not write outside their own folder.
   Tools that scan hidden folders may then see the worktrees.
 - `worktree_setup`: one shell command run in every new task worktree before the implementer starts
-  (link large shared folders, copy fixtures); `$MAIN` is the main checkout, `$WORKTREE` the new one.
+  (build the worktree's own Python environment, link large shared folders, copy fixtures); `$MAIN` is
+  the main checkout, `$WORKTREE` the new one. Never point a worktree at the main checkout's `.venv`:
+  its editable install runs the main checkout's code.
   A failure, or a change to a tracked file, stops the worktree.
 - `gate`: the one command that says whether the repo is healthy (its own check script, `make check`,
   `npm test`). Set, it is the definition of done: run on the base before building, by each implementer

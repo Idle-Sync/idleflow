@@ -538,6 +538,18 @@ det="$(cd "$f" && bash "$RUN" detect)"
 check "detect suggests generated blocks for a hand-kept index" 'echo "$det" | grep -q "^suggest generated_docs: index.md —"'
 rm -rf "$f"
 
+echo "--- a worktree builds its own Python environment"
+f="$(mktemp -d)"; ( cd "$f" && git init -q && mkdir -p .idleflow .venv && printf 'mode: repo\nworktree_setup: none\n' > .idleflow/conventions.md && printf '[project]\nname = "x"\n' > pyproject.toml )
+check "detect suggests a worktree venv when main has one" '(cd "$f" && bash "$RUN" detect) | grep -qxF "suggest worktree_setup: python3 -m venv .venv && .venv/bin/pip install -q -e . — the main checkout has .venv/ and a task worktree starts without one; borrowing the main one runs the main checkout'"'"'s code in subprocesses"'
+touch "$f/uv.lock"
+check "a uv project syncs its own environment"   '(cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup: uv sync --frozen —"'
+printf 'worktree_setup: make env\n' >> "$f/.idleflow/conventions.md"; sed -i.bak '/^worktree_setup: none$/d' "$f/.idleflow/conventions.md"
+check "a chosen worktree_setup is left alone"    '! (cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup"'
+rm -rf "$f/.venv"; sed -i.bak '/^worktree_setup:/d' "$f/.idleflow/conventions.md"
+check "no venv in main, no suggestion"           '! (cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup"'
+rm -rf "$f"
+check "agents never borrow the main checkout's environment" 'grep -q "never the main checkout" "$HERE/../agents/implementer.md" && grep -q "never the main checkout" "$HERE/../agents/implementer-hard.md" && grep -q "never the main checkout" "$HERE/../agents/review-correct.md"'
+
 echo "--- prompt contracts"
 researcher="$HERE/../agents/stack-researcher.md"
 advisor="$HERE/../agents/stack-advisor.md"
