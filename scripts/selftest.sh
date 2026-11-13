@@ -578,8 +578,9 @@ kill "$other" 2>/dev/null
 for _ in 1 2 3; do out="$(bash "$RUN" exec TA --base -- sh -c 'git rev-parse HEAD; test -e only-in-task.txt && echo has || echo lacks' 2>/dev/null)"; rc=$?; [ "$rc" = 75 ] || break; done
 check "exec --base runs on the task's base commit, not its work" '[ "$(echo "$out" | sed -n 1p)" = "$(bash "$RUN" get tasks.TA.base_sha)" ] && [ "$(echo "$out" | sed -n 2p)" = lacks ] && [ -f "$wa/only-in-task.txt" ]'
 check "exec --base keeps the job under the task and passes the exit code" 'bash "$RUN" exec TA --limit 30 --base -- sh -c "exit 5" 2>/dev/null; [ $? = 5 ]'
-jb="$(ls -d .idleflow/runs/active/tasks/TA/jobs/*/ | sort -t/ -k7 -n | tail -n1)"
-check "a job records what ran and on which checkout" '[ "$(cat "${jb}checkout")" = "base $(bash "$RUN" get tasks.TA.base_sha)" ] && grep -qF "exit" "${jb}command" && bash "$RUN" exec TA -- true 2>/dev/null && [ "$(cat "$(ls -d .idleflow/runs/active/tasks/TA/jobs/*/ | sort -t/ -k7 -n | tail -n1)checkout")" = task ]'
+last_job() { local n=0 j; for j in .idleflow/runs/active/tasks/"$1"/jobs/*; do j="${j##*/}"; [ "$j" -gt "$n" ] && n="$j"; done; echo ".idleflow/runs/active/tasks/$1/jobs/$n/"; }
+jb="$(last_job TA)"
+check "a job records what ran and on which checkout" '[ "$(cat "${jb}checkout")" = "base $(bash "$RUN" get tasks.TA.base_sha)" ] && grep -qF "exit" "${jb}command" && bash "$RUN" exec TA -- true 2>/dev/null && [ "$(cat "$(last_job TA)checkout")" = task ]'
 base_ta="$(git worktree list --porcelain | sed -n 's/^worktree \(.*_base-TA\)$/\1/p')"
 check "guard: nothing in the base checkout can be edited" '[ "$(guard_rc "$base_ta/src/code.py" "$base_ta")" = "2" ] && [ "$(guard_rc "$base_ta/new.txt" "$base_ta")" = "2" ]'
 echo stray > "$base_ta/stray-untracked"; first_file="$(git -C "$base_ta" ls-files | head -n1)"; echo edited >> "$base_ta/$first_file"
