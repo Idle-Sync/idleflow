@@ -347,126 +347,341 @@ function cmdUnowned(p, tid) {
 }
 // --- kill guard ---------------------------------------------------------------
 // A kill by name or pattern matches every process on the machine with that text, other Claude Code
-// sessions' included, so only a kill by a PID the agent kept is allowed. The command is read the way
-// a shell reads it: quoted text is data, and $(...), backticks and `bash -c '...'` hold commands.
-// Same in idleflow.py; the two must agree on every input.
+// sessions' included, so only a kill of a PID the agent kept is allowed. The command is read the way
+// a shell reads it: quoted text and here-document bodies are data; $(...), backticks, `bash -c`,
+// `eval` and `watch` hold commands. Same in idleflow.py; the two must agree on every input.
 const SHELLS = ["bash", "sh", "zsh", "dash", "ksh"];
-const KEYWORDS = ["then", "do", "else", "elif", "if", "while", "until", "!", "{", "}", "time"];
-// wrappers that run the rest of the line as a command, and their options that take a value
-const WRAPPERS = {
-  sudo: "ugChpUrtTD", doas: "uC", exec: "a", command: "", builtin: "", nohup: "",
-  env: "uSCP", nice: "n", ionice: "cnp", timeout: "sk", watch: "nd", stdbuf: "ioe",
-  setsid: "", xargs: "IinPLdsaE",
-};
-const NAME_KILLERS = ["pkill", "killall", "killall5", "skill"];
-const PID_FINDERS = ["pgrep", "pidof"];
+// words that start a command without being its program
+const KEYWORDS = ["then", "do", "else", "elif", "if", "while", "until", "!", "{", "}", "time", "coproc"];
+// compound commands: a statement runs on to its closing word, so a whole loop is one statement
+const OPENERS = ["if", "while", "until", "for", "select", "case"];
+const CLOSERS = ["fi", "done", "esac"];
+const HEADERS = ["for", "select", "case", "in", "esac"]; // their words are a list, not a command
+// wrapper -> [short options that take a value, long options that take a value, words before the command]
+const WRAPPERS = new Map(Object.entries({
+  sudo: ["ugChpUrtTD", ["user", "group", "host", "prompt", "close-from", "role", "type"], 0],
+  doas: ["uC", [], 0], exec: ["a", [], 0], command: ["", [], 0], builtin: ["", [], 0],
+  nohup: ["", [], 0], env: ["uSCP", ["unset", "chdir", "split-string"], 0],
+  nice: ["n", ["adjustment"], 0], ionice: ["cnp", ["class", "classdata", "pid"], 0],
+  timeout: ["sk", ["signal", "kill-after"], 1], stdbuf: ["ioe", ["input", "output", "error"], 0],
+  setsid: ["", [], 0],
+  xargs: ["IinPLdsaE", ["replace", "max-args", "max-procs", "max-lines", "delimiter", "max-chars",
+                        "arg-file", "eof"], 0],
+  chrt: ["", [], 1], taskset: ["", [], 1], strace: ["eoOpPsSuUXba", [], 0], unbuffer: ["", [], 0],
+  flock: ["Ew", ["conflict-exit-code", "wait", "timeout"], 1],
+  runuser: ["ugGw", ["user", "group", "supp-group", "whitelist-environment"], 0],
+  "systemd-run": ["upE", ["unit", "property", "setenv", "uid", "gid", "slice", "description"], 0],
+  npx: ["p", ["package", "call"], 0], bunx: ["p", ["package"], 0],
+}));
+// programs that run the word after a -c option (or --command) as a shell script
+const SCRIPT_OPTION = ["su", "runuser", "script", "flock"];
+const NAME_KILLERS = ["pkill", "killall", "killall5", "skill", "kill-port", "fkill", "fkill-cli"];
+const PID_LISTERS = ["pgrep", "pidof", "ps", "lsof", "fuser", "ss", "netstat"];
+const MAX_DEPTH = 12, MAX_WORK = 50000;
+const ASSIGN_RE = /^([A-Za-z_][A-Za-z0-9_]*)\+?=/;
+class TooComplex extends Error {}
+class Refuse extends Error {}
 const baseName = (w) => w.slice(w.lastIndexOf("/") + 1);
 
-// index just past the match of the opener at s[i] ("$(" or "`"), quotes and nesting respected
-function closeAt(s, i, opener) {
-  if (opener === "`") {
+// index just past the end of the "$(" or backtick that starts at s[i]; quotes and nesting respected
+function closeAt(s, i) {
+  if (s[i] === "`") {
     let j = i + 1;
     while (j < s.length && s[j] !== "`") j += s[j] === "\\" ? 2 : 1;
-    return j + 1;
+    return Math.min(j + 1, s.length);
   }
   let depth = 1, j = i + 2;
   while (j < s.length && depth) {
     const c = s[j];
-    if (c === "\\") { j += 2; continue; }
-    if (c === "'") { const k = s.indexOf("'", j + 1); j = k < 0 ? s.length : k + 1; continue; }
-    if (c === '"') {
+    if (c === "\\") j += 2;
+    else if (c === "'") { const k = s.indexOf("'", j + 1); j = k < 0 ? s.length : k + 1; }
+    else if (c === '"') {
       j += 1;
       while (j < s.length && s[j] !== '"') j += s[j] === "\\" ? 2 : 1;
       j += 1;
-      continue;
-    }
-    if (s.startsWith("$(", j)) { depth += 1; j += 2; continue; }
-    if (c === ")") depth -= 1;
-    j += 1;
+    } else if (s.startsWith("$(", j)) { depth += 1; j += 2; }
+    else { if (c === ")") depth -= 1; j += 1; }
   }
-  return j;
+  return Math.min(j, s.length);
 }
 
-// [[ [word, fromSubstitution], ... ], ...]: every simple command in s, nested ones too
-function shellCommands(s, depth = 0) {
+// [the script inside the "$(" or backtick at s[i], the index past its end]
+function innerAt(s, i) {
+  const k = closeAt(s, i);
+  return [s[i] === "$" ? s.slice(i + 2, k - 1) : s.slice(i + 1, k - 1), k];
+}
+
+// The commands of one script, nothing nested parsed yet; see _lex in idleflow.py.
+function lex(s, work) {
+  work[0] += s.length;
+  if (work[0] > MAX_WORK) throw new TooComplex();
   const cmds = [];
-  let words = [], word = "", subst = false, inWord = false;
-  if (depth > 8) return cmds;
-  const endWord = () => { if (inWord) words.push([word, subst]); word = ""; subst = false; inWord = false; };
-  const endCmd = () => { endWord(); if (words.length) cmds.push(words); words = []; };
+  let stmt = 0, compound = 0, pending = [];
+  const st = { cmd: { words: [], subs: [], docs: [], stmt: 0 }, word: null, redirect: false };
+  const w = () => { if (st.word === null) st.word = { text: "", subs: [] }; return st.word; };
+  const endWord = () => {
+    const word = st.word;
+    if (word !== null) {
+      if (st.redirect) { st.cmd.subs.push(...word.subs); st.redirect = false; } // a redirection target is not an argument
+      else st.cmd.words.push(word);
+    }
+    st.word = null;
+  };
+  const endCmd = (boundary) => {
+    endWord();
+    const cmd = st.cmd;
+    if (cmd.words.length || cmd.subs.length || cmd.docs.length) {
+      const first = cmd.words.length ? cmd.words[0].text : "";
+      cmd.stmt = stmt;
+      cmds.push(cmd);
+      compound = Math.max(0, compound + (OPENERS.includes(first) ? 1 : 0) - (CLOSERS.includes(first) ? 1 : 0));
+    }
+    if (boundary && compound === 0) stmt += 1;
+    st.cmd = { words: [], subs: [], docs: [], stmt };
+  };
   let i = 0;
-  while (i < s.length) {
+  const n = s.length;
+  while (i < n) {
     const c = s[i];
-    if (c === " " || c === "\t") endWord();
-    else if ("\n;&|()".includes(c)) endCmd();
-    else if (c === "#" && !inWord) { const k = s.indexOf("\n", i); i = k < 0 ? s.length : k; continue; }
-    else if (c === "\\") {
-      if (s.slice(i + 1, i + 2) === "\n") { i += 2; continue; }
-      word += s.slice(i + 1, i + 2); inWord = true; i += 2; continue;
-    } else if (c === "'") {
-      let k = s.indexOf("'", i + 1); if (k < 0) k = s.length;
-      word += s.slice(i + 1, k); inWord = true; i = k + 1; continue;
-    } else if (c === '"') {
-      let j = i + 1;
-      while (j < s.length && s[j] !== '"') {
-        if (s[j] === "\\") { word += s.slice(j + 1, j + 2); j += 2; }
-        else if (s.startsWith("$(", j) || s[j] === "`") {
-          const k = closeAt(s, j, s[j] === "$" ? "$(" : "`");
-          const inner = s[j] === "$" ? s.slice(j + 2, k - 1) : s.slice(j + 1, k - 1);
-          cmds.push(...shellCommands(inner, depth + 1));
-          word += s.slice(j, k); subst = true; j = k;
-        } else { word += s[j]; j += 1; }
+    if (c === " " || c === "\t") { endWord(); i += 1; }
+    else if (c === "\n") {
+      endCmd(true);
+      i += 1;
+      for (const [delim, quoted, strip, owner] of pending) {
+        const body = [];
+        while (i < n) {
+          let k = s.indexOf("\n", i);
+          if (k < 0) k = n;
+          const line = s.slice(i, k);
+          i = k + 1;
+          if ((strip ? line.replace(/^\t+/, "") : line) === delim) break;
+          body.push(line);
+        }
+        owner.docs.push([body.join("\n"), quoted]);
       }
-      inWord = true; i = j + 1; continue;
+      pending = [];
+    } else if (c === "&" && s.slice(i + 1, i + 2) === ">") { endWord(); i += 2; st.redirect = true; }
+    else if (";&|()".includes(c)) {
+      const two = s.slice(i, i + 2);
+      endCmd(c !== "|" || two === "||");
+      i += ["&&", "||", ";;"].includes(two) ? 2 : 1;
+    } else if (c === "<" || c === ">") {
+      const word = st.word;
+      if (word !== null && /^[0-9]+$/.test(word.text) && !word.subs.length) st.word = null; // a file descriptor number, as in 2>&1
+      endWord();
+      if (s.startsWith("<<", i) && !s.startsWith("<<<", i)) {
+        let j = i + 2;
+        const strip = s.slice(j, j + 1) === "-";
+        if (strip) j += 1;
+        while (j < n && (s[j] === " " || s[j] === "\t")) j += 1;
+        let k = j;
+        while (k < n && !" \t\n;&|()<>".includes(s[k])) k += 1;
+        const raw = s.slice(j, k);
+        const quoted = /['"\\]/.test(raw);
+        pending.push([raw.replace(/['"\\]/g, ""), quoted, strip, st.cmd]);
+        i = k;
+      } else {
+        while (i < n && "<>&|".includes(s[i])) i += 1;
+        st.redirect = true;
+      }
+    } else if (c === "#" && st.word === null) { const k = s.indexOf("\n", i); i = k < 0 ? n : k; }
+    else if (c === "\\") { if (s.slice(i + 1, i + 2) !== "\n") w().text += s.slice(i + 1, i + 2); i += 2; }
+    else if (c === "'" || (c === "$" && s.slice(i + 1, i + 2) === "'")) {
+      const ansi = c === "$";
+      let j = ansi ? i + 2 : i + 1;
+      while (j < n && s[j] !== "'") {
+        if (ansi && s[j] === "\\") {
+          const e = s.slice(j + 1, j + 2);
+          w().text += e === "n" ? "\n" : e === "t" ? "\t" : e;
+          j += 2;
+        } else { w().text += s[j]; j += 1; }
+      }
+      w();
+      i = j + 1;
+    } else if (c === '"' || (c === "$" && s.slice(i + 1, i + 2) === '"')) {
+      let j = c === "$" ? i + 2 : i + 1;
+      while (j < n && s[j] !== '"') {
+        if (s[j] === "\\") { w().text += s.slice(j + 1, j + 2); j += 2; }
+        else if (s.startsWith("$(", j) || s[j] === "`") {
+          const [inner, k] = innerAt(s, j);
+          w().subs.push(inner);
+          w().text += s.slice(j, k);
+          j = k;
+        } else { w().text += s[j]; j += 1; }
+      }
+      w();
+      i = j + 1;
     } else if (s.startsWith("$(", i) || c === "`") {
-      const k = closeAt(s, i, c === "$" ? "$(" : "`");
-      const inner = c === "$" ? s.slice(i + 2, k - 1) : s.slice(i + 1, k - 1);
-      cmds.push(...shellCommands(inner, depth + 1));
-      word += s.slice(i, k); subst = true; inWord = true; i = k; continue;
-    } else { word += c; inWord = true; }
-    i += 1;
+      const [inner, k] = innerAt(s, i);
+      w().subs.push(inner);
+      w().text += s.slice(i, k);
+      i = k;
+    } else { w().text += c; i += 1; }
   }
-  endCmd();
-  // `bash -c '<script>'` runs its script as commands
-  for (const ws of [...cmds]) {
-    const names = ws.map((w) => w[0]);
-    const k = names.indexOf("-c");
-    if (SHELLS.includes(baseName(names[0])) && k >= 0 && k + 1 < names.length) cmds.push(...shellCommands(names[k + 1], depth + 1));
-  }
+  endCmd(true);
   return cmds;
 }
 
-// [program name, its words, whether xargs runs it] after keywords, assignments and wrappers
+// index of the first word after the options that start at words[i]
+function skipOptions(words, i, shortTakes, longTakes) {
+  while (i < words.length) {
+    const t = words[i].text;
+    if (t === "--") return i + 1;
+    if (!t.startsWith("-") || t === "-") return i;
+    i += 1;
+    if (t.startsWith("--")) { if (!t.includes("=") && longTakes.includes(t.slice(2))) i += 1; }
+    else if (shortTakes.includes(t[t.length - 1])) i += 1; // the value of the cluster's last letter: -u root, -iu root
+  }
+  return i;
+}
+
+// index of the word after a short-option cluster holding "c" (-c, -lc, -qc) or after --command
+function scriptAfterC(words) {
+  for (let k = 0; k < words.length; k++) {
+    const t = words[k].text;
+    if (t === "--") return -1;
+    if (t === "--command" || (t.startsWith("-") && !t.startsWith("--") && t.slice(1).includes("c"))) {
+      return k + 1 < words.length ? k + 1 : -1;
+    }
+    if (!t.startsWith("-")) return -1;
+  }
+  return -1;
+}
+
+// [name, its words, whether xargs runs it, the indexes of `rest` that hold a script it runs]
 function programOf(words) {
   let viaXargs = false, i = 0;
   while (i < words.length) {
-    const w = words[i][0];
-    if (KEYWORDS.includes(w) || /^[A-Za-z_][A-Za-z0-9_]*=/.test(w)) { i += 1; continue; }
-    const name = baseName(w);
-    if (!(name in WRAPPERS)) return [name, words.slice(i), viaXargs];
-    viaXargs = viaXargs || name === "xargs";
-    const takes = WRAPPERS[name];
-    i += 1;
-    while (i < words.length && words[i][0].startsWith("-") && words[i][0] !== "-") {
-      const flag = words[i][0];
-      i += 1;
-      if (flag.length === 2 && takes.includes(flag[1]) && i < words.length) i += 1;
+    const t = words[i].text;
+    if (KEYWORDS.includes(t) || ASSIGN_RE.test(t)) { i += 1; continue; }
+    const name = baseName(t), rest = words.slice(i);
+    if (SHELLS.includes(name) || SCRIPT_OPTION.includes(name)) {
+      const k = scriptAfterC(rest.slice(1));
+      if (k >= 0) return [name, rest, viaXargs, [1 + k]];
+      if (SHELLS.includes(name)) return [name, rest, viaXargs, []];
     }
-    if (name === "timeout" && i < words.length) i += 1; // the duration
+    if (name === "eval" || name === "watch") {
+      const start = skipOptions(rest, 1, name === "watch" ? "nd" : "", ["interval", "differences"]);
+      const at = [];
+      for (let k = start; k < rest.length; k++) at.push(k);
+      return [name, rest, viaXargs, at];
+    }
+    if ((name === "pnpm" || name === "yarn") && rest.length > 1 && rest[1].text === "dlx") { i += 2; continue; }
+    if (!WRAPPERS.has(name)) return [name, rest, viaXargs, []];
+    let [shortTakes, longTakes, positional] = WRAPPERS.get(name);
+    viaXargs = viaXargs || name === "xargs";
+    const optionsEnd = skipOptions(words, i + 1, shortTakes, longTakes);
+    const later = rest.slice(1).map((wd) => wd.text);
+    if (name === "taskset" && later.some((t) => ["-c", "-p", "--cpu-list", "--pid"].includes(t))) {
+      positional = later.some((t) => t === "-p" || t === "--pid") ? 0 : 1;
+    }
+    i = optionsEnd + positional;
   }
-  return ["", [], viaXargs];
+  return ["", [], viaXargs, []];
+}
+
+// PID -1 signals every process the user may signal
+function killsAll(args) {
+  let signal = false;
+  for (let k = 0; k < args.length; k++) {
+    const t = args[k].text;
+    if (t === "--") return args.slice(k + 1).some((a) => a.text === "-1");
+    if (t === "-1" && signal) return true;
+    if (t.startsWith("-") && t !== "-l" && t !== "-L") signal = true;
+  }
+  return false;
+}
+
+const listsPids = (programs) => [...programs].some((p) => PID_LISTERS.includes(p));
+const escapeRe = (v) => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// [refuse, the programs this script and everything nested in it run]
+function scan(script, work, depth) {
+  if (depth > MAX_DEPTH) throw new TooComplex();
+  const seen = new Set(), stmtPrograms = new Map(), tainted = new Set(), kills = [];
+  const nested = (sub) => {
+    const [refuse, progs] = scan(sub, work, depth + 1);
+    if (refuse) throw new Refuse();
+    return progs;
+  };
+  const addAll = (set, items) => { for (const x of items) set.add(x); };
+  try {
+    for (const cmd of lex(script, work)) {
+      const words = cmd.words;
+      let name = "", rest = [], viaXargs = false, scriptAt = [];
+      if (words.length && !HEADERS.includes(words[0].text)) [name, rest, viaXargs, scriptAt] = programOf(words);
+      const here = new Set(name ? [name] : []);
+      const scriptWords = new Set(scriptAt.map((k) => rest[k]));
+      if (scriptAt.length) addAll(here, nested(scriptAt.map((k) => rest[k].text).join(" ")));
+      const wordPrograms = new Map();
+      for (const wd of words) {
+        if (scriptWords.has(wd)) continue; // its substitutions are part of the script just read
+        const progs = new Set();
+        for (const sub of wd.subs) addAll(progs, nested(sub));
+        wordPrograms.set(wd, progs);
+        addAll(here, progs);
+      }
+      for (const sub of cmd.subs) addAll(here, nested(sub));
+      for (const [body, quoted] of cmd.docs) {
+        if (SHELLS.includes(name) && !scriptAt.length) addAll(here, nested(body)); // bash <<EOF: the body is the script
+        else if (!quoted) {
+          let k = 0;
+          while (k < body.length) {
+            if (body.startsWith("$(", k) || body[k] === "`") {
+              const [inner, next] = innerAt(body, k);
+              addAll(here, nested(inner));
+              k = next;
+            } else k += 1;
+          }
+        }
+      }
+      if (NAME_KILLERS.includes(name)) return [true, seen];
+      const args = rest.slice(1);
+      if (name === "fuser" && args.some((a) => a.text === "--kill" ||
+          (a.text.startsWith("-") && !a.text.startsWith("--") && a.text.includes("k")))) return [true, seen];
+      if (name === "find") {
+        const texts = args.map((a) => a.text);
+        for (let k = 0; k < texts.length; k++) {
+          if (["-exec", "-execdir", "-ok", "-okdir"].includes(texts[k])) {
+            let end = texts.length;
+            for (let m = k + 1; m < texts.length; m++) if (texts[m] === ";" || texts[m] === "+") { end = m; break; }
+            const inner = programOf(args.slice(k + 1, end))[0];
+            if (NAME_KILLERS.includes(inner) || inner === "kill") return [true, seen];
+          }
+        }
+      }
+      for (const wd of words) {
+        const m = ASSIGN_RE.exec(wd.text);
+        if (m && listsPids(wordPrograms.get(wd) || [])) tainted.add(m[1]);
+      }
+      if (name === "kill") {
+        if (viaXargs || killsAll(args) || args.some((a) => listsPids(wordPrograms.get(a) || []))) return [true, seen];
+        kills.push([cmd.stmt, args]);
+      }
+      if (!stmtPrograms.has(cmd.stmt)) stmtPrograms.set(cmd.stmt, new Set());
+      addAll(stmtPrograms.get(cmd.stmt), here);
+      addAll(seen, here);
+    }
+  } catch (e) {
+    if (e instanceof Refuse) return [true, seen];
+    throw e;
+  }
+  for (const [stmt, args] of kills) {
+    if (listsPids(stmtPrograms.get(stmt) || [])) return [true, seen]; // pgrep x | while read p; do kill $p; done
+    for (const a of args) {
+      for (const v of tainted) if (new RegExp("\\$\\{?" + escapeRe(v) + "\\b").test(a.text)) return [true, seen]; // pids=$(pgrep x); kill $pids
+    }
+  }
+  return [false, seen];
 }
 
 function killByPattern(command) {
-  const progs = shellCommands(command).map(programOf);
-  const findsPids = progs.some(([name, ws]) =>
-    PID_FINDERS.includes(name) || (name === "lsof" && ws.slice(1).some(([w]) => w.startsWith("-") && w.includes("t"))));
-  for (const [name, ws, viaXargs] of progs) {
-    if (NAME_KILLERS.includes(name)) return true;
-    if (name === "fuser" && ws.slice(1).some(([w]) => w.startsWith("-") && !w.startsWith("--") && w.includes("k"))) return true;
-    if (name === "kill" && (viaXargs || findsPids || ws.slice(1).some(([, sub]) => sub))) return true;
+  try {
+    return scan(command, [0], 0)[0];
+  } catch (e) {
+    if (e instanceof TooComplex) return true; // too deeply nested or too long to read: refuse rather than guess
+    throw e;
   }
-  return false;
 }
 
 function cmdKillguard() {

@@ -357,179 +357,386 @@ def cmd_unowned(path, tid):
 
 # --- kill guard ---------------------------------------------------------------
 # A kill by name or pattern matches every process on the machine with that text, other Claude Code
-# sessions' included, so only a kill by a PID the agent kept is allowed. The command is read the way
-# a shell reads it: quoted text is data, and $(...), backticks and `bash -c '...'` hold commands.
-# Same in idleflow.js; the two must agree on every input.
+# sessions' included, so only a kill of a PID the agent kept is allowed. The command is read the way
+# a shell reads it: quoted text and here-document bodies are data; $(...), backticks, `bash -c`,
+# `eval` and `watch` hold commands. Same in idleflow.js; the two must agree on every input.
 
 SHELLS = ("bash", "sh", "zsh", "dash", "ksh")
-KEYWORDS = ("then", "do", "else", "elif", "if", "while", "until", "!", "{", "}", "time")
-# wrappers that run the rest of the line as a command, and their options that take a value
+# words that start a command without being its program
+KEYWORDS = ("then", "do", "else", "elif", "if", "while", "until", "!", "{", "}", "time", "coproc")
+# compound commands: a statement runs on to its closing word, so a whole loop is one statement
+OPENERS = ("if", "while", "until", "for", "select", "case")
+CLOSERS = ("fi", "done", "esac")
+HEADERS = ("for", "select", "case", "in", "esac")  # their words are a list, not a command
+# wrapper -> (short options that take a value, long options that take a value, words before the command)
 WRAPPERS = {
-    "sudo": "ugChpUrtTD", "doas": "uC", "exec": "a", "command": "", "builtin": "", "nohup": "",
-    "env": "uSCP", "nice": "n", "ionice": "cnp", "timeout": "sk", "watch": "nd", "stdbuf": "ioe",
-    "setsid": "", "xargs": "IinPLdsaE",
+    "sudo": ("ugChpUrtTD", ("user", "group", "host", "prompt", "close-from", "role", "type"), 0),
+    "doas": ("uC", (), 0), "exec": ("a", (), 0), "command": ("", (), 0), "builtin": ("", (), 0),
+    "nohup": ("", (), 0), "env": ("uSCP", ("unset", "chdir", "split-string"), 0),
+    "nice": ("n", ("adjustment",), 0), "ionice": ("cnp", ("class", "classdata", "pid"), 0),
+    "timeout": ("sk", ("signal", "kill-after"), 1), "stdbuf": ("ioe", ("input", "output", "error"), 0),
+    "setsid": ("", (), 0),
+    "xargs": ("IinPLdsaE", ("replace", "max-args", "max-procs", "max-lines", "delimiter", "max-chars",
+                            "arg-file", "eof"), 0),
+    "chrt": ("", (), 1), "taskset": ("", (), 1), "strace": ("eoOpPsSuUXba", (), 0), "unbuffer": ("", (), 0),
+    "flock": ("Ew", ("conflict-exit-code", "wait", "timeout"), 1),
+    "runuser": ("ugGw", ("user", "group", "supp-group", "whitelist-environment"), 0),
+    "systemd-run": ("upE", ("unit", "property", "setenv", "uid", "gid", "slice", "description"), 0),
+    "npx": ("p", ("package", "call"), 0), "bunx": ("p", ("package",), 0),
 }
-NAME_KILLERS = ("pkill", "killall", "killall5", "skill")
-PID_FINDERS = ("pgrep", "pidof")
+# programs that run the word after a -c option (or --command) as a shell script
+SCRIPT_OPTION = ("su", "runuser", "script", "flock")
+NAME_KILLERS = ("pkill", "killall", "killall5", "skill", "kill-port", "fkill", "fkill-cli")
+PID_LISTERS = ("pgrep", "pidof", "ps", "lsof", "fuser", "ss", "netstat")
+MAX_DEPTH, MAX_WORK = 12, 50000
+ASSIGN_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\+?=")
 
 
-def _close(s, i, opener):
-    # index just past the match of the opener at s[i] ("$(" or "`"), quotes and nesting respected
-    if opener == "`":
+class _TooComplex(Exception):
+    pass
+
+
+def _close(s, i):
+    # index just past the end of the "$(" or backtick that starts at s[i]; quotes and nesting respected
+    if s[i] == "`":
         j = i + 1
         while j < len(s) and s[j] != "`":
             j += 2 if s[j] == "\\" else 1
-        return j + 1
+        return min(j + 1, len(s))
     depth, j = 1, i + 2
     while j < len(s) and depth:
         c = s[j]
         if c == "\\":
             j += 2
-            continue
-        if c == "'":
+        elif c == "'":
             k = s.find("'", j + 1)
             j = len(s) if k < 0 else k + 1
-            continue
-        if c == '"':
+        elif c == '"':
             j += 1
             while j < len(s) and s[j] != '"':
                 j += 2 if s[j] == "\\" else 1
             j += 1
-            continue
-        if s.startswith("$(", j):
+        elif s.startswith("$(", j):
             depth += 1
             j += 2
-            continue
-        if c == ")":
-            depth -= 1
-        j += 1
-    return j
+        else:
+            if c == ")":
+                depth -= 1
+            j += 1
+    return min(j, len(s))
 
 
-def shell_commands(s, depth=0):
-    # [[ (word, from_substitution), ... ], ...]: every simple command in s, nested ones too
-    cmds, words, word, subst, in_word = [], [], "", False, False
-    if depth > 8:
-        return cmds
+def _inner(s, i):
+    # (the script inside the "$(" or backtick at s[i], the index past its end)
+    k = _close(s, i)
+    return (s[i + 2:k - 1] if s[i] == "$" else s[i + 1:k - 1]), k
+
+
+def _lex(s, work):
+    # The commands of one script, nothing nested parsed yet. A command is a dict: "words" (each a
+    # dict with "text" and "subs", the raw $(...)/backtick scripts in it), "subs" (from redirection
+    # targets), "docs" (here-document bodies, each (body, delimiter_was_quoted)) and "stmt", the
+    # statement it belongs to: a pipeline, or a whole compound command such as a loop.
+    work[0] += len(s)
+    if work[0] > MAX_WORK:
+        raise _TooComplex()
+    cmds, stmt, compound, pending = [], 0, 0, []
+    st = {"cmd": {"words": [], "subs": [], "docs": [], "stmt": 0}, "word": None, "redirect": False}
+
+    def w():
+        if st["word"] is None:
+            st["word"] = {"text": "", "subs": []}
+        return st["word"]
 
     def end_word():
-        nonlocal word, subst, in_word
-        if in_word:
-            words.append((word, subst))
-        word, subst, in_word = "", False, False
+        word = st["word"]
+        if word is not None:
+            if st["redirect"]:
+                st["cmd"]["subs"].extend(word["subs"])  # a redirection target is not an argument
+                st["redirect"] = False
+            else:
+                st["cmd"]["words"].append(word)
+        st["word"] = None
 
-    def end_cmd():
-        nonlocal words
+    def end_cmd(boundary):
+        nonlocal stmt, compound
         end_word()
-        if words:
-            cmds.append(words)
-        words = []
+        cmd = st["cmd"]
+        if cmd["words"] or cmd["subs"] or cmd["docs"]:
+            first = cmd["words"][0]["text"] if cmd["words"] else ""
+            cmd["stmt"] = stmt
+            cmds.append(cmd)
+            compound = max(0, compound + (first in OPENERS) - (first in CLOSERS))
+        if boundary and compound == 0:
+            stmt += 1
+        st["cmd"] = {"words": [], "subs": [], "docs": [], "stmt": stmt}
 
-    i = 0
-    while i < len(s):
+    i, n = 0, len(s)
+    while i < n:
         c = s[i]
         if c in " \t":
             end_word()
-        elif c in "\n;&|()":
-            end_cmd()
-        elif c == "#" and not in_word:
-            k = s.find("\n", i)
-            i = len(s) if k < 0 else k
-            continue
-        elif c == "\\":
-            if s[i + 1:i + 2] == "\n":
-                i += 2
-                continue
-            word += s[i + 1:i + 2]
-            in_word = True
+            i += 1
+        elif c == "\n":
+            end_cmd(True)
+            i += 1
+            for delim, quoted, strip, owner in pending:
+                body = []
+                while i < n:
+                    k = s.find("\n", i)
+                    k = n if k < 0 else k
+                    line, i = s[i:k], k + 1
+                    if (line.lstrip("\t") if strip else line) == delim:
+                        break
+                    body.append(line)
+                owner["docs"].append(("\n".join(body), quoted))
+            pending = []
+        elif c == "&" and s[i + 1:i + 2] == ">":
+            end_word()
             i += 2
-            continue
-        elif c == "'":
-            k = s.find("'", i + 1)
-            k = len(s) if k < 0 else k
-            word += s[i + 1:k]
-            in_word = True
-            i = k + 1
-            continue
-        elif c == '"':
-            j = i + 1
-            while j < len(s) and s[j] != '"':
+            st["redirect"] = True
+        elif c in ";&|()":
+            two = s[i:i + 2]
+            end_cmd(c != "|" or two == "||")
+            i += 2 if two in ("&&", "||", ";;") else 1
+        elif c in "<>":
+            word = st["word"]
+            if word is not None and word["text"].isdigit() and not word["subs"]:
+                st["word"] = None  # a file descriptor number, as in 2>&1
+            end_word()
+            if s.startswith("<<", i) and not s.startswith("<<<", i):
+                j = i + 2
+                strip = s[j:j + 1] == "-"
+                j += 1 if strip else 0
+                while j < n and s[j] in " \t":
+                    j += 1
+                k = j
+                while k < n and s[k] not in " \t\n;&|()<>":
+                    k += 1
+                raw = s[j:k]
+                quoted = any(q in raw for q in "'\"\\")
+                pending.append((raw.replace("'", "").replace('"', "").replace("\\", ""), quoted, strip, st["cmd"]))
+                i = k
+            else:
+                while i < n and s[i] in "<>&|":
+                    i += 1
+                st["redirect"] = True
+        elif c == "#" and st["word"] is None:
+            k = s.find("\n", i)
+            i = n if k < 0 else k
+        elif c == "\\":
+            if s[i + 1:i + 2] != "\n":
+                w()["text"] += s[i + 1:i + 2]
+            i += 2
+        elif c == "'" or (c == "$" and s[i + 1:i + 2] == "'"):
+            ansi = c == "$"
+            j = i + 2 if ansi else i + 1
+            while j < n and s[j] != "'":
+                if ansi and s[j] == "\\":
+                    w()["text"] += {"n": "\n", "t": "\t"}.get(s[j + 1:j + 2], s[j + 1:j + 2])
+                    j += 2
+                else:
+                    w()["text"] += s[j]
+                    j += 1
+            w()
+            i = j + 1
+        elif c == '"' or (c == "$" and s[i + 1:i + 2] == '"'):
+            j = i + 2 if c == "$" else i + 1
+            while j < n and s[j] != '"':
                 if s[j] == "\\":
-                    word += s[j + 1:j + 2]
+                    w()["text"] += s[j + 1:j + 2]
                     j += 2
                 elif s.startswith("$(", j) or s[j] == "`":
-                    k = _close(s, j, "$(" if s[j] == "$" else "`")
-                    inner = s[j + 2:k - 1] if s[j] == "$" else s[j + 1:k - 1]
-                    cmds.extend(shell_commands(inner, depth + 1))
-                    word += s[j:k]
-                    subst = True
+                    inner, k = _inner(s, j)
+                    w()["subs"].append(inner)
+                    w()["text"] += s[j:k]
                     j = k
                 else:
-                    word += s[j]
+                    w()["text"] += s[j]
                     j += 1
-            in_word = True
+            w()
             i = j + 1
-            continue
         elif s.startswith("$(", i) or c == "`":
-            k = _close(s, i, "$(" if c == "$" else "`")
-            inner = s[i + 2:k - 1] if c == "$" else s[i + 1:k - 1]
-            cmds.extend(shell_commands(inner, depth + 1))
-            word += s[i:k]
-            subst = in_word = True
+            inner, k = _inner(s, i)
+            w()["subs"].append(inner)
+            w()["text"] += s[i:k]
             i = k
-            continue
         else:
-            word += c
-            in_word = True
-        i += 1
-    end_cmd()
-    # `bash -c '<script>'` runs its script as commands
-    for words in list(cmds):
-        names = [w for w, _ in words]
-        if os.path.basename(names[0]) in SHELLS and "-c" in names:
-            k = names.index("-c")
-            if k + 1 < len(names):
-                cmds.extend(shell_commands(names[k + 1], depth + 1))
+            w()["text"] += c
+            i += 1
+    end_cmd(True)
     return cmds
 
 
+def _skip_options(words, i, short_takes, long_takes):
+    # index of the first word after the options that start at words[i]
+    while i < len(words):
+        t = words[i]["text"]
+        if t == "--":
+            return i + 1
+        if not t.startswith("-") or t == "-":
+            return i
+        i += 1
+        if t.startswith("--"):
+            if "=" not in t and t[2:] in long_takes:
+                i += 1
+        elif t[-1] in short_takes:
+            i += 1  # the value of the cluster's last letter: -u root, -iu root
+    return i
+
+
+def _script_after_c(words):
+    # index of the word after a short-option cluster holding "c" (-c, -lc, -qc) or after --command
+    for k, wd in enumerate(words):
+        t = wd["text"]
+        if t == "--":
+            return -1
+        if t == "--command" or (t.startswith("-") and not t.startswith("--") and "c" in t[1:]):
+            return k + 1 if k + 1 < len(words) else -1
+        if not t.startswith("-"):
+            return -1
+    return -1
+
+
 def _program(words):
-    # (program name, its words, whether xargs runs it) after keywords, assignments and wrappers
+    # (name, its words, whether xargs runs it, the indexes of `rest` that hold a script it runs)
     via_xargs, i = False, 0
     while i < len(words):
-        w = words[i][0]
-        if w in KEYWORDS or re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", w):
+        t = words[i]["text"]
+        if t in KEYWORDS or ASSIGN_RE.match(t):
             i += 1
             continue
-        name = os.path.basename(w)
+        name, rest = os.path.basename(t), words[i:]
+        if name in SHELLS or name in SCRIPT_OPTION:
+            k = _script_after_c(rest[1:])
+            if k >= 0:
+                return name, rest, via_xargs, [1 + k]
+            if name in SHELLS:
+                return name, rest, via_xargs, []
+        if name in ("eval", "watch"):
+            start = _skip_options(rest, 1, "nd" if name == "watch" else "", ("interval", "differences"))
+            return name, rest, via_xargs, list(range(start, len(rest)))
+        if name in ("pnpm", "yarn") and len(rest) > 1 and rest[1]["text"] == "dlx":
+            i += 2
+            continue
         if name not in WRAPPERS:
-            return name, words[i:], via_xargs
+            return name, rest, via_xargs, []
+        short_takes, long_takes, positional = WRAPPERS[name]
         via_xargs = via_xargs or name == "xargs"
-        takes, i = WRAPPERS[name], i + 1
-        while i < len(words) and words[i][0].startswith("-") and words[i][0] != "-":
-            flag = words[i][0]
-            i += 1
-            if len(flag) == 2 and flag[1] in takes and i < len(words):
-                i += 1
-        if name == "timeout" and i < len(words):
-            i += 1  # the duration
-    return "", [], via_xargs
+        options_end = _skip_options(words, i + 1, short_takes, long_takes)
+        if name == "taskset" and any(wd["text"] in ("-c", "-p", "--cpu-list", "--pid") for wd in rest[1:]):
+            positional = 0 if any(wd["text"] in ("-p", "--pid") for wd in rest[1:]) else 1
+        i = options_end + positional
+    return "", [], via_xargs, []
+
+
+def _kills_all(args):
+    # PID -1 signals every process the user may signal
+    signal = False
+    for k, wd in enumerate(args):
+        t = wd["text"]
+        if t == "--":
+            return any(a["text"] == "-1" for a in args[k + 1:])
+        if t == "-1" and signal:
+            return True
+        if t.startswith("-") and t not in ("-l", "-L"):
+            signal = True
+    return False
+
+
+def _lists_pids(programs):
+    return any(p in PID_LISTERS for p in programs)
+
+
+def _scan(script, work, depth):
+    # (refuse, the programs this script and everything nested in it run)
+    if depth > MAX_DEPTH:
+        raise _TooComplex()
+    seen, stmt_programs, tainted, kills = set(), {}, set(), []
+
+    def nested(sub):
+        refuse, progs = _scan(sub, work, depth + 1)
+        if refuse:
+            raise _Refuse()
+        return progs
+
+    try:
+        for cmd in _lex(script, work):
+            words = cmd["words"]
+            name, rest, via_xargs, script_at = "", [], False, []
+            if words and words[0]["text"] not in HEADERS:
+                name, rest, via_xargs, script_at = _program(words)
+            here = {name} if name else set()
+            script_words = {id(rest[k]) for k in script_at}
+            if script_at:
+                here |= nested(" ".join(rest[k]["text"] for k in script_at))
+            word_programs = {}
+            for wd in words:
+                if id(wd) in script_words:
+                    continue  # its substitutions are part of the script just read
+                progs = set()
+                for sub in wd["subs"]:
+                    progs |= nested(sub)
+                word_programs[id(wd)] = progs
+                here |= progs
+            for sub in cmd["subs"]:
+                here |= nested(sub)
+            for body, quoted in cmd["docs"]:
+                if name in SHELLS and not script_at:
+                    here |= nested(body)  # bash <<EOF: the body is the script
+                elif not quoted:
+                    k = 0
+                    while k < len(body):
+                        if body.startswith("$(", k) or body[k] == "`":
+                            inner, k = _inner(body, k)
+                            here |= nested(inner)
+                        else:
+                            k += 1
+            if name in NAME_KILLERS:
+                return True, seen
+            args = rest[1:]
+            if name == "fuser" and any(
+                    a["text"] == "--kill" or (a["text"].startswith("-") and not a["text"].startswith("--")
+                                              and "k" in a["text"]) for a in args):
+                return True, seen
+            if name == "find":
+                texts = [a["text"] for a in args]
+                for k, t in enumerate(texts):
+                    if t in ("-exec", "-execdir", "-ok", "-okdir"):
+                        end = next((m for m in range(k + 1, len(texts)) if texts[m] in (";", "+")), len(texts))
+                        inner = _program(args[k + 1:end])[0]
+                        if inner in NAME_KILLERS or inner == "kill":
+                            return True, seen
+            for wd in words:
+                m = ASSIGN_RE.match(wd["text"])
+                if m and _lists_pids(word_programs.get(id(wd), ())):
+                    tainted.add(m.group(1))
+            if name == "kill":
+                if via_xargs or _kills_all(args) or any(_lists_pids(word_programs.get(id(a), ())) for a in args):
+                    return True, seen
+                kills.append((cmd["stmt"], args))
+            stmt_programs.setdefault(cmd["stmt"], set()).update(here)
+            seen |= here
+    except _Refuse:
+        return True, seen
+    for stmt, args in kills:
+        if _lists_pids(stmt_programs.get(stmt, ())):
+            return True, seen  # pgrep x | while read p; do kill $p; done, and loops over $(pgrep x)
+        for a in args:
+            if any(re.search(r"\$\{?" + v + r"\b", a["text"]) for v in tainted):
+                return True, seen  # pids=$(pgrep x); kill $pids
+    return False, seen
+
+
+class _Refuse(Exception):
+    pass
 
 
 def kill_by_pattern(command):
-    cmds = shell_commands(command)
-    progs = [_program(words) for words in cmds]
-    finds_pids = any(
-        name in PID_FINDERS or (name == "lsof" and any(w.startswith("-") and "t" in w for w, _ in ws[1:]))
-        for name, ws, _ in progs)
-    for name, ws, via_xargs in progs:
-        if name in NAME_KILLERS:
-            return True
-        if name == "fuser" and any(w.startswith("-") and not w.startswith("--") and "k" in w for w, _ in ws[1:]):
-            return True
-        if name == "kill" and (via_xargs or finds_pids or any(sub for _, sub in ws[1:])):
-            return True
-    return False
+    try:
+        return _scan(command, [0], 0)[0]
+    except _TooComplex:
+        return True  # too deeply nested or too long to read: refuse rather than guess
 
 
 def cmd_killguard():

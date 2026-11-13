@@ -192,11 +192,17 @@ kill_rc() { # kill_rc <command> -> exit code of the hook
 }
 for c in 'pkill -f "docker ps --format"' 'killall node' 'sudo pkill vite' 'ls; pkill -9 x' 'kill $(pgrep -f vite)' 'pgrep -f x | xargs kill' 'fuser -k 4321/tcp' \
          "$(printf 'ls\npkill x')" 'sudo -u root pkill x' 'if true; then pkill x; fi' '/usr/bin/pkill x' 'timeout 5 pkill x' 'nohup pkill x &' \
-         "bash -c 'pkill x'" 'kill -9 $(lsof -t -i:4321)' 'for p in $(pgrep vite); do kill $p; done' 'pgrep vite | while read p; do kill "$p"; done' 'xargs -I{} kill {} < pids'; do
+         "bash -c 'pkill x'" 'kill -9 $(lsof -t -i:4321)' 'for p in $(pgrep vite); do kill $p; done' 'pgrep vite | while read p; do kill "$p"; done' 'xargs -I{} kill {} < pids' \
+         "sudo bash -c 'pkill x'" "bash -lc 'pkill x'" "eval 'pkill x'" "watch -n 1 'pkill x'" 'sudo -iu root pkill x' \
+         "$(printf 'cat > f <<%sEOF%s\nit%ss done\nEOF\npkill -f vite' "'" "'" "'")" "$(printf 'bash <<EOF\npkill x\nEOF')" \
+         'npx kill-port 4321' 'fuser --kill 4321/tcp' 'kill -9 -1' 'pids=$(pgrep x); kill $pids' 'runuser -u me -- pkill x' \
+         "find /proc -name '[0-9]*' -exec kill {} ;" '>out pkill x' "$(printf '$(bash -c "%.0s' $(seq 1 12))"; do
   check "refuses a kill by name or pattern: $c" '[ "$(kill_rc "$c")" = 2 ]'
 done
 for c in 'kill 1234' 'kill -- -4242' 'grep -n pkill agents/*.md' 'echo "never use pkill"' 'pgrep -f vite' \
-         "grep 'a;pkill' file" 'echo "x; killall y"' 'git commit -m "refuse pkill and killall"' 'sleep 300 & pid=$!; kill "$pid"' 'echo hi # pkill x'; do
+         "grep 'a;pkill' file" 'echo "x; killall y"' 'git commit -m "refuse pkill and killall"' 'sleep 300 & pid=$!; kill "$pid"' 'echo hi # pkill x' \
+         "$(printf 'cat > notes.md <<%sEOF%s\npkill -f vite is forbidden\nEOF' "'" "'")" 'kill "$(cat .run/server.pid)"' \
+         'kill "$PID"; pgrep -f vite || echo stopped' 'constructor -x y' 'kill -1 1234'; do
   check "allows: $c" '[ "$(kill_rc "$c")" = 0 ]'
 done
 check "the kill guard is a Bash hook" 'grep -q "kill-guard.sh" "$HERE/../hooks/hooks.json" && idleflow_rt get "$HERE/../hooks/hooks.json" hooks.PreToolUse | grep -q "\"matcher\":\"Bash\""'
