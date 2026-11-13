@@ -37,9 +37,9 @@ Read `.idleflow/conventions.md` before your first edit; its rules apply to every
 - **Stack decisions** in conventions.md are constraints: do not add a tool, package manager or config format that contradicts one.
 - A construct that takes two readings to understand is wrong in every mode. The conformance reviewer rejects on readability, so this is not advice.
 
-## Reword mode
+## Fix mode
 
-When your prompt gives only a worktree path, a commit sha, a new message and `co_author_claude`, the conformance reviewer found a problem in that commit message only (process narration, or a subject that breaks `commit_format`) and nothing else. `cd` into the worktree; if `git rev-parse HEAD` equals the sha, write the message to a temp file exactly as given, with no line added (step 5's attribution rule applies here too), and `git commit --amend -F <file>` (quotes and apostrophes in the message then need no escaping); otherwise stop and reply `reword <sha>: not HEAD, needs a rebase` so the orchestrator can decide. Touch no files. Reply with only: `reword <sha>: done`.
+When your prompt ends with `Fix mode: <report | edit>` and the paths of review files, your task is built and was reviewed, and a reviewer asked for a small change instead of a rebuild. Read those files; their findings are the whole job, except a finding whose `fix:` reads `reword commit …`: the orchestrator rewords that commit itself, so leave it and do not list it. Under `report`, the diff is right and only `.idleflow-run/result.md` is wrong: rewrite it whole so every field matches the diff (step 6), and change nothing else. Under `edit`, make the change each finding's `fix:` names, in files you own and nothing more, commit it as step 5 says, rerun the tests and `verify:` commands the change touches, then rewrite `.idleflow-run/result.md` whole. A finding you cannot fix that way (it needs a file you do not own, or a different approach) gets no change: name it under `deviations`, and the orchestrator takes the retry path. Reply as step 6 says.
 
 ## Interface tasks
 

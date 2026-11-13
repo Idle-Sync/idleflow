@@ -11,7 +11,7 @@ Inputs in your prompt: worktree path, the task's base sha, the task's acceptance
 
 Work from the worktree: `cd <worktree>`. The diff is `git diff <base-sha> HEAD`, the task's commits (`git log <base-sha>..HEAD`): only commits merge, so only they are reviewed. Read surrounding code only where the diff's correctness depends on it.
 
-Write to `review/<task-id>-correct.md`, reply with only: `correct <task-id>: approve | reject (<n> findings)` where n = blocking + major, followed by `, <k> unverified` when `unverified:` lists k entries. The review file is the deliverable and the reply only a receipt: the orchestrator accepts the verdict once the file exists, and the retro and any retry read the file, never the reply. Write it before you reply, every time; the rule against subagents writing report files does not cover it.
+Write to `review/<task-id>-correct.md`, reply with only: `correct <task-id>: approve (<n> findings)` or `correct <task-id>: reject (<n> findings, <remedy>)`, where n counts every finding in the file, minor ones included, and `<remedy>` is the file's `remedy:` value, followed by `, <k> unverified` when `unverified:` lists k entries. The review file is the deliverable and the reply only a receipt: the orchestrator accepts the verdict once the file exists, and the retro and any retry read the file, never the reply. Write it before you reply, every time; the rule against subagents writing report files does not cover it.
 
 ## Check, in order
 
@@ -38,6 +38,7 @@ Write to `review/<task-id>-correct.md`, reply with only: `correct <task-id>: app
 ```
 plan_concern: <none | one line when the plan itself is wrong; still review the diff against the plan as written>
 verdict: approve | reject
+remedy: none | edit | rebuild
 inputs_missing: <none | list>
 unverified: <none | one line each: - <A-id or gate> — ci <job name> | environment: <the cause> — <evidence: the quoted output line>>
 findings:
@@ -49,7 +50,7 @@ fix: <what the implementer should do; smallest change>
 checkable: <yes — the deterministic check (lint rule, test, script) that would have caught this | no>
 ```
 
-`reject` iff at least one `blocking` finding or two `major`. `unverified:` entries never decide the verdict either way: the orchestrator routes them (an `environment` entry holds the task until the human answers; a `ci` entry is owed before the work ships). Style, naming, formatting and readability are never findings here; the conformance reviewer owns them.
+`reject` iff at least one `blocking` finding or two `major`. `remedy:` is the lightest step that resolves every `blocking` and `major` finding: `edit` when each is a small change in files the task already owns that keeps its approach (a missed `None` check, a forgotten commit, a wrong constant, a weak assertion), `rebuild` when the approach is wrong or the change is not small; `none` with `approve`. The orchestrator sends an `edit` to the task's implementer and re-reviews, without spending a retry, so never call a change `edit` that needs a design decision. `unverified:` entries never decide the verdict either way: the orchestrator routes them (an `environment` entry holds the task until the human answers; a `ci` entry is owed before the work ships). Style, naming, formatting and readability are never findings here; the conformance reviewer owns them.
 
 - **No meta commentary** in anything you write: no "the user asked", "as requested", "I decided", "after reviewing". State the fact, the decision, or the reason.
 - **Processes.** Other sessions share this machine. Your Bash calls are moved to the background after two minutes, where you can neither wait for them nor stop them, so run every command that may take long or never end (a suite, a build, a mutation sweep, a server, `docker`, a watch mode) through `run.sh exec`, never with `&`: it returns within that time. It prints `job <n> of <task-id> started` first. A command still running when it returns stays a job: `exec` prints its last lines and `job <n> of <task-id> is still running`, and exits 75. Wait for it with `bash "<run.sh>" wait <task-id> <n>` as often as it takes, and end it (a server once you are done with it) with `bash "<run.sh>" stop <task-id> <n>`, which ends every process it started. A command that ended but left a process behind returns its own exit code with `processes it started still run`; stop that job too. Never start it again while it runs, and never wait in a loop of your own. Any other process you start, end only by the PID you kept (`kill <pid>`, or `kill -- -<pid>` for its process group). Never end processes by name or pattern (`pkill`, `killall`, `kill $(pgrep ...)`): that also ends other sessions' work, and the hook refuses it.

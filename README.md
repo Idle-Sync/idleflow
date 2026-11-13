@@ -60,7 +60,8 @@ For work a person sees (the classifier reports `ui: true`, or `STEP_DESIGN=on`),
 | Sizing | Haiku reports size, risk and new dependency; size sets implementers and reviewers, risk (or size L) the debate, a new dependency the stack and library research; an S overrun adds the conformance reviewer | `agents/classifier.md`, `SIZE_*` in conf |
 | Fan-out | ≤4 implementers, partitioned by file globs, Sonnet default / Opus when plan says | `MAX_IMPLEMENTERS`, `model:` per task in plan |
 | Diff gate | 1500 code lines per task (+300 slack); `.md`, `.txt`, lockfiles, generated excluded | `DIFF_LIMIT`, `DIFF_SLACK`, `DIFF_EXCLUDE` |
-| Retry | one per task, on Opus, then stop and ask | `MAX_RETRIES`, steps 5 and 7 of `commands/feature.md` |
+| Retry | one per task, on Opus, then stop and ask; a reject whose findings need only a reworded message, a report fix or a small edit takes a cheaper round instead (up to two per task), and a widened ownership map is never a retry | `MAX_RETRIES`, steps 5 and 7 of `commands/feature.md` |
+| Findings on approved tasks | counted in `review_findings`, and listed in the run's final message so the human can fix them or file a follow-up | reviewers, `run.sh findings` |
 | Tests | `tests_first: true` forced wherever entry points have no tests | planner §3, conformance reviewer §4 |
 | Mutation sweep | implementers break their own change on purpose; a fault no test catches needs a test or a reason | `STEP_MUTATION`, plan `mutation:`, implementer, correctness reviewer |
 | Design | designer before planning and a design reviewer on `ui` tasks; a lasting design system per repo | `STEP_DESIGN`, `agents/designer.md`, `agents/review-design.md`, `procedures/design.md` |
@@ -185,7 +186,7 @@ agents/                         one file per role; frontmatter sets the model
 hooks/hooks.json                PreToolUse → ownership-guard
 scripts/run.sh                  run lifecycle: new / wt / own / get / set / inc / report / keep / gate / merge / snapshot / finish / loc /
                                 conf, plus path / migrate / doctor / update-check / detect / repo-gate / commands / approve /
-                                session-name / behind / team-install / custom / agent (`bash scripts/run.sh` lists them)
+                                reword / findings / session-name / behind / team-install / custom / agent (`bash scripts/run.sh` lists them)
 scripts/diff-gate.sh            counts hand-written code lines vs base, emits JSON verdict
 scripts/ownership-guard.sh      the hook; blocks edits outside a task's globs
 scripts/rt.sh                   picks Python or Node, whichever is installed
@@ -235,7 +236,7 @@ docs/sessions/s_<time>-<author>.md one note per run or session, named so teammat
 .idleflow/runs/active/gaps.md        plugin_gap lines agents append; asked about before every finish
 .idleflow/runs/<id>/                 ignored (.git/info/exclude or .gitignore, asked once); issue, context, plan, debate/, tasks/, review/, run.json
 .idleflow/runs/log.jsonl             one line per finished run — tokens aren't captured yet, but
-                                   size, retries, gate trips and review findings are
+                                   size, retries, fix rounds, gate trips and review findings are
 .idleflow/runs/config-proposals.md   the retro's customization suggestions, with evidence; offered once at the end of a run
 .idleflow/suggestions.md             suggestions the team declined, so they are not offered again; commit this
 <repo>__wt/<task-id>               sibling directory holding task worktrees during a run
