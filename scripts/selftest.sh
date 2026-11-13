@@ -184,6 +184,45 @@ check "blocks in a non-ASCII worktree"    '[ "$(guard_rc "$(native "$wtu")/é.tx
 check "allows owned in non-ASCII worktree" '[ "$(guard_rc "$(native "$wtu")/src/é.txt" "$(native "$wtu")")" = "0" ]'
 bash "$RUN" wt rm "Té"
 
+echo "--- kill guard"
+KILLG="$HERE/kill-guard.sh"
+kill_rc() { # kill_rc <command> [cwd] [project dir] -> exit code of the hook; the cwd defaults to task T1's worktree
+  local j c; j="$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')"; j="${j//$'\n'/\\n}"
+  c="$(native "${2:-$wt}" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+  printf '{"cwd":"%s","tool_input":{"command":"%s"}}' "$c" "$j" | CLAUDE_PROJECT_DIR="${3:-}" bash "$KILLG" 2>/dev/null; echo $?
+}
+for c in 'pkill -f "docker ps --format"' 'killall node' 'sudo pkill vite' 'ls; pkill -9 x' 'kill $(pgrep -f vite)' 'pgrep -f x | xargs kill' 'fuser -k 4321/tcp' \
+         "$(printf 'ls\npkill x')" 'sudo -u root pkill x' 'if true; then pkill x; fi' '/usr/bin/pkill x' 'timeout 5 pkill x' 'nohup pkill x &' \
+         "bash -c 'pkill x'" 'kill -9 $(lsof -t -i:4321)' 'for p in $(pgrep vite); do kill $p; done' 'pgrep vite | while read p; do kill "$p"; done' 'xargs -I{} kill {} < pids' \
+         "sudo bash -c 'pkill x'" "bash -lc 'pkill x'" "eval 'pkill x'" "watch -n 1 'pkill x'" 'sudo -iu root pkill x' \
+         "$(printf 'cat > f <<%sEOF%s\nit%ss done\nEOF\npkill -f vite' "'" "'" "'")" "$(printf 'bash <<EOF\npkill x\nEOF')" \
+         'npx kill-port 4321' 'fuser --kill 4321/tcp' 'kill -9 -1' 'pids=$(pgrep x); kill $pids' 'runuser -u me -- pkill x' \
+         "find /proc -name '[0-9]*' -exec kill {} ;" '>out pkill x' "$(printf '$(bash -c "%.0s' $(seq 1 12))" \
+         'while read p; do kill $p; done < <(pgrep -f vite)' 'pids=($(pgrep vite)); kill ${pids[@]}' \
+         "pgrep -f vite | xargs -I{} sh -c 'kill {}'" "trap 'pkill -f vite' EXIT" 'busybox pkill vite' \
+         "$(printf 'echo $((1<<2))\npkill x')" 'kill "$PID"; pgrep -f vite || echo stopped' \
+         'echo $((echo a); pkill node)' '((true) ; pkill node)' 'kill $(ps -e -p 1 -o pid=)' 'kill $(ps ax -p 1 -o pid=)' \
+         'kill $(lsof -p ^1 -t)' 'kill $(lsof -p 1 -i :3000 -t)'; do
+  check "refuses a kill by name or pattern: $c" '[ "$(kill_rc "$c")" = 2 ]'
+done
+for c in 'kill 1234' 'kill -- -4242' 'grep -n pkill agents/*.md' 'echo "never use pkill"' 'pgrep -f vite' \
+         "grep 'a;pkill' file" 'echo "x; killall y"' 'git commit -m "refuse pkill and killall"' 'sleep 300 & pid=$!; kill "$pid"' 'echo hi # pkill x' \
+         "$(printf 'cat > notes.md <<%sEOF%s\npkill -f vite is forbidden\nEOF' "'" "'")" 'kill "$(cat .run/server.pid)"' \
+         'constructor -x y' 'kill -1 1234' 'if ps -p "$PID" >/dev/null; then kill "$PID"; fi' 'command -v pkill' \
+         'kill -- -$(ps -o pgid= -p "$PID" | tr -d " ")' 'echo $(( (a)+(b) )); kill 123' 'ps -p "$pid" -o comm= && kill "$pid"' \
+         'lsof -p "$pid" -nP && kill "$pid"'; do
+  check "allows: $c" '[ "$(kill_rc "$c")" = 0 ]'
+done
+check "the kill guard refuses a command too long to check" '[ "$(kill_rc "echo $(printf "%0100001d" 0)")" = 2 ]'
+check "the kill guard acts in the main checkout of an active run" '[ "$(kill_rc "pkill -f vite" "$d")" = 2 ]'
+check "outside any idleflow run the kill guard allows a pattern kill" '[ "$(kill_rc "pkill -f vite" /nowhere)" = 0 ] && [ "$(kill_rc "kill \$(lsof -ti :3000)" /nowhere)" = 0 ]'
+check "outside any idleflow run the kill guard allows a long command" '[ "$(kill_rc "echo $(printf "%0100001d" 0)" /nowhere)" = 0 ]'
+check "a cd out of the run leaves the guard on for the run's session" '[ "$(kill_rc "pkill -f vite" /nowhere "$(native "$d")")" = 2 ]'
+kg_start=$(date +%s); kg_rc=$(kill_rc "$(printf "%099999d" 0 | tr 0 "(")"); kg_secs=$(( $(date +%s) - kg_start ))
+check "the kill guard gives up on a run of 99999 '(' within its time" "[ $kg_rc = 2 ] && [ $kg_secs -lt 8 ]"
+check "the kill guard is a Bash hook" 'grep -q "kill-guard.sh" "$HERE/../hooks/hooks.json" && idleflow_rt get "$HERE/../hooks/hooks.json" hooks.PreToolUse | grep -q "\"matcher\":\"Bash\""'
+check "every agent that runs commands has the process rule" '( for a in "$HERE"/../agents/*.md; do case "$a" in */classifier.md) continue;; esac; grep -q "Never end processes by name or pattern" "$a" || exit 1; done )'
+
 echo "--- report / gate"
 check "report fails when none written"  '! bash "$RUN" report T1 2>/dev/null'
 ( cd "$wt" && printf 'x\ny\nz\n' > src/code.py && printf '%s\n' $(seq 1 50) > README.md && printf 'task: T1\nstatus: done\n' > .idleflow-run/result.md && git add src/code.py README.md && commit -m "T1: code" )

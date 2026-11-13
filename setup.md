@@ -61,12 +61,14 @@ Then the commands reference `${CLAUDE_PLUGIN_ROOT}`, which only exists for plugi
 ```
 sed -i 's#\${CLAUDE_PLUGIN_ROOT}#'"$HOME"'/.claude/idleflow#g' ~/.claude/commands/idleflow/*.md ~/.claude/idleflow/commands/*.md ~/.claude/idleflow/procedures/*.md
 ```
-And merge the hook into `~/.claude/settings.json` (read it first; preserve existing hooks):
+And merge the hooks into `~/.claude/settings.json` (read it first; preserve existing hooks):
 ```json
 "hooks": {
   "PreToolUse": [
     { "matcher": "Edit|Write|MultiEdit|NotebookEdit",
-      "hooks": [ { "type": "command", "command": "bash ~/.claude/idleflow/scripts/ownership-guard.sh", "timeout": 10 } ] }
+      "hooks": [ { "type": "command", "command": "bash ~/.claude/idleflow/scripts/ownership-guard.sh", "timeout": 10 } ] },
+    { "matcher": "Bash",
+      "hooks": [ { "type": "command", "command": "bash ~/.claude/idleflow/scripts/kill-guard.sh", "timeout": 10 } ] }
   ]
 }
 ```

@@ -37,4 +37,5 @@ checkable: <yes — the deterministic check that would have caught this | no>
 `reject` iff any `blocking` (a spec screen or state missing, a keyboard trap, unreadable text, broken layout at either width) or two `major`. Reply with only: `design <task-id>: approve | reject (<n> findings)`. Write the file before you reply.
 
 - No meta commentary in what you write.
+- **Processes.** Other sessions share this machine. Give a command that may hang (a server, `docker`, a network call, a watch mode) the Bash tool's timeout, or start it in the background and keep its PID (`$!`). End only a process you started, by that PID (`kill <pid>`, or `kill -- -<pid>` for its process group). Never end processes by name or pattern (`pkill`, `killall`, `kill $(pgrep ...)`): that also ends other sessions' work, and the hook refuses it.
 - **Plugin gaps.** If this plugin lacked something you needed, append one line (never overwrite) to `<repo>/.idleflow/runs/active/gaps.md`: `plugin_gap: review-design — <what> — <why>`.
