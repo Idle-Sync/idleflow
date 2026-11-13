@@ -382,13 +382,13 @@ WRAPPERS = {
     "flock": ("Ew", ("conflict-exit-code", "wait", "timeout"), 1),
     "runuser": ("ugGw", ("user", "group", "supp-group", "whitelist-environment"), 0),
     "systemd-run": ("upE", ("unit", "property", "setenv", "uid", "gid", "slice", "description"), 0),
-    "npx": ("p", ("package", "call"), 0), "bunx": ("p", ("package",), 0),
+    "npx": ("p", ("package", "call"), 0), "bunx": ("p", ("package",), 0), "busybox": ("", (), 0),
 }
 # programs that run the word after a -c option (or --command) as a shell script
 SCRIPT_OPTION = ("su", "runuser", "script", "flock")
 NAME_KILLERS = ("pkill", "killall", "killall5", "skill", "kill-port", "fkill", "fkill-cli")
 PID_LISTERS = ("pgrep", "pidof", "ps", "lsof", "fuser", "ss", "netstat")
-MAX_DEPTH, MAX_WORK = 12, 50000
+MAX_DEPTH, MAX_WORK = 12, 400000
 ASSIGN_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\+?=")
 
 
@@ -416,9 +416,9 @@ def _close(s, i):
             while j < len(s) and s[j] != '"':
                 j += 2 if s[j] == "\\" else 1
             j += 1
-        elif s.startswith("$(", j):
+        elif c == "(":
             depth += 1
-            j += 2
+            j += 1
         else:
             if c == ")":
                 depth -= 1
@@ -474,7 +474,14 @@ def _lex(s, work):
     i, n = 0, len(s)
     while i < n:
         c = s[i]
-        if c in " \t":
+        if s.startswith("$((", i) or (s.startswith("((", i) and st["word"] is None and not st["cmd"]["words"]):
+            # arithmetic: no commands in it but its own $(...) / backticks, and no here-documents
+            start = i + 1 if c == "$" else i
+            k = _arith_end(s, start)
+            w()["subs"].extend(_substitutions(s[start + 2:k - 2]))
+            w()["text"] += s[i:k]
+            i = k
+        elif c in " \t":
             end_word()
             i += 1
         elif c == "\n":
@@ -499,6 +506,11 @@ def _lex(s, work):
             two = s[i:i + 2]
             end_cmd(c != "|" or two == "||")
             i += 2 if two in ("&&", "||", ";;") else 1
+        elif c in "<>" and s[i + 1:i + 2] == "(":
+            k = _close(s, i)  # <(...) and >(...) run a command, like $(...)
+            w()["subs"].append(s[i + 2:k - 1])
+            w()["text"] += s[i:k]
+            i = k
         elif c in "<>":
             word = st["word"]
             if word is not None and word["text"].isdigit() and not word["subs"]:
@@ -568,6 +580,32 @@ def _lex(s, work):
     return cmds
 
 
+def _arith_end(s, i):
+    # index just past the "))" that closes the "((" at s[i]
+    depth, j = 0, i
+    while j < len(s):
+        if s[j] == "(":
+            depth += 1
+        elif s[j] == ")":
+            depth -= 1
+            if depth == 0:
+                return j + 1
+        j += 1
+    return len(s)
+
+
+def _substitutions(text):
+    # the $(...) and backtick scripts in a piece of text that holds no other commands
+    subs, k = [], 0
+    while k < len(text):
+        if text.startswith("$(", k) or text[k] == "`":
+            inner, k = _inner(text, k)
+            subs.append(inner)
+        else:
+            k += 1
+    return subs
+
+
 def _skip_options(words, i, short_takes, long_takes):
     # index of the first word after the options that start at words[i]
     while i < len(words):
@@ -616,6 +654,11 @@ def _program(words):
         if name in ("eval", "watch"):
             start = _skip_options(rest, 1, "nd" if name == "watch" else "", ("interval", "differences"))
             return name, rest, via_xargs, list(range(start, len(rest)))
+        if name == "command" and len(rest) > 1 and rest[1]["text"] in ("-v", "-V"):
+            return name, rest, via_xargs, []  # only names a program, runs nothing
+        if name == "trap":
+            k = _skip_options(rest, 1, "", ())
+            return name, rest, via_xargs, ([k] if k < len(rest) and rest[1]["text"] not in ("-p", "-l") else [])
         if name in ("pnpm", "yarn") and len(rest) > 1 and rest[1]["text"] == "dlx":
             i += 2
             continue
@@ -644,15 +687,28 @@ def _kills_all(args):
     return False
 
 
+LISTER, DYNAMIC_KILL = "<lists pids>", "<kills a computed pid>"
+LITERAL_PID_RE = re.compile(r"^(--|-?[0-9]+|%[0-9]*|-[A-Za-z][A-Za-z0-9+-]*)$")
+
+
 def _lists_pids(programs):
-    return any(p in PID_LISTERS for p in programs)
+    return LISTER in programs
+
+
+def _is_lister(name, args):
+    if name not in PID_LISTERS:
+        return False
+    # ps -p / lsof -p look at one PID the caller already has; they do not find processes
+    return not (name in ("ps", "lsof") and any(
+        a["text"] in ("-p", "-q", "--pid", "--quick-pid") or a["text"].startswith(("-p", "--pid=")) for a in args))
 
 
 def _scan(script, work, depth):
-    # (refuse, the programs this script and everything nested in it run)
+    # (refuse, what this script and everything nested in it runs: program names, plus LISTER when
+    # something finds PIDs, plus DYNAMIC_KILL when a kill's PID is not written out)
     if depth > MAX_DEPTH:
         raise _TooComplex()
-    seen, stmt_programs, tainted, kills = set(), {}, set(), []
+    seen = set()
 
     def nested(sub):
         refuse, progs = _scan(sub, work, depth + 1)
@@ -666,18 +722,19 @@ def _scan(script, work, depth):
             name, rest, via_xargs, script_at = "", [], False, []
             if words and words[0]["text"] not in HEADERS:
                 name, rest, via_xargs, script_at = _program(words)
+            args = rest[1:]
             here = {name} if name else set()
             script_words = {id(rest[k]) for k in script_at}
             if script_at:
                 here |= nested(" ".join(rest[k]["text"] for k in script_at))
-            word_programs = {}
+            arg_programs = {}
             for wd in words:
                 if id(wd) in script_words:
                     continue  # its substitutions are part of the script just read
                 progs = set()
                 for sub in wd["subs"]:
                     progs |= nested(sub)
-                word_programs[id(wd)] = progs
+                arg_programs[id(wd)] = progs
                 here |= progs
             for sub in cmd["subs"]:
                 here |= nested(sub)
@@ -685,16 +742,10 @@ def _scan(script, work, depth):
                 if name in SHELLS and not script_at:
                     here |= nested(body)  # bash <<EOF: the body is the script
                 elif not quoted:
-                    k = 0
-                    while k < len(body):
-                        if body.startswith("$(", k) or body[k] == "`":
-                            inner, k = _inner(body, k)
-                            here |= nested(inner)
-                        else:
-                            k += 1
+                    for sub in _substitutions(body):
+                        here |= nested(sub)
             if name in NAME_KILLERS:
                 return True, seen
-            args = rest[1:]
             if name == "fuser" and any(
                     a["text"] == "--kill" or (a["text"].startswith("-") and not a["text"].startswith("--")
                                               and "k" in a["text"]) for a in args):
@@ -704,27 +755,24 @@ def _scan(script, work, depth):
                 for k, t in enumerate(texts):
                     if t in ("-exec", "-execdir", "-ok", "-okdir"):
                         end = next((m for m in range(k + 1, len(texts)) if texts[m] in (";", "+")), len(texts))
-                        inner = _program(args[k + 1:end])[0]
+                        part = args[k + 1:end]
+                        inner, inner_rest, _, inner_at = _program(part)
                         if inner in NAME_KILLERS or inner == "kill":
                             return True, seen
-            for wd in words:
-                m = ASSIGN_RE.match(wd["text"])
-                if m and _lists_pids(word_programs.get(id(wd), ())):
-                    tainted.add(m.group(1))
+                        if inner_at:
+                            here |= nested(" ".join(inner_rest[m]["text"] for m in inner_at))
+            if _is_lister(name, args):
+                here.add(LISTER)
             if name == "kill":
-                if via_xargs or _kills_all(args) or any(_lists_pids(word_programs.get(id(a), ())) for a in args):
+                if _kills_all(args) or any(LISTER in arg_programs.get(id(a), ()) for a in args):
                     return True, seen
-                kills.append((cmd["stmt"], args))
-            stmt_programs.setdefault(cmd["stmt"], set()).update(here)
+                if any(a["subs"] or not LITERAL_PID_RE.match(a["text"]) for a in args):
+                    here.add(DYNAMIC_KILL)
+            if via_xargs and ("kill" in here or DYNAMIC_KILL in here):
+                return True, seen  # xargs feeds the kill PIDs from its input
             seen |= here
     except _Refuse:
         return True, seen
-    for stmt, args in kills:
-        if _lists_pids(stmt_programs.get(stmt, ())):
-            return True, seen  # pgrep x | while read p; do kill $p; done, and loops over $(pgrep x)
-        for a in args:
-            if any(re.search(r"\$\{?" + v + r"\b", a["text"]) for v in tainted):
-                return True, seen  # pids=$(pgrep x); kill $pids
     return False, seen
 
 
@@ -733,10 +781,14 @@ class _Refuse(Exception):
 
 
 def kill_by_pattern(command):
+    # "" to allow, else the reason to refuse
     try:
-        return _scan(command, [0], 0)[0]
+        refuse, seen = _scan(command, [0], 0)
     except _TooComplex:
-        return True  # too deeply nested or too long to read: refuse rather than guess
+        return "complex"
+    # a kill of a computed PID next to anything that finds PIDs: the PIDs may come from it, by a
+    # pipe, a variable, read, mapfile or a loop, so refuse rather than follow every path
+    return "pattern" if refuse or (LISTER in seen and DYNAMIC_KILL in seen) else ""
 
 
 def cmd_killguard():
@@ -745,7 +797,12 @@ def cmd_killguard():
         cmd = (payload.get("tool_input") or {}).get("command")
     except Exception:
         sys.exit(0)
-    if isinstance(cmd, str) and kill_by_pattern(cmd):
+    why = kill_by_pattern(cmd) if isinstance(cmd, str) else ""
+    if why == "complex":
+        sys.stderr.write("[idleflow] BLOCKED: this command is too long or too deeply nested to check for "
+                         "kills by name or pattern. Split it, or write a long text with the Write tool.\n")
+        sys.exit(2)
+    if why:
         sys.stderr.write(
             "[idleflow] BLOCKED: this ends processes by name or pattern, which also ends other "
             "sessions' work on this machine. End only a process you started, by the PID you kept "

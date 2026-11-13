@@ -196,13 +196,17 @@ for c in 'pkill -f "docker ps --format"' 'killall node' 'sudo pkill vite' 'ls; p
          "sudo bash -c 'pkill x'" "bash -lc 'pkill x'" "eval 'pkill x'" "watch -n 1 'pkill x'" 'sudo -iu root pkill x' \
          "$(printf 'cat > f <<%sEOF%s\nit%ss done\nEOF\npkill -f vite' "'" "'" "'")" "$(printf 'bash <<EOF\npkill x\nEOF')" \
          'npx kill-port 4321' 'fuser --kill 4321/tcp' 'kill -9 -1' 'pids=$(pgrep x); kill $pids' 'runuser -u me -- pkill x' \
-         "find /proc -name '[0-9]*' -exec kill {} ;" '>out pkill x' "$(printf '$(bash -c "%.0s' $(seq 1 12))"; do
+         "find /proc -name '[0-9]*' -exec kill {} ;" '>out pkill x' "$(printf '$(bash -c "%.0s' $(seq 1 12))" \
+         'while read p; do kill $p; done < <(pgrep -f vite)' 'pids=($(pgrep vite)); kill ${pids[@]}' \
+         "pgrep -f vite | xargs -I{} sh -c 'kill {}'" "trap 'pkill -f vite' EXIT" 'busybox pkill vite' \
+         "$(printf 'echo $((1<<2))\npkill x')" 'kill "$PID"; pgrep -f vite || echo stopped'; do
   check "refuses a kill by name or pattern: $c" '[ "$(kill_rc "$c")" = 2 ]'
 done
 for c in 'kill 1234' 'kill -- -4242' 'grep -n pkill agents/*.md' 'echo "never use pkill"' 'pgrep -f vite' \
          "grep 'a;pkill' file" 'echo "x; killall y"' 'git commit -m "refuse pkill and killall"' 'sleep 300 & pid=$!; kill "$pid"' 'echo hi # pkill x' \
          "$(printf 'cat > notes.md <<%sEOF%s\npkill -f vite is forbidden\nEOF' "'" "'")" 'kill "$(cat .run/server.pid)"' \
-         'kill "$PID"; pgrep -f vite || echo stopped' 'constructor -x y' 'kill -1 1234'; do
+         'constructor -x y' 'kill -1 1234' 'if ps -p "$PID" >/dev/null; then kill "$PID"; fi' 'command -v pkill' \
+         "kill -- -$(ps -o pgid= -p $PID | tr -d ' ')"; do
   check "allows: $c" '[ "$(kill_rc "$c")" = 0 ]'
 done
 check "the kill guard is a Bash hook" 'grep -q "kill-guard.sh" "$HERE/../hooks/hooks.json" && idleflow_rt get "$HERE/../hooks/hooks.json" hooks.PreToolUse | grep -q "\"matcher\":\"Bash\""'
