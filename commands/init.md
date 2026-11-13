@@ -87,7 +87,7 @@ Show the human the PRD's "Must do (v1)" and "Two-year shape" sections and the "M
 
 ## 6. Scaffold the docs and rules
 
-1. Run **R2** steps 1 and 2 (`progress.md`, `index.md`, `docs/sessions/TEMPLATE.md`, `CLAUDE.md`). Fill `co_author_claude:` and `releases:` in `CLAUDE.md` from step 3, `<Project name>` from the brainstorm, Leave the "Commands" block empty: it is generated, and `bash "$RUN" docs` fills it from the lockfile and scripts once the first feature run has created them (that run regenerates it after its merge).
+1. Run **R2** steps 1 and 2 (`progress.md`, `index.md`, `docs/sessions/TEMPLATE.md`, `CLAUDE.md`). Fill `co_author_claude:` and `releases:` in `CLAUDE.md` from step 3, `<Project name>` from the brainstorm. Leave the "Commands" block empty: it is generated, and `bash "$RUN" docs` fills it from the lockfile and scripts once the first feature run has created them (that run regenerates it after its merge).
 2. `index.md`: list what exists now (`prd.md`, `progress.md`, `CLAUDE.md`, `.idleflow/`, `docs/`), nothing imagined.
 3. `progress.md` (its "Milestones" section is already written): first "Log" entry: `## <date> — project initialised (run <ID>)` with: brainstorm done, market research verdict, N stack decisions, N library decisions, N tooling items, PRD approved, next: milestone 1 from `progress.md` "Milestones".
 4. The note at `$(bash "$RUN" session-name)` from the template: what this session decided, the files it created, next = milestone 1.

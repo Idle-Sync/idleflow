@@ -681,7 +681,8 @@ JSON
     # Evidence for the Repo fit and Records settings, one `suggest <key>: <value> — <evidence>` line
     # for each key still unset whose evidence points away from the default. Read-only.
     unset_key() { case "$(conventions_value "$1")" in ""|unset) return 0;; *) return 1;; esac; }
-    say() { echo "suggest $1: $2 — $3"; }
+    # a suggestion the human declined stays quiet for every caller (setup, the doctor, a run's end)
+    say() { grep -qF -- "- declined: $1 -> $2 " "$IDLE/suggestions.md" 2>/dev/null || echo "suggest $1: $2 — $3"; }
     if unset_key commit_format; then
       subjects="$("${G[@]}" log --no-merges -50 --format=%s 2>/dev/null || true)"
       total="$(printf '%s' "$subjects" | grep -c . || true)"
@@ -1042,7 +1043,6 @@ JSON
     while IFS= read -r line; do
       [ -n "$line" ] || continue
       kv="${line#suggest }"; key="${kv%%:*}"; rest="${kv#*: }"; val="${rest%% — *}"
-      grep -qF -- "- declined: $key -> $val " "$IDLE/suggestions.md" 2>/dev/null && continue
       if [ "$key" = hooks ]; then
         check_line suggest "fit hooks" "$val (${rest#* — })" "move that step to one run, before the push or in CI; idleflow never edits hooks"
       else

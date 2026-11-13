@@ -546,6 +546,8 @@ f="$(mktemp -d)"; ( cd "$f" && git init -q && git config user.name Ada && git co
 ( cd "$f" && bash "$RUN" docs >/dev/null )
 check "CLAUDE.md Commands is filled from the repo"    'grep -qxF -- "- \`npm ci\` — install (package-lock.json)" "$f/CLAUDE.md" && grep -qxF -- "- \`npm run test\` — runs \`vitest run\`" "$f/CLAUDE.md"'
 check "the template leaves the gate open to a proposal" '(cd "$f" && bash "$RUN" detect) | grep -q "^suggest gate: npm run test —"'
+printf -- '- declined: gate -> npm run test (run r1)\n' > "$f/.idleflow/suggestions.md"
+check "a declined gate is not proposed again"          '! (cd "$f" && bash "$RUN" detect) | grep -q "^suggest gate:"'
 rm -rf "$f"
 
 echo "--- prompt contracts"
