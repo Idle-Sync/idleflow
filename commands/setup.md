@@ -38,7 +38,7 @@ Write `.idleflow/runs/active/issue.md`: `Set this repository up for idleflow. Ma
 
 Run **R1** (readability mode, ignore file) for whatever is unanswered.
 
-**Project docs**, when `docs:` is `unset` in `.idleflow/conventions.md` (ask; do not infer it the way R2 does for a feature run): **Yes (Recommended for teams)** — `prd.md`, `progress.md`, `index.md`, a `CLAUDE.md` block and `docs/` keep every session and every teammate on the same page, and the doc-keeper keeps them true; cons: more files to keep current. **No** — idleflow runs without project docs; cons: no shared progress or handoff. Write the answer, then run **R2** (it asks `docs_in_git` and `lessons_in` when they apply). Ensure `$LESSONS` exists after R2 (`bash "$RUN" path lessons` again: the answer may have moved it), copying `templates/lessons.md` if not.
+**Project docs**, when `docs:` is `unset` in `.idleflow/conventions.md` (ask; do not infer it the way R2 does for a feature run): **Yes (Recommended for teams)** — `prd.md`, `progress.md`, `index.md`, a `CLAUDE.md` block and `docs/` keep every session and every teammate on the same page, and the doc-keeper keeps them true; cons: more files to keep current. **No** — idleflow runs without project docs; cons: no shared progress or handoff. Write the answer, then run **R2** (it asks `docs_in_git` and `lessons_in` when they apply). Ensure `$LESSONS` exists after R2 (`bash "$RUN" path lessons` again: the answer may have moved it), copying `templates/lessons.md` if not, and the time log at `bash "$RUN" path time-log`, copying `templates/time-log.md` if not.
 
 ## 2b. Fit the repo's own rules
 
