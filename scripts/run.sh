@@ -786,10 +786,10 @@ JSON
   skip)
     key="${1:?worktree_setup|gate|gate_quick|preview}"; active_id >/dev/null
     case " $REPO_COMMANDS " in *" $key "*) ;; *) echo "skip: $key is not a repo command ($REPO_COMMANDS)" >&2; exit 1;; esac
-    list="$(idleflow_rt get "$ACTIVE/run.json" skipped 2>/dev/null || true)"
-    case "$list" in ""|null) list="[]";; esac
-    case "$list" in *"\"$key\""*) ;; "[]") list="[\"$key\"]";; *) list="${list%]},\"$key\"]";; esac
-    idleflow_rt set "$ACTIVE/run.json" skipped "$list"
+    skipped="$(idleflow_rt get "$ACTIVE/run.json" skipped 2>/dev/null || true)"
+    case "$skipped" in ""|null) skipped="[]";; esac
+    case "$skipped" in *"\"$key\""*) ;; "[]") skipped="[\"$key\"]";; *) skipped="${skipped%]},\"$key\"]";; esac
+    idleflow_rt set "$ACTIVE/run.json" skipped "$skipped"
     idleflow_rt set "$ACTIVE/run.json" "$key" '""'
     ;;
   own)
