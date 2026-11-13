@@ -1049,9 +1049,9 @@ Task: $tid")
   path)
     if [ "${1:-}" = "--relative" ]; then
       # The repo-relative form, for text that is committed and read in other clones.
-      case "${2:?progress|index|sessions|time-log}" in
+      case "${2:-}" in
         progress) progress_rel;; index) index_rel;; sessions) sessions_rel;; time-log) time_log_rel;;
-        *) echo "path --relative: $2 has no repo-relative form; use progress, index, sessions or time-log" >&2; exit 1;;
+        *) echo "path --relative: ${2:-no name given}: use progress, index, sessions or time-log" >&2; exit 1;;
       esac
       exit 0
     fi
