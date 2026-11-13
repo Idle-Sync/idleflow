@@ -598,6 +598,23 @@ det="$(cd "$f" && bash "$RUN" detect)"
 check "detect suggests generated blocks for a hand-kept index" 'echo "$det" | grep -q "^suggest generated_docs: index.md —"'
 rm -rf "$f"
 
+echo "--- which files run.sh docs keeps"
+f="$(mktemp -d)"; ( cd "$f" && git init -q && git config user.name Ada && git config user.email a@a && mkdir -p .idleflow docs templates \
+  && printf 'mode: repo\nindex_file: docs/index.md\n' > .idleflow/conventions.md && printf 'docs/\n' >> .git/info/exclude \
+  && printf '# Progress\n\n## Milestones\n\n### M1: Sign in\n- [x] a\n- [x] b\n- [ ] c\n' > progress.md \
+  && printf '# Index\n<!-- idleflow:generated milestones -->\n<!-- idleflow:end -->\n' > docs/index.md \
+  && printf '# Index template\n<!-- idleflow:generated files -->\n<!-- idleflow:end -->\n' > templates/index.md \
+  && printf '# Readme\n<!-- idleflow:generated milestones -->\n<!-- idleflow:end -->\n' > README.md \
+  && git add -A && git commit -qm start )
+out="$(cd "$f" && bash "$RUN" docs)"
+check "docs fills an index kept out of git"   'echo "$out" | grep -q "docs/index.md" && grep -qxF -- "- M1: Sign in: 2/3" "$f/docs/index.md"'
+( cd "$f" && git checkout -q -- templates README.md && printf 'generated_docs: README.md\n' >> .idleflow/conventions.md && git add -A && git commit -qm named )
+out="$(cd "$f" && bash "$RUN" docs)"
+check "generated_docs names the files kept"   '[ "$out" = "docs: regenerated README.md" ] && [ -z "$(cd "$f" && git status --porcelain templates)" ]'
+( cd "$f" && git checkout -q -- README.md && sed -i.bak "s/^generated_docs: .*/generated_docs: none/" .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak )
+check "generated_docs: none keeps no file"    '[ "$(cd "$f" && bash "$RUN" docs)" = "docs: generated blocks are up to date" ] && [ -z "$(cd "$f" && git status --porcelain README.md templates)" ]'
+rm -rf "$f"
+
 echo "--- prompt contracts"
 researcher="$HERE/../agents/stack-researcher.md"
 advisor="$HERE/../agents/stack-advisor.md"
