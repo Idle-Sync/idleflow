@@ -359,6 +359,26 @@ check "a setup that edits tracked files is refused and undone" '[ "$rc" = 6 ] &&
 bash "$RUN" wt rm T7; bash "$RUN" finish done >/dev/null
 rm -rf shared-big; cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"; git add .idleflow/conventions.md && commit -q -m "restore conventions"
 
+echo "--- setup after new: the run uses what setup committed"
+cp .idleflow/conventions.md "$d-conv.bak"
+sed -i.bak '/^shared_files:/d; /^gate:/d; /^preview:/d' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
+git add .idleflow/conventions.md && commit -q -m "no shared files, no gate"
+bash "$RUN" new late-setup >/dev/null 2>&1
+check "new copies what conventions say now" '[ "$(idleflow_rt get .idleflow/runs/active/ownership.json shared)" = "[]" ] && [ -z "$(bash "$RUN" get gate)" ]'
+printf 'shared_files: CHANGELOG.md\ngate: echo gate-ok\npreview: echo preview-ok\n' >> .idleflow/conventions.md
+bash "$RUN" skip preview
+bash "$RUN" snapshot >/dev/null
+check "snapshot gives the run the shared files setup chose" '[ "$(idleflow_rt get .idleflow/runs/active/ownership.json shared)" = "[\"CHANGELOG.md\"]" ]'
+check "snapshot gives the run the gate setup committed"     '[ "$(bash "$RUN" get gate)" = "echo gate-ok" ]'
+check "a skipped command stays skipped after snapshot"      '[ -z "$(bash "$RUN" get preview)" ]'
+check "skip refuses a key that is not a command"            '! bash "$RUN" skip mode 2>/dev/null'
+bash "$RUN" wt add T8 >/dev/null 2>&1
+sed -i.bak 's#^gate: .*#gate: echo changed#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
+bash "$RUN" snapshot >/dev/null
+check "once a task exists, the run's copy stays put"        '[ "$(bash "$RUN" get gate)" = "echo gate-ok" ]'
+bash "$RUN" wt rm T8; bash "$RUN" finish done >/dev/null
+cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"; git add .idleflow/conventions.md && commit -q -m "restore conventions"
+
 echo "--- the repo's gate"
 git add -u && commit -q -m "tidy before the gate"
 cp .idleflow/conventions.md "$d-conv.bak"

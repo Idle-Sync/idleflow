@@ -8,6 +8,7 @@
 #   run.sh wt rm <task-id>                -> removes the worktree (keeps the branch); works with or without an active run
 #   run.sh wt list                        -> lists idleflow worktrees
 #   run.sh own <task-id> '<globs json>'   -> registers file ownership for the guard hook
+#   run.sh skip <key>                     -> this run goes without a repo command (gate, gate_quick, worktree_setup, preview)
 #   run.sh unowned <task-id>              -> paths the task changed (committed, uncommitted, untracked) that its globs,
 #                                            .idleflow-run/** and shared_files do not cover; matched as the guard matches
 #   run.sh get <key>                      -> prints a value from run.json (dotted keys ok)
@@ -382,6 +383,23 @@ copy_report() {
   native_path "$dst"
 }
 
+# The run keeps its own copy of what the conventions say about commands and shared files, so the
+# conventions can change on main mid-run without changing this run. The copy is taken at `new` and
+# again at the snapshot that ends setup (R1–R6 write and commit conventions after `new`), as long as
+# no task exists yet. A command the human chose to run without (`run.sh skip`) stays empty.
+conventions_to_run() {
+  local key val skipped shared
+  skipped="$(idleflow_rt get "$ACTIVE/run.json" skipped 2>/dev/null || true)"
+  for key in $REPO_COMMANDS; do
+    val="$(repo_command "$key")"
+    case "$skipped" in *"\"$key\""*) val="";; esac
+    idleflow_rt set "$ACTIVE/run.json" "$key" "$(json_str "$val")"
+  done
+  shared="$(shared_files | while IFS= read -r f; do json_str "$f"; echo; done | paste -sd, -)"
+  idleflow_rt set "$ACTIVE/ownership.json" shared "[${shared}]"
+}
+run_has_tasks() { [ "$(idleflow_rt get "$ACTIVE/run.json" tasks 2>/dev/null || echo '{}')" != "{}" ]; }
+
 cmd="${1:-}"; shift || true
 case "$cmd" in
   new)
@@ -395,10 +413,10 @@ case "$cmd" in
     base="$("${G[@]}" symbolic-ref --short -q HEAD || echo HEAD)"
     base_sha="$("${G[@]}" rev-parse -q --verify HEAD 2>/dev/null || true)"
     cat > "$ACTIVE/run.json" <<JSON
-{"id":"$id","worktree_setup":$(json_str "$(repo_command worktree_setup)"),"gate":$(json_str "$(repo_command gate)"),"gate_quick":$(json_str "$(repo_command gate_quick)"),"preview":$(json_str "$(repo_command preview)"),"plugin_version":$(json_str "$(plugin_version)"),"by":$(json_str "$(git config user.name || echo unknown)"),"slug":"$safe","base":$(json_str "$base"),"base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"gate_trips":0,"review_findings":0}
+{"id":"$id","plugin_version":$(json_str "$(plugin_version)"),"by":$(json_str "$(git config user.name || echo unknown)"),"slug":"$safe","base":$(json_str "$base"),"base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"gate_trips":0,"review_findings":0}
 JSON
-    shared="$(shared_files | while IFS= read -r f; do json_str "$f"; echo; done | paste -sd, -)"
-    echo "{\"repo\":$(json_str "$(native_path "$REPO")"),\"shared\":[${shared}],\"tasks\":{}}" > "$ACTIVE/ownership.json"
+    echo "{\"repo\":$(json_str "$(native_path "$REPO")"),\"shared\":[],\"tasks\":{}}" > "$ACTIVE/ownership.json"
+    conventions_to_run
     add_ignore "$(ignore_file)" '.idleflow/runs/'
     # worktree marker dir: excluded locally (shared by all worktrees), never committed or merged
     add_ignore "$(exclude_file)" '.idleflow-run/'
@@ -445,6 +463,15 @@ JSON
         ;;
       *) echo "unknown wt subcommand" >&2; exit 1;;
     esac
+    ;;
+  skip)
+    key="${1:?worktree_setup|gate|gate_quick|preview}"; active_id >/dev/null
+    case " $REPO_COMMANDS " in *" $key "*) ;; *) echo "skip: $key is not a repo command ($REPO_COMMANDS)" >&2; exit 1;; esac
+    list="$(idleflow_rt get "$ACTIVE/run.json" skipped 2>/dev/null || true)"
+    case "$list" in ""|null) list="[]";; esac
+    case "$list" in *"\"$key\""*) ;; "[]") list="[\"$key\"]";; *) list="${list%]},\"$key\"]";; esac
+    idleflow_rt set "$ACTIVE/run.json" skipped "$list"
+    idleflow_rt set "$ACTIVE/run.json" "$key" '""'
     ;;
   own)
     tid="${1:?task-id}"; globs="${2:?json array}"; active_id >/dev/null
@@ -547,6 +574,8 @@ JSON
       gcommit -m "docs: project conventions and run inputs" -- "${paths[@]}"
       echo "snapshot: committed $("${G[@]}" rev-parse --short HEAD)"
     fi
+    # setup is over: the run now uses the conventions it just committed
+    if [ -f "$ACTIVE/run.json" ] && ! run_has_tasks; then conventions_to_run; fi
     ;;
   finish)
     status="${1:-done}"; id="$(active_id)"
