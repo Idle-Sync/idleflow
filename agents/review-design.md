@@ -16,7 +16,7 @@ Inputs in your prompt: worktree path, the task's base sha, the task's plan extra
 2. **Tokens.** Colours, sizes, spacing, radius, shadows and durations come from the design system's tokens. A raw value where a token exists is a finding; a value the system lacks is a finding that names the token to add.
 3. **Accessibility.** Semantic elements, keyboard reach and visible focus, labels for inputs, text alternatives, colour not carrying meaning alone, `prefers-reduced-motion` honoured, contrast of any new colour pair computed (formula in `procedures/design-data.md`).
 4. **Generic look.** Run `design.md` §9 against the screens. Name the pattern and the decision that should replace it.
-5. **Screenshots**, only when your prompt gives the preview start and stop commands and a browser tool is available in this session (Playwright, Chrome DevTools or Claude in Chrome MCP tools). Start the app only with the start command your prompt gives (it checks the repo's approval and the address); never run the repo's serve command yourself. Open each changed screen at the address it prints, at 390 px and 1440 px wide, look at the images, then run the stop command. Judge alignment, overflow, truncation, overlap, spacing rhythm and hierarchy as a person would see them. Attach what you saw to the findings it supports. Without a preview command or a browser tool, write `screenshots: not taken (<which was missing>)`; items only a screenshot could confirm are then `unverified`, never passed.
+5. **Screenshots**, only when your prompt gives the preview start and stop commands and a browser tool is available in this session (Playwright, Chrome DevTools or Claude in Chrome MCP tools). Start the app only with the start command your prompt gives (it checks the repo's approval and the address); never run the repo's serve command yourself. Open each changed screen at the address it prints, at 390 px and 1440 px wide, look at the images, then run the stop command. Judge alignment, overflow, truncation, overlap, spacing rhythm and hierarchy as a person would see them. Attach what you saw to the findings it supports. Without a preview command or a browser tool, write `screenshots: not taken (<which was missing>)`; each item only a screenshot could confirm is then an entry under `unverified:` as `tool: <which was missing>`, never passed. A preview that does not start is a `blocking` finding, unless its output shows a cause outside the task: the quoted output line names it, and nothing in the task's commits defines, starts or newly calls it (a service, port or system tool the machine lacks or has used up). Then it is an `environment: <the cause>` entry with that quoted line.
 
 ## Output
 
@@ -26,6 +26,7 @@ Write the review file:
 task: <id>
 verdict: approve | reject
 screenshots: <taken at 390 and 1440 | not taken (reason)>
+unverified: <none | one line each: - <screen and state, or check> — tool: <what was missing> | environment: <the cause> — <evidence>>
 
 ### D<n>. <title>   severity: blocking | major | minor
 where: <file:line, or screen and width>
@@ -34,7 +35,7 @@ fix: <smallest change, naming the token or component>
 checkable: <yes — the deterministic check that would have caught this | no>
 ```
 
-`reject` iff any `blocking` (a spec screen or state missing, a keyboard trap, unreadable text, broken layout at either width) or two `major`. Reply with only: `design <task-id>: approve | reject (<n> findings)`. Write the file before you reply.
+`reject` iff any `blocking` (a spec screen or state missing, a keyboard trap, unreadable text, broken layout at either width) or two `major`; `unverified:` entries never decide it, the orchestrator routes them. Reply with only: `design <task-id>: approve | reject (<n> findings)`, followed by `, <k> unverified` when `unverified:` lists k entries. Write the file before you reply.
 
 - No meta commentary in what you write.
 - **Processes.** Other sessions share this machine. Give a command that may hang (a server, `docker`, a network call, a watch mode) the Bash tool's timeout, or start it in the background and keep its PID (`$!`). End only a process you started, by that PID (`kill <pid>`, or `kill -- -<pid>` for its process group). Never end processes by name or pattern (`pkill`, `killall`, `kill $(pgrep ...)`): that also ends other sessions' work, and the hook refuses it.
