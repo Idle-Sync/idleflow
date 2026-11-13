@@ -233,6 +233,21 @@ check "every agent that runs commands has the process rule" '( for a in "$HERE"/
 check "the agents that judge the plan get the issue" '( for a in planner red-team cost-critic; do grep -q "issue.md" "$HERE/../agents/$a.md" || exit 1; done ) && grep -q "Spawn \`idleflow:planner\` with: the issue path" "$HERE/../commands/feature.md" && grep -q "each with the issue, plan.md and context.md paths" "$HERE/../commands/feature.md"'
 check "agents that run suites wait on long checks as jobs" '( for a in implementer implementer-hard review-correct; do grep -q "run.sh>\" wait <task-id> <n>" "$HERE/../agents/$a.md" && grep -q "Never start it again while it runs" "$HERE/../agents/$a.md" || exit 1; done )'
 
+echo "--- keep"
+printf 'plan v1\n' > .idleflow/runs/active/plan.md
+k1="$(bash "$RUN" keep plan.md)"; printf 'plan v2\n' > .idleflow/runs/active/plan.md
+k2="$(bash "$RUN" keep plan.md)"
+check "keep copies the plan aside, numbered in order" '[ "$(cat "$k1")" = "plan v1" ] && [ "$(cat "$k2")" = "plan v2" ] && [ -f .idleflow/runs/active/plan.1.md ] && [ -f .idleflow/runs/active/plan.2.md ] && [ "$(cat .idleflow/runs/active/plan.md)" = "plan v2" ]'
+printf 'verdict: reject\n' > .idleflow/runs/active/review/T1-correct.md
+bash "$RUN" keep --move review/T1-correct.md >/dev/null
+check "keep --move frees the name for the next review" '[ ! -e .idleflow/runs/active/review/T1-correct.md ] && grep -q reject .idleflow/runs/active/review/T1-correct.1.md'
+check "keep refuses a path outside the run or a missing file" '! bash "$RUN" keep ../run.json 2>/dev/null && ! bash "$RUN" keep /etc/hosts 2>/dev/null && ! bash "$RUN" keep review/none.md 2>/dev/null'
+rm .idleflow/runs/active/plan.1.md
+check "keep numbers past the highest kept version, not into a gap" '[ "$(basename "$(bash "$RUN" keep plan.md)")" = plan.3.md ]'
+check "keep with no file says what it needs" '! bash "$RUN" keep 2>&1 >/dev/null | grep -q unbound && ! bash "$RUN" keep 2>/dev/null'
+rm .idleflow/runs/active/plan.md .idleflow/runs/active/plan.2.md .idleflow/runs/active/plan.3.md .idleflow/runs/active/review/T1-correct.1.md
+check "usage lists every command in the header" '[ "$(bash "$RUN" 2>/dev/null | grep -c "^#   run.sh ")" = "$(grep -c "^#   run.sh " "$RUN")" ]'
+
 echo "--- report / gate"
 check "report fails when none written"  '! bash "$RUN" report T1 2>/dev/null'
 ( cd "$wt" && printf 'x\ny\nz\n' > src/code.py && printf '%s\n' $(seq 1 50) > README.md && printf 'task: T1\nstatus: done\n' > .idleflow-run/result.md && git add src/code.py README.md && commit -m "T1: code" )
