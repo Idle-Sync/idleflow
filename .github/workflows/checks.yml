@@ -1,0 +1,75 @@
+# idleflow's own checks, on every pull request to main, every push to main, and nightly on main
+# (a break that only shows once several merges combine is caught within a day).
+name: checks
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  selftest:
+    # one job per runtime, each on its own machine: two selftests at once on one machine interfere
+    name: selftest (${{ matrix.runtime }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [python, node]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: scripts/selftest.sh
+        env:
+          IDLEFLOW_RUNTIME: ${{ matrix.runtime }}
+        run: bash scripts/selftest.sh
+
+  validate:
+    name: plugin validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: install Claude Code
+        run: npm install -g @anthropic-ai/claude-code@2.1.323
+      - name: claude plugin validate --strict
+        env:
+          DISABLE_AUTOUPDATER: "1"
+        run: |
+          claude plugin validate --strict .
+          claude plugin validate --strict agents
+          claude plugin validate --strict commands
+
+  shellcheck:
+    # fails only on findings the change adds; what main already has is fixed in its own issues
+    name: shellcheck (new findings)
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: scripts/shellcheck-new.sh
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          shellcheck --version | head -2
+          if [ -z "$BASE" ] || ! git rev-parse -q --verify "$BASE^{commit}" >/dev/null; then BASE="$(git rev-parse HEAD~1)"; fi
+          bash scripts/shellcheck-new.sh "$BASE"
