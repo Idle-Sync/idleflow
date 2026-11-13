@@ -25,6 +25,7 @@ Write the review file:
 ```
 task: <id>
 verdict: approve | reject
+remedy: none | edit | rebuild
 screenshots: <taken at 390 and 1440 | not taken (reason)>
 unverified: <none | one line each: - <screen and state, or check> — tool: <what was missing> | environment: <the cause> — <evidence>>
 
@@ -35,7 +36,7 @@ fix: <smallest change, naming the token or component>
 checkable: <yes — the deterministic check that would have caught this | no>
 ```
 
-`reject` iff any `blocking` (a spec screen or state missing, a keyboard trap, unreadable text, broken layout at either width) or two `major`; `unverified:` entries never decide it, the orchestrator routes them. Reply with only: `design <task-id>: approve | reject (<n> findings)`, followed by `, <k> unverified` when `unverified:` lists k entries. Write the file before you reply.
+`reject` iff any `blocking` (a spec screen or state missing, a keyboard trap, unreadable text, broken layout at either width) or two `major`; `unverified:` entries never decide it, the orchestrator routes them. `remedy:` is the lightest step that resolves every `blocking` and `major` finding: `edit` when each is a small change in files the task owns that keeps the screen's structure (a raw value where a token exists, a missing focus style, a label), `rebuild` when a screen or state must be built differently; `none` with `approve`. Reply with only: `design <task-id>: approve (<n> findings)` or `design <task-id>: reject (<n> findings, <remedy>)`, n counting every finding, followed by `, <k> unverified` when `unverified:` lists k entries. Write the file before you reply.
 
 - No meta commentary in what you write.
 - **Processes.** Other sessions share this machine. Give a command that may hang (a server, `docker`, a network call, a watch mode) the Bash tool's timeout, or start it in the background and keep its PID (`$!`). End only a process you started, by that PID (`kill <pid>`, or `kill -- -<pid>` for its process group). Never end processes by name or pattern (`pkill`, `killall`, `kill $(pgrep ...)`): that also ends other sessions' work, and the hook refuses it.

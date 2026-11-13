@@ -27,6 +27,9 @@
 #                                            that path; copies (plan.md before a revision) or, with --move, moves (a review)
 #   run.sh gate <task-id> [limit]         -> runs diff-gate against the task's own base, writes tasks/<id>/gate.json, prints it;
 #                                            refreshes the run's report.md when the worktree copy is newer
+#   run.sh reword <task-id> <sha> <file>... -> gives each named commit of the task the message in its file; from the oldest on,
+#                                            the task's commits are re-created on the same trees, so no file changes
+#   run.sh findings <task-id>...          -> every finding in those tasks' current review files, one line each
 #   run.sh merge <task-id>                -> merges the task branch into the current branch (no-ff); exit 3 on conflict, 4 otherwise
 #   run.sh ignore <pattern>               -> adds the pattern to the ignore file `ignore_in:` names, prints that file
 #   run.sh snapshot                       -> commits the repo-level docs the orchestrator writes (conventions, CLAUDE.md, prd, ...)
@@ -389,6 +392,14 @@ command_approved() { # command_approved <key> <command>
 # gets its own port and temp folder.
 task_port() { idleflow_rt get "$ACTIVE/run.json" "tasks.$1.port" 2>/dev/null || true; }
 task_tmp() { echo "$ACTIVE/tasks/$1/tmp"; }
+# The sha a task's commits start from: its own, recorded by `wt add`, or the run's for an older run.
+task_base() { # task_base <task-id>
+  local base
+  base="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$1.base_sha" 2>/dev/null || true)"
+  if [ -z "$base" ] || [ "$base" = "null" ]; then base="$(idleflow_rt get "$ACTIVE/run.json" base_sha)"; fi
+  [ -n "$base" ] && [ "$base" != "null" ] || { echo "$1: no base sha recorded (was the worktree created with run.sh wt add?)" >&2; return 1; }
+  echo "$base"
+}
 # The lowest PORT_BASE + n no other task of this run holds; a task keeps its port when re-added.
 allocate_port() { # allocate_port <task-id>
   local mine used n=0; mine="$(task_port "$1")"
@@ -630,7 +641,7 @@ case "$cmd" in
     base="$("${G[@]}" symbolic-ref --short -q HEAD || echo HEAD)"
     base_sha="$("${G[@]}" rev-parse -q --verify HEAD 2>/dev/null || true)"
     cat > "$ACTIVE/run.json" <<JSON
-{"id":"$id","plugin_version":$(json_str "$(plugin_version)"),"by":$(json_str "$(git config user.name || echo unknown)"),"slug":"$safe","base":$(json_str "$base"),"base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"gate_trips":0,"review_findings":0}
+{"id":"$id","plugin_version":$(json_str "$(plugin_version)"),"by":$(json_str "$(git config user.name || echo unknown)"),"slug":"$safe","base":$(json_str "$base"),"base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"fixes":0,"gate_trips":0,"review_findings":0}
 JSON
     echo "{\"repo\":$(json_str "$(native_path "$REPO")"),\"shared\":[],\"tasks\":{}}" > "$ACTIVE/ownership.json"
     conventions_to_run
@@ -786,11 +797,62 @@ JSON
     if [ -n "$move" ]; then mv "$src" "$stem.$n$ext"; else cp -p "$src" "$stem.$n$ext"; fi
     native_path "$stem.$n$ext"
     ;;
+  reword)
+    # Commit messages a reviewer flagged are replaced without touching a file: from the oldest flagged
+    # commit on, every commit of the task is re-created on its own tree with its own author and message
+    # (the new one where flagged), so the code is exactly what was reviewed, any of the task's commits
+    # can be reworded, and all of them in one pass, so no flagged sha goes stale before its turn.
+    tid="${1:?task-id}"; check_task_id "$tid"; shift; active_id >/dev/null
+    if [ "$#" -lt 2 ] || [ $(( $# % 2 )) -ne 0 ]; then
+      echo "usage: run.sh reword <task-id> <sha> <message file> [<sha> <message file>...]" >&2; exit 1
+    fi
+    dir="$(wt_path "$tid")"; [ -d "$dir" ] || { echo "reword: no worktree for $tid" >&2; exit 1; }
+    base="$(task_base "$tid")" || exit 1
+    W=(git -C "$dir")
+    head="$("${W[@]}" rev-parse HEAD)"
+    [ -z "$("${W[@]}" rev-list --merges "$base..$head")" ] || { echo "reword: $tid's commits include a merge; they cannot be re-created as they are" >&2; exit 1; }
+    range=" $("${W[@]}" rev-list "$base..$head" | tr '\n' ' ')"
+    flagged=" "; messages=()
+    while [ "$#" -gt 0 ]; do
+      full="$("${W[@]}" rev-parse -q --verify "$1^{commit}")" || { echo "reword: $1 is not a commit" >&2; exit 1; }
+      case "$range" in *" $full "*) ;; *) echo "reword: $1 is not one of $tid's commits ($base..HEAD)" >&2; exit 1;; esac
+      [ -s "$2" ] || { echo "reword: $2 is empty or missing" >&2; exit 1; }
+      flagged="$flagged$full "; messages+=("$full=$2"); shift 2
+    done
+    tmp="$(task_tmp "$tid")/reword.msg"; mkdir -p "${tmp%/*}"
+    new="$base"; started=""
+    for c in $("${W[@]}" rev-list --reverse "$base..$head"); do
+      case "$flagged" in *" $c "*) started=1;; esac
+      if [ -z "$started" ]; then new="$c"; continue; fi
+      "${W[@]}" cat-file commit "$c" | sed '1,/^$/d' > "$tmp"
+      for f in "${messages[@]}"; do [ "${f%%=*}" = "$c" ] && cp "${f#*=}" "$tmp"; done
+      new="$(GIT_AUTHOR_NAME="$("${W[@]}" log -1 --format=%an "$c")" GIT_AUTHOR_EMAIL="$("${W[@]}" log -1 --format=%ae "$c")" \
+        GIT_AUTHOR_DATE="$("${W[@]}" log -1 --format=%ad --date=raw "$c")" \
+        "${W[@]}" ${IDENTITY[@]+"${IDENTITY[@]}"} commit-tree "$c^{tree}" -p "$new" -F "$tmp")" || { echo "reword: could not re-create $c; nothing changed" >&2; exit 1; }
+    done
+    rm -f "$tmp"
+    [ "$("${W[@]}" rev-parse "$new^{tree}")" = "$("${W[@]}" rev-parse "$head^{tree}")" ] || { echo "reword: the re-created tree differs; nothing changed" >&2; exit 1; }
+    "${W[@]}" update-ref -m "idleflow reword $tid" HEAD "$new" "$head"
+    echo "reworded ${#messages[@]} commit(s) of $tid; it is now at $("${W[@]}" rev-parse --short "$new")"
+    ;;
+  findings)
+    # The reviews as they stand, not the versions kept aside (<name>.<n>.md): a finding fixed in a
+    # later round is gone from the current file.
+    [ "$#" -gt 0 ] || { echo "usage: run.sh findings <task-id>..." >&2; exit 1; }
+    active_id >/dev/null
+    for tid in "$@"; do
+      check_task_id "$tid"
+      for f in "$ACTIVE/review/$tid"-*.md; do
+        [ -f "$f" ] || continue
+        name="${f##*/}"
+        case "$name" in *.[0-9]*.md) continue;; esac
+        tr -d '\r' < "$f" | R="review/$name" T="$tid" awk '/^### [FD][0-9]+\. / { sub(/^### /, ""); print ENVIRON["T"] ": " $0 " (" ENVIRON["R"] ")" }'
+      done
+    done
+    ;;
   gate)
     tid="${1:?task-id}"; check_task_id "$tid"; active_id >/dev/null
-    base="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$tid.base_sha" 2>/dev/null || true)"
-    if [ -z "$base" ] || [ "$base" = "null" ]; then base="$(idleflow_rt get "$ACTIVE/run.json" base_sha)"; fi
-    [ -n "$base" ] && [ "$base" != "null" ] || { echo "gate $tid: no base sha recorded (was the worktree created with run.sh wt add?)" >&2; exit 1; }
+    base="$(task_base "$tid")" || exit 1
     out="$(bash "$HERE/diff-gate.sh" "$(wt_path "$tid")" "$base" ${2:+"$2"})" || { echo "gate $tid failed: $out" >&2; exit 1; }
     mkdir -p "$ACTIVE/tasks/$tid"
     echo "$out" > "$ACTIVE/tasks/$tid/gate.json"
