@@ -957,8 +957,12 @@ check "the run procedure and the handoffs name the resume command" 'grep -q "^\*
 
 echo "--- team"
 check "session notes are named by time and author" 'bash "$RUN" session-name | grep -Eq "^docs/sessions/s_[0-9]{8}-[0-9]{4}-human\.md$"'
-mkdir -p docs/sessions && touch "$(bash "$RUN" session-name)"
-check "a second note in the same minute gets a suffix" 'bash "$RUN" session-name | grep -q -- "-human-2\.md$"'
+# the clock is pinned for both names, so a minute that turns between them cannot change the answer
+# (the real date is looked up before the shim is on PATH, so the shim never runs itself)
+clock="$IDLEFLOW_TMP_ROOT/clock"; mkdir -p "$clock"
+printf '#!/bin/sh\n[ "$1" = "+%%Y%%m%%d-%%H%%M" ] && { echo 20260101-1200; exit 0; }\nexec "%s" "$@"\n' "$(command -v date)" > "$clock/date" && chmod +x "$clock/date"
+mkdir -p docs/sessions && touch "$(PATH="$clock:$PATH" bash "$RUN" session-name)"
+check "a second note in the same minute gets a suffix" '[ "$(PATH="$clock:$PATH" bash "$RUN" session-name)" = "docs/sessions/s_20260101-1200-human-2.md" ] && [ -e docs/sessions/s_20260101-1200-human.md ]'
 rm -rf docs
 cp .idleflow/conventions.md "$d-conv.bak"
 sed -i.bak '/^ignore_in:/d' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak; printf 'ignore_in: gitignore\n' >> .idleflow/conventions.md
