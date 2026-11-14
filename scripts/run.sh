@@ -25,6 +25,9 @@
 #   run.sh set <key> <json>               -> sets a value in run.json (dotted keys ok)
 #   run.sh inc <key> [n]                  -> adds n (default 1) to a counter in run.json
 #   run.sh plan-field <task-id> <key>     -> one field of the task's plan section (blocked_until, model, ...), empty when missing
+#   run.sh plan-check                     -> checks plan.md before anyone builds: every file a task's entry points or
+#                                            acceptance name is in its owns: or shared_files, and no owns: glob covers a
+#                                            protected file; prints one line per problem and exits 1, or exits 0
 #   run.sh extract <task-id>              -> the task's plan extract: the plan's Stack & style constraints and Interfaces
 #                                            sections, then the task's own ### <task-id>: section
 #   run.sh report <task-id>               -> copies the task's .idleflow-run/result.md into the run dir as report.md, prints its path
@@ -881,6 +884,103 @@ JSON
   plan-field)
     tid="${1:?task-id}"; check_task_id "$tid"; active_id >/dev/null
     plan_field "$tid" "${2:?field name}"
+    ;;
+  plan-check)
+    # A task can only satisfy a criterion in files it may change, and the guard refuses the rest; so
+    # every file the plan names for a task must be in its globs, checked with the guard's matcher.
+    active_id >/dev/null
+    [ -f "$ACTIVE/plan.md" ] || { echo "plan-check: no plan.md in the active run" >&2; exit 1; }
+    tracked="$(mktemp)"; problems="$(mktemp)"
+    "${G[@]}" ls-files > "$tracked"
+    # One line per fact: <task>\town\t<glob> | <task>\tentry\t<path> | <task>\taccept\t<A-id>\t<text>.
+    # Lists come as "- item" lines or inline ([a, b]); an acceptance item runs on over indented lines,
+    # and only its text before verify: names files.
+    facts="$(tr -d '\r' < "$ACTIVE/plan.md" | awk '
+      function clean(x) { gsub(/[`"'\'']/, "", x); sub(/^[[:space:]]+/, "", x); sub(/[[:space:]]+$/, "", x); return x }
+      function emit(k, x,   id, text) {
+        if (k == "owns") { sub(/[[:space:]]+#.*/, "", x); x = clean(x); if (x != "") print tid "\town\t" x }
+        else if (k == "entry_points") { x = clean(x); gsub(/\\/, "/", x); sub(/[:[:space:]].*/, "", x); if (x != "") print tid "\tentry\t" x }
+        else if (k == "acceptance") {
+          id = "(unnumbered)"; text = x
+          if (match(x, /^A[0-9]+:/)) { id = substr(x, 1, RLENGTH - 1); text = substr(x, RLENGTH + 1) }
+          sub(/(→|->)[[:space:]]*verify:.*/, "", text); print tid "\taccept\t" id "\t" text
+        }
+      }
+      function flush() { if (acc != "") emit("acceptance", acc); acc = "" }
+      /^(```|~~~)/ { flush(); fence = !fence; next }
+      fence { next }
+      /^## / { flush(); tid = ""; tasks = ($0 ~ /^## Tasks/); next }
+      /^### / { flush(); tid = ""; key = ""
+        if (match($0, /^### T[0-9]+:/)) tid = substr($0, 5, RLENGTH - 5)
+        else if (tasks) print "?\tbadhead\t" $0
+        next }
+      tid == "" { next }
+      /^[a-z_]+:/ {
+        flush(); key = $0; sub(/:.*/, "", key); rest = $0; sub(/^[a-z_]+:[[:space:]]*/, "", rest); sub(/[[:space:]]+#.*/, "", rest)
+        if (rest ~ /^\[.*\]$/ && (key == "owns" || key == "entry_points")) {
+          rest = substr(rest, 2, length(rest) - 2); n = split(rest, items, ","); for (i = 1; i <= n; i++) emit(key, items[i])
+        }
+        next
+      }
+      /^[[:space:]]+- / { flush(); item = $0; sub(/^[[:space:]]+- /, "", item); if (key == "acceptance") acc = item; else emit(key, item); next }
+      /^[[:space:]]+[^[:space:]]/ { if (acc != "") { line = $0; sub(/^[[:space:]]+/, "", line); acc = acc " " line }; next }
+      { flush() }
+      END { flush() }')"
+    # a task heading the plan check cannot read is a task nothing checks, and the guard would refuse
+    printf '%s\n' "$facts" | awk -F'\t' '$2 == "badhead" { print "plan-check: \"" $3 "\" is not a task heading; write it ### T<n>: <title>" }' >> "$problems"
+    printf '%s\n' "$facts" | awk -F'\t' '$2 == "own" || $2 == "entry" || $2 == "accept"' | grep -q . || echo "plan-check: plan.md has no task with owns:, entry_points: or acceptance: under ## Tasks" >> "$problems"
+    facts="$(printf '%s\n' "$facts" | awk -F'\t' '$2 != "badhead"')"
+    shared="$(shared_files)"
+    # the guard folds case only on Windows, where file names do
+    fold() { if command -v cygpath >/dev/null 2>&1; then tr '[:upper:]' '[:lower:]'; else cat; fi; }
+    as_json() { awk 'NF' | while IFS= read -r g; do json_str "$g"; echo; done | paste -sd, -; }
+    for tid in $(printf '%s\n' "$facts" | cut -f1 | awk 'NF && !seen[$0]++'); do
+      owned="$(printf '%s\n' "$facts" | awk -F'\t' -v t="$tid" '$1 == t && $2 == "own" { print $3 }')"
+      globs="[$( { printf '%s\n' "$owned"; printf '%s\n' "$shared"; } | as_json)]"
+      # The files the task names: its entry points, and in its acceptance every word that is a tracked
+      # file or reads as a repo file path (a folder, then a name with an extension). A URL, a glob, an
+      # absolute or home path, a variable ($IDLEFLOW_TMP/x) or a host:port is not a repo file.
+      named="$(printf '%s\n' "$facts" | awk -F'\t' -v t="$tid" '
+        $1 == t && $2 == "entry" { print "entry point\t" $3 }
+        $1 == t && $2 == "accept" { n = split($4, w, /[[:space:]]+/); for (i = 1; i <= n; i++) {
+          x = w[i]; gsub(/^[`"'\''(\[<]+|[`"'\'')\]>.,;:]+$/, "", x); gsub(/\\/, "/", x); sub(/::.*/, "", x); sub(/^\.\//, "", x)
+          if (x == "" || x ~ /[*?]/ || x ~ /^[\/~$%]/) continue
+          if (index(x, ":") && (!index(x, "/") || index(x, ":") < index(x, "/"))) continue
+          print "acceptance " $3 "\t" x } }')"
+      while IFS=$'\t' read -r where path; do
+        [ -n "$path" ] || continue
+        case "$where" in
+          entry*) ;;
+          *) grep -qxF -- "$path" "$tracked" || [[ "$path" == */* && "${path##*/}" == *[A-Za-z]*.*[A-Za-z]* ]] || continue;;
+        esac
+        out="$(printf '%s\0' "$path" | idleflow_rt outside "$globs")" || { echo "plan-check: the glob matcher failed" >&2; rm -f "$tracked" "$problems"; exit 2; }
+        [ -z "$out" ] || echo "plan-check: $tid does not own $path, which its $where names; add it to $tid's owns: (or to shared_files when every task adds lines to it)" >> "$problems"
+      done <<< "$named"
+      # A protected file is owned when an owns: glob covers it. A folder is owned when a glob names
+      # something inside it, or has a wildcard before the folder's name ends (*, **/*.md, .claude/*).
+      owns_json="[$(printf '%s\n' "$owned" | as_json)]"
+      for p in prd.md "$(progress_rel)" "$(index_rel)" CLAUDE.md "$(lessons_rel)" .idleflow/ .claude/settings.json .claude/settings.local.json .claude/agents/ .claude/hooks/; do
+        hit=""
+        case "$p" in
+          */)
+            lp="$(printf '%s' "$p" | fold)"
+            while IFS= read -r g; do
+              [ -n "$g" ] || continue
+              g="$(printf '%s' "${g//\\//}" | fold)"; lit="${g%%[*?]*}"
+              case "$g" in "$lp"*|"${lp%/}") hit=1;; esac
+              if [ "$lit" != "$g" ]; then case "$lp" in "$lit"*) hit=1;; esac; fi
+            done <<< "$owned";;
+          *)
+            out="$(printf '%s\0' "$p" | idleflow_rt outside "$owns_json")" || { echo "plan-check: the glob matcher failed" >&2; rm -f "$tracked" "$problems"; exit 2; }
+            [ -n "$out" ] || hit=1;;
+        esac
+        [ -z "$hit" ] || echo "plan-check: $tid owns the protected $p; protected files belong to no task" >> "$problems"
+      done
+    done
+    rm -f "$tracked"
+    if [ -s "$problems" ]; then awk '!seen[$0]++' "$problems"; rm -f "$problems"; exit 1; fi
+    rm -f "$problems"
+    echo "plan-check: every file each task names is in its owns: or shared_files, and no task owns a protected file"
     ;;
   extract)
     # What every agent working on one task reads of the plan: the sections every task is written

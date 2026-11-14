@@ -257,6 +257,6 @@ Older Claude Code: `claude plugin marketplace add Idle-Sync/idleflow` then `clau
 
 - Token counts per phase aren't captured; `/cost` after a run is the stopgap. OTEL export is planned.
 - `${CLAUDE_PLUGIN_ROOT}` in command files assumes plugin install; Option B in setup.md rewrites it.
-- In ownership globs `*` and `?` are the only wildcards and both cross `/`; every other character is literal, so `src/pages/[slug].astro` names that file. `src/**` is the usual shape. The guard hook and both reviewers (through `run.sh unowned`) use the same matcher. Diff-gate excludes use git pathspec globs and are all `**/`-prefixed so they match at any depth.
+- In ownership globs `*` and `?` are the only wildcards and both cross `/`; every other character is literal, so `src/pages/[slug].astro` names that file. `src/**` is the usual shape. The guard hook, both reviewers (through `run.sh unowned`) and the plan check (`run.sh plan-check`) use the same matcher. Diff-gate excludes use git pathspec globs and are all `**/`-prefixed so they match at any depth.
 - `model: fable` in agent frontmatter depends on account access; setup.md step 3 checks and falls back.
 - The orchestrator is a prompt, not code. It will occasionally drift. The "Rules you never break" block at the bottom of `commands/feature.md` is the first thing to tighten when it does.
