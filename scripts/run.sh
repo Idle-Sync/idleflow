@@ -115,7 +115,12 @@ gcommit() { "${G[@]}" ${IDENTITY[@]+"${IDENTITY[@]}"} commit -q "$@"; }
 # Paths handed to agents or written to JSON are native (D:/x on Windows, unchanged elsewhere).
 native_path() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else echo "$1"; fi; }
 # A bash string as a JSON string literal (backslash and double quote escaped).
-json_str() { printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')"; }
+# A JSON string: backslash and quote escaped, newline, carriage return and tab written as escapes,
+# and any other control character dropped, so a file name holding one stays one valid string.
+json_str() {
+  local s="${1//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\n'/\\n}"; s="${s//$'\r'/\\r}"; s="${s//$'\t'/\\t}"
+  printf '"%s"' "$(printf '%s' "$s" | tr -d '\001-\037')"
+}
 
 plugin_version() { idleflow_rt get "$HERE/../.claude-plugin/plugin.json" version 2>/dev/null || echo unknown; }
 
@@ -808,37 +813,79 @@ split_ready() { # split_ready <task-id> <split task-id> <run id>
   idleflow_rt get "$ACTIVE/ownership.json" "tasks.$1.owns" >/dev/null 2>&1 \
     || { echo "wt add: $1 has from: $2 but owns nothing yet; run.sh own $1 first, so it brings over $2's work on the files it owns" >&2; return 1; }
 }
-# A change that no longer applies to the sub-task's base leaves the worktree at its base, and the
-# sub-task is built from the plan as any other. git's own words go to the task's bring.log.
+# The files that still apply to the sub-task's base are brought over; a file that changed there since
+# the split is left out and named, and the sub-task builds it from the plan. git's own words go to the
+# task's bring.log, and run.json's tasks.<id>.brought records what came over, for the reviewers and
+# the retro: {"from": <split task>, "commit": <sha or null>, "files": <n>, "left_out": [<paths>]}.
 bring_split() { # bring_split <task-id> <split task-id> <worktree> <run id>
-  local fbase owns out f n=0 specs=() log subject
+  local fbase owns out f n=0 specs=() ok=() skipped=() log subject sha=null lj spec body fref="refs/heads/idleflow/$4/$2" wt="$3"
   fbase="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$2.base_sha")"; owns="$(idleflow_rt get "$ACTIVE/ownership.json" "tasks.$1.owns")"
   log="$ACTIVE/tasks/$1/bring.log"; : > "$log"
+  # (both read bring_split's locals: fbase, fref, wt, log)
+  bring_patch() { "${G[@]}" diff-tree -p --binary --full-index --no-renames "$fbase" "$fref" -- "$@"; }
+  bring_apply() { git -C "$wt" apply --3way --index --whitespace=nowarn 2>> "$log"; }
   # the changed files the matcher does not print as outside the sub-task's globs; shared_files are
   # left out, since every sibling would bring the same lines (plan-check gives each to one sub-task)
-  out="$(split_files "$2" "$4" | idleflow_rt outside "$owns")" \
-    || { echo "[idleflow] wt add: the glob matcher failed; $1 starts from its base alone" >&2; return 0; }
-  while IFS= read -r -d '' f; do
-    [ -n "$f" ] || continue
-    grep -qxF -- "$f" <<< "$out" || { specs+=(":(literal)$f"); n=$((n + 1)); }
-  done < <(split_files "$2" "$4")
-  [ "$n" -gt 0 ] || { echo "[idleflow] wt add: $1 has from: $2, but $2 changed none of the files $1 owns; $1 starts from its base alone" >&2; return 0; }
-  case "$(conventions_value commit_format)" in
-    conventional) subject="$(idleflow_rt clip 72 "chore: bring over $2's finished work on the files $1 owns")";;
-    plain) subject="$(idleflow_rt clip 72 "Bring over $2's finished work on the files $1 owns")";;
-    *) subject="$1: bring over $2's finished work on the files it owns";;
-  esac
-  if ! "${G[@]}" diff-tree -p --binary --full-index --no-renames "$fbase" "refs/heads/idleflow/$4/$2" -- "${specs[@]}" \
-       | git -C "$3" apply --3way --index --whitespace=nowarn 2>> "$log"; then
-    git -C "$3" reset -q --hard >> "$log" 2>&1 || true
-    echo "[idleflow] wt add: $2's work on the files $1 owns no longer applies to $1's base (git's words in $(native_path "$log")); $1 starts from its base alone and is built from the plan" >&2
-  # --no-verify: the repo's hooks would run in a worktree nothing is installed in yet
-  elif ! git -C "$3" ${IDENTITY[@]+"${IDENTITY[@]}"} commit -q --no-verify -m "$subject" -m "Task: $1" >> "$log" 2>&1; then
-    git -C "$3" reset -q --hard >> "$log" 2>&1 || true
-    echo "[idleflow] wt add: $2's work on the files $1 owns applied but could not be committed (git's words in $(native_path "$log")); $1 starts from its base alone" >&2
+  if out="$(split_files "$2" "$4" | idleflow_rt outside "$owns")"; then
+    while IFS= read -r -d '' f; do
+      [ -n "$f" ] || continue
+      grep -qxF -- "$f" <<< "$out" || { specs+=(":(literal)$f"); n=$((n + 1)); }
+    done < <(split_files "$2" "$4")
   else
-    echo "[idleflow] wt add: $1 starts with $2's finished work on $n file(s) it owns, in commit $(git -C "$3" rev-parse --short HEAD); finish and check it, do not write it again" >&2
+    echo "[idleflow] wt add: the glob matcher failed; $1 starts from its base alone" >&2
   fi
+  if [ "$n" -gt 0 ]; then
+    if bring_patch "${specs[@]}" | bring_apply; then
+      ok=("${specs[@]}")
+    else
+      # one file at a time; a file that fails leaves its conflict behind, so the worktree goes back to
+      # its base and the files that applied are applied again; if that fails too, nothing comes over
+      git -C "$wt" reset -q --hard >> "$log" 2>&1 || true
+      for spec in "${specs[@]}"; do
+        if bring_patch "$spec" | bring_apply; then ok+=("$spec"); continue; fi
+        skipped+=("$spec")
+        git -C "$wt" reset -q --hard >> "$log" 2>&1 || true
+        if [ "${#ok[@]}" -gt 0 ] && ! { bring_patch "${ok[@]}" | bring_apply; }; then
+          git -C "$wt" reset -q --hard >> "$log" 2>&1 || true
+          ok=(); skipped=("${specs[@]}"); break
+        fi
+      done
+    fi
+  fi
+  if [ "${#ok[@]}" -gt 0 ] && git -C "$wt" diff --cached --quiet; then
+    # the base already holds these changes: there is nothing to commit, and nothing is missing
+    echo "[idleflow] wt add: $1's base already holds $2's work on the files $1 owns; nothing to bring over" >&2
+    ok=()
+  elif [ "${#ok[@]}" -gt 0 ]; then
+    case "$(conventions_value commit_format)" in
+      conventional) subject="$(idleflow_rt clip 72 "chore: bring over $2's finished work on the files $1 owns")";;
+      plain) subject="$(idleflow_rt clip 72 "Bring over $2's finished work on the files $1 owns")";;
+      *) subject="$1: bring over $2's finished work on the files it owns";;
+    esac
+    # the files left out are named in the body too: the implementer reads this commit first
+    body="$(for spec in ${skipped[@]+"${skipped[@]}"}; do printf -- '- %s\n' "${spec#:(literal)}"; done)"
+    [ -z "$body" ] || body="Left out, as they no longer apply to this base; build them from the plan:"$'\n'"$body"
+    # --no-verify: the repo's hooks would run in a worktree nothing is installed in yet
+    if git -C "$wt" ${IDENTITY[@]+"${IDENTITY[@]}"} commit -q --no-verify -m "$subject" ${body:+-m "$body"} -m "Task: $1" >> "$log" 2>&1; then
+      sha="\"$(git -C "$wt" rev-parse HEAD)\""
+    else
+      git -C "$wt" reset -q --hard >> "$log" 2>&1 || true
+      echo "[idleflow] wt add: $2's work on the files $1 owns applied but could not be committed (git's words in $(native_path "$log")); $1 starts from its base alone" >&2
+      ok=(); skipped=("${specs[@]}")
+    fi
+  fi
+  lj="[$(for spec in ${skipped[@]+"${skipped[@]}"}; do json_str "${spec#:(literal)}"; echo; done | paste -sd, -)]"
+  idleflow_rt set "$ACTIVE/run.json" "tasks.$1.brought" "{\"from\":$(json_str "$2"),\"commit\":$sha,\"files\":${#ok[@]},\"left_out\":$lj}"
+  if [ "$sha" = null ]; then
+    if [ "$n" -eq 0 ]; then echo "[idleflow] wt add: $1 has from: $2, but $2 changed none of the files $1 owns; $1 starts from its base alone" >&2; fi
+    if [ "${#skipped[@]}" -gt 0 ]; then echo "[idleflow] wt add: $2's work on the files $1 owns no longer applies to $1's base (git's words in $(native_path "$log")); $1 starts from its base alone and is built from the plan" >&2; fi
+  else
+    echo "[idleflow] wt add: $1 starts with $2's finished work on ${#ok[@]} file(s) it owns, in commit $(git -C "$wt" rev-parse --short HEAD); finish and check it, do not write it again" >&2
+    if [ "${#skipped[@]}" -gt 0 ]; then
+      echo "[idleflow] wt add: $2's work on these files no longer applies to $1's base and was left out (git's words in $(native_path "$log")); build them from the plan: $(for spec in "${skipped[@]}"; do printf '"%s" ' "${spec#:(literal)}"; done)" >&2
+    fi
+  fi
+  return 0
 }
 # The repo's own preparation for a fresh worktree (link shared folders, copy fixtures).
 run_worktree_setup() { # run_worktree_setup <task-id> <worktree>
