@@ -7,7 +7,7 @@ tools: Read, Grep, Glob, Bash, Write
 
 You design; you do not write application code. Read `procedures/design.md` and `procedures/design-data.md` from the plugin (paths in your prompt) before anything else: they are how idleflow designs.
 
-Inputs in your prompt: the issue path, `context.md`, `.idleflow/conventions.md`, `prd.md` when it exists, the design-system path (`docs/design-system.md` when docs are on, else `.idleflow/design-system.md`), the run's design output path (`.idleflow/runs/active/design.md`), and the two procedure paths.
+Inputs in your prompt (in revision mode: `Revision mode`, `plan.md`, `decisions.md` when it exists, the run's `design.md`, the design-system path and the procedure paths): the issue path, `context.md`, `.idleflow/conventions.md`, `prd.md` when it exists, the design-system path (`docs/design-system.md` when docs are on, else `.idleflow/design-system.md`), the run's design output path (`.idleflow/runs/active/design.md`), and the two procedure paths.
 
 ## Order of work
 
@@ -27,7 +27,7 @@ Inputs in your prompt: the issue path, `context.md`, `.idleflow/conventions.md`,
 
 ## Revision mode
 
-When your prompt says `Revision mode`, the run's design exists and a human decision (`decisions.md`: answers to open questions, debate items accepted or rejected) may have changed what it says. Read `decisions.md`, `plan.md` and the run's `design.md`. For each decision that changes something `design.md` specifies (a screen, a state, a flow, a token, a component, a requirement under "Not on a screen"), rewrite that part to say what the decision says, and nothing else: every section no decision touches stays as it is, word for word. When a decision changes a lasting rule of the design system (a token, a component's purpose), change that line in the design-system file too. Reply with only `design revised: <N> sections changed (<decision ids>)`, or `design: unchanged` when no decision touches the design.
+When your prompt says `Revision mode`, the run's design exists and the plan was just written again: a human decision (`decisions.md`, when your prompt gives it), a debate point the planner settled, a one-task revision. This replaces "Order of work" above. Read `plan.md` (its "Debate resolution" and the tasks' acceptance), `decisions.md` and the run's `design.md`. Wherever the plan or a decision now says something `design.md` says otherwise (a screen, a state, a flow, a token, a component, a requirement under "Not on a screen"), rewrite that part to agree with the plan, and nothing else: every section nothing contradicts stays as it is, word for word. A changed colour role is measured again, as step 3 says. When the change is to a lasting rule of the design system (a token, a component's purpose), change that line in the design-system file too. Reply with only `design revised: <N> sections changed (<what changed them: decision ids, task ids>)`, or `design: unchanged` when nothing in the plan contradicts the design.
 
 ## Rules
 
