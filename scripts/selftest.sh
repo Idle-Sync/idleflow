@@ -731,6 +731,14 @@ check "plan-check names each file a task names but does not own" '[ "$rc" = 1 ] 
 check "plan-check names every protected file a wide glob owns" 'for p in .claude/settings.json .claude/settings.local.json .claude/agents/ .claude/hooks/; do grep -qx "plan-check: T2 owns the protected $p; protected files belong to no task" "$scratch/pc.txt" || exit 1; done && [ "$(grep -c "protected" "$scratch/pc.txt")" = 4 ] && ! grep -q "T3\|zzz" "$scratch/pc.txt"'
 printf '%s\n' '## Tasks' '### T1: one' 'owns:' '  - src/a/**' '  - .gitignore' 'entry_points:' '  - src/a/x.py: run' 'acceptance:' '  - A1: `src/a/x.py` and .gitignore → verify: true' > .idleflow/runs/active/plan.md
 check "plan-check passes a plan whose tasks own what they name" '[ "$(bash "$RUN" plan-check)" = "plan-check: every file each task names is in its owns: or shared_files, and no task owns a protected file" ]'
+printf '%s\n' '## Tasks' \
+  '### T1: inline lists and odd entry points' 'owns: [src/a/**, "tests/**"]' 'entry_points: [src/a/x.py: run]' 'entry_points:' '  - src/a/x.py:run' '  - src/a/y.py (new file)' '  - src/a/z.py::Klass' 'acceptance:' \
+  '  - A1: writes $IDLEFLOW_TMP/report.json, /tmp/x.log and ~/.cache/a.json; serves localhost:4173/index.html' '  - A2: the report also' '    lands in docs/report.md → verify: true' '  - prints src\b\c.py' \
+  '### T2: protected files, one at a time' 'owns:' '  - .claude/agents/reviewer.md' '  - .idleflow/conventions.md' '  - .claude/*/x.md' '  - .claude/skills/x/**' \
+  '### T3: no named files' 'owns: [.claude/**, src/**]' 'acceptance:' '  - A1: → verify: true' > .idleflow/runs/active/plan.md
+bash "$RUN" plan-check > "$scratch/pc.txt" 2>&1; rc=$?
+check "plan-check reads inline lists, entry points with symbols and items that run on" '[ "$rc" = 1 ] && [ "$(grep -c "^plan-check: T1 " "$scratch/pc.txt")" = 2 ] && grep -q "^plan-check: T1 does not own docs/report.md, which its acceptance A2 names" "$scratch/pc.txt" && grep -q "^plan-check: T1 does not own src/b/c.py, which its acceptance (unnumbered) names" "$scratch/pc.txt"'
+check "plan-check flags a protected file named inside its folder, and every task's wide glob" 'for l in "T2 owns the protected .claude/agents/" "T2 owns the protected .idleflow/" "T2 owns the protected .claude/hooks/" "T3 owns the protected .claude/settings.json" "T3 owns the protected .claude/agents/"; do grep -q "^plan-check: $l;" "$scratch/pc.txt" || exit 1; done && ! grep -q "T2 owns the protected .claude/settings" "$scratch/pc.txt"'
 bash "$RUN" finish "done" >/dev/null
 
 echo "--- conventional commits"
