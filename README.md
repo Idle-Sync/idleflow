@@ -33,7 +33,8 @@ For work a person sees (the classifier reports `ui: true`, or `STEP_DESIGN=on`),
   checklists by screen type). It writes or extends the repo's lasting design system (`docs/design-system.md`,
   or `.idleflow/design-system.md` without docs): a direction, tokens with measured contrast for light and dark,
   components. For this run it writes `design.md`: a spec per screen with layout, hierarchy, every state,
-  motion and accessibility. Token work becomes the plan's first task.
+  motion and accessibility, plus the issue's requirements that no screen shows (an API payload, CLI output),
+  which the plan gives to the tasks that build those surfaces. Token work becomes the plan's first task.
 - **Libraries** it would use (an animation library such as GSAP, a component set such as shadcn/ui) go to the
   library step for research and the human's yes; it never installs anything.
 - **`idleflow:review-design`** reviews every `ui` task against the spec and tokens, checks accessibility and the
