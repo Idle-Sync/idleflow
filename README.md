@@ -219,7 +219,7 @@ ISSUES.md                       how every idleflow issue is written: kinds, titl
 
 ## Runtime
 
-The bash scripts need either **Python ≥ 3.8** or **Node ≥ 18** on `PATH`; `scripts/rt.sh` tries
+The bash scripts run on bash 3.2 or newer (macOS ships 3.2 as `/bin/bash`; CI runs the selftest on it) and need either **Python ≥ 3.8** or **Node ≥ 18** on `PATH`; `scripts/rt.sh` tries
 `python3`, then `python`, then `node`, and `IDLEFLOW_RUNTIME=node` (or `python`, or a full path)
 pins one. `bash scripts/run.sh conf` prints which one is in use. On Windows, bash comes from Git for
 Windows; paths in every form (`D:\x`, `D:/x`, `/d/x`) are normalised before comparison.
@@ -231,7 +231,7 @@ IDLEFLOW_RUNTIME=python bash scripts/selftest.sh
 bash scripts/shellcheck-new.sh origin/main    # shellcheck findings this branch adds
 ```
 
-`.github/workflows/checks.yml` runs the selftest on each runtime, `claude plugin validate --strict`
+`.github/workflows/checks.yml` runs the selftest on each runtime, under the newest bash and under bash 3.2, `claude plugin validate --strict`
 on `.`, `agents` and `commands`, and `shellcheck-new.sh` against the base on every pull request to
 `main` and every push to it, and the first two nightly on `main`.
 

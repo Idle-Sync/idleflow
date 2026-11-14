@@ -73,6 +73,14 @@ trap cleanup EXIT
 # the suite's own root for task temp folders and port claims, so a suite running beside it never meets it
 export IDLEFLOW_TMP_ROOT="$d-tmp"; mkdir -p "$IDLEFLOW_TMP_ROOT"; utmp="$IDLEFLOW_TMP_ROOT/idleflow-$(id -u)"
 
+echo "--- git missing"
+# PATH holds only dirname, which sourcing conf.sh needs, so the code and the message are the wrapper's
+nogit_bin="$(mktemp -d)"
+printf '#!/bin/sh\nexec "%s" "$@"\n' "$(command -v dirname)" > "$nogit_bin/dirname" && chmod +x "$nogit_bin/dirname"
+# shellcheck disable=SC2034 # read only inside the single-quoted check below, which shellcheck cannot see
+nogit_out="$(env PATH="$nogit_bin" "$BASH" -c 'set -e; source "$1"; git status 2>&1 >/dev/null || exit $?' _ "$HERE/conf.sh" 2>&1; echo "rc=$?")"
+rm "$nogit_bin/dirname" && rmdir "$nogit_bin"
+check "without git the wrapper fails with 127, not a loop" '[ "${nogit_out##*$'"'"'\n'"'"'}" = rc=127 ] && [[ "$nogit_out" == *"git: command not found"* ]]'
 echo "--- new on a repo with no commits (what /idleflow:init does)"
 cd "$d" && git init -q && git config user.name "Human" && git config user.email "human@example.com"
 id0="$(bash "$RUN" new 'fix "quoted" thing' 2>/dev/null)"

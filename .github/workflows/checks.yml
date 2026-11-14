@@ -37,6 +37,24 @@ jobs:
           IDLEFLOW_RUNTIME: ${{ matrix.runtime }}
         run: bash scripts/selftest.sh
 
+  selftest-bash32:
+    # macOS ships bash 3.2 as /bin/bash; the scripts must parse and run there too
+    name: selftest (bash 3.2, ${{ matrix.runtime }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [python, node]
+    steps:
+      - uses: actions/checkout@v4
+      - name: scripts/selftest.sh under bash 3.2
+        env:
+          IDLEFLOW_RUNTIME: ${{ matrix.runtime }}
+        run: |
+          docker run --rm -v "$PWD":/w -w /w -e IDLEFLOW_RUNTIME bash:3.2 sh -c \
+            'apk add --no-cache -q git python3 nodejs coreutils findutils grep sed gawk procps util-linux diffutils && git config --global --add safe.directory /w && bash --version | head -1 && bash scripts/selftest.sh'
+
   validate:
     name: plugin validate
     runs-on: ubuntu-latest
