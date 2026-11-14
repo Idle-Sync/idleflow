@@ -19,6 +19,7 @@
 //   clip   <n> <text>                       the text cut to at most n characters (not bytes), "..." marking a cut
 //   unowned <file> <task-id>                NUL-separated paths on stdin; prints those the task may not change
 //   outside <globs-json>                    NUL-separated paths on stdin; prints those no glob covers
+//   port-free <port>                        exit 0 when nothing on this machine listens on the TCP port, else 1
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -28,8 +29,11 @@ const WIN = process.platform === "win32";
 function load(p) {
   return JSON.parse(fs.readFileSync(p, "utf8"));
 }
+// Written beside the file and renamed over it, so a reader in another run never sees it half written.
 function save(p, obj) {
-  fs.writeFileSync(p, JSON.stringify(obj, null, 1) + "\n");
+  const tmp = `${p}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(obj, null, 1) + "\n");
+  fs.renameSync(tmp, p);
 }
 function isObj(v) {
   return v !== null && typeof v === "object" && !Array.isArray(v);
@@ -805,7 +809,32 @@ function cmdClip(n, text) {
   const chars = Array.from(text); // code points, as Python counts them
   console.log(chars.length <= n ? text : chars.slice(0, n - 3).join("") + "...");
 }
-const table = { get: cmdGet, set: cmdSet, inc: cmdInc, finish: cmdFinish, own: cmdOwn, gate: cmdGate, guard: cmdGuard, killguard: cmdKillguard, detach: cmdDetach, entries: cmdEntries, unowned: cmdUnowned, outside: cmdOutside, clip: cmdClip };
+// Free means a server could take it now: a wildcard bind succeeds on IPv4 and, where the machine
+// has it, IPv6 (Node binds with SO_REUSEADDR, so a port in TIME_WAIT counts as free), and nothing
+// answers on localhost over either: BSD lets that bind pass over a specific listener.
+function cmdPortFree(port) {
+  const net = require("net");
+  port = parseInt(port, 10);
+  const bind = (host) => new Promise((done) => {
+    const s = net.createServer();
+    s.once("error", (e) => done(e.code));
+    s.listen({ port, host, exclusive: true }, () => s.close(() => done(null)));
+  });
+  const answers = (host) => new Promise((done) => {
+    const c = net.connect({ port, host });
+    c.setTimeout(500, () => { c.destroy(); done(false); });
+    c.once("connect", () => { c.destroy(); done(true); });
+    c.once("error", () => done(false));
+  });
+  (async () => {
+    const v4 = await bind("0.0.0.0");
+    if (v4 !== null) process.exit(1);
+    const v6 = await bind("::");
+    if (v6 !== null && v6 !== "EADDRNOTAVAIL" && v6 !== "EAFNOSUPPORT") process.exit(1);
+    process.exit((await answers("127.0.0.1")) || (await answers("::1")) ? 1 : 0);
+  })();
+}
+const table = { get: cmdGet, set: cmdSet, inc: cmdInc, finish: cmdFinish, own: cmdOwn, gate: cmdGate, guard: cmdGuard, killguard: cmdKillguard, detach: cmdDetach, entries: cmdEntries, unowned: cmdUnowned, outside: cmdOutside, clip: cmdClip, "port-free": cmdPortFree };
 const [cmd, ...args] = process.argv.slice(2);
 if (!cmd || !(cmd in table)) {
   process.stderr.write(`idleflow.js: unknown subcommand ${JSON.stringify(cmd)}\n`);
