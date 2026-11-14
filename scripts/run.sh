@@ -1283,17 +1283,49 @@ Task: $tid")
       br="idleflow/$rid/$tid"
       t_merge="$(idleflow_rt get "$src/run.json" "tasks.$tid.t_merge" 2>/dev/null || true)"
       case "$t_merge" in ""|null) ;; *)
-        if "${G[@]}" show-ref -q --verify "refs/heads/$br" && ! "${G[@]}" merge-base --is-ancestor "$br" HEAD; then
-          echo "resume: $tid merged in run $rid, but $rbase no longer holds its branch $br" >&2; exit 1
+        if "${G[@]}" show-ref -q --verify "refs/heads/$br"; then
+          held=""; "${G[@]}" merge-base --is-ancestor "$br" HEAD && held=1
+        else
+          # the branch is gone, so the merge commit is looked for by the trailers `merge` writes
+          held="$("${G[@]}" log -1 --format=%H --all-match --grep="^Run: $rid\$" --grep="^Task: $tid\$" HEAD 2>/dev/null || true)"
         fi
+        [ -n "$held" ] || { echo "resume: $tid merged in run $rid, but $rbase no longer holds that merge" >&2; exit 1; }
         continue;; esac
-      # a time-limit stop leaves worktrees: work only they hold is never removed
+      # a time-limit stop leaves worktrees: work only they hold is never removed. That is a change to a
+      # tracked file, or a new file inside the task's globs; files worktree_setup made elsewhere are not
+      owned="$(idleflow_rt get "$src/ownership.json" "tasks.$tid.owns" 2>/dev/null || true)"
+      case "$owned" in "["*) ;; *) owned='["*"]';; esac
       for p in "$(wt_path "$tid")" "$(wt_path "_base-$tid")"; do
-        if [ -d "$p" ] && [ -n "$(git -C "$p" status --porcelain 2>/dev/null)" ]; then
-          echo "resume: $(native_path "$p") holds uncommitted changes of $tid; commit or discard them first" >&2; exit 1
+        [ -d "$p" ] || continue
+        # awk reads all its input, so a large leftover never ends the writer on a broken pipe (exit 141)
+        dirty="$(git -C "$p" status --porcelain --untracked-files=no 2>/dev/null | awk 'NR <= 3')"
+        if [ -z "$dirty" ]; then
+          new="$(git -C "$p" ls-files -o --exclude-standard -z 2>/dev/null | tr '\0' '\n' | grep -v '^\.idleflow-run/' || true)"
+          outside="$(printf '%s\n' "$new" | awk 'NF' | tr '\n' '\0' | idleflow_rt outside "$owned" 2>/dev/null || true)"
+          # the new files the globs cover: all of them less those `outside` printed
+          dirty="$(awk 'NR == FNR { if (NF) skip[$0] = 1; next } NF && !($0 in skip) && ++n <= 3' <(printf '%s\n' "$outside") <(printf '%s\n' "$new"))"
+        fi
+        if [ -n "$dirty" ]; then
+          echo "resume: $(native_path "$p") holds work of $tid that is not committed ($(printf '%s' "$dirty" | tr '\n' ' ')); commit or discard it first" >&2; exit 1
         fi
       done
     done
+    # a run that is the active one may still be built by another session: its jobs and previews hold
+    # those worktrees, so a resume in place waits until none of them runs
+    if [ "$src" = "$ACTIVE" ]; then
+      for jd in "$ACTIVE"/tasks/*/jobs/*/; do
+        [ -d "$jd" ] || continue
+        jd="${jd%/}"; jn="${jd##*/}"; jt="${jd%/jobs/*}"; jt="${jt##*/}"
+        job_ended "$jd" || { echo "resume: run $rid may still be built by another session: job $jn of $jt still runs. Wait for it, or end it with: bash \"$0\" stop $jt $jn" >&2; exit 1; }
+      done
+      for pf in "$ACTIVE"/tasks/*/preview.pid; do
+        [ -f "$pf" ] || continue
+        pt="${pf%/preview.pid}"; pt="${pt##*/}"
+        if kill -0 -- "-$(cat "$pf")" 2>/dev/null || kill -0 "$(cat "$pf")" 2>/dev/null; then
+          echo "resume: run $rid may still be built by another session: the preview of $pt still serves. End it with: bash \"$0\" preview $pt stop" >&2; exit 1
+        fi
+      done
+    fi
     if [ "$src" != "$ACTIVE" ]; then park_active; mv "$src" "$ACTIVE"; fi
     # this idleflow carries the run on, so it is the version the run records
     idleflow_rt set "$ACTIVE/run.json" plugin_version "$(json_str "$(plugin_version)")"
