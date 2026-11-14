@@ -885,8 +885,11 @@ JSON
       function flush() { if (acc != "") emit("acceptance", acc); acc = "" }
       /^(```|~~~)/ { flush(); fence = !fence; next }
       fence { next }
-      /^## / { flush(); tid = ""; next }
-      /^### / { flush(); tid = ""; key = ""; if (match($0, /^### [^:[:space:]]+:/)) tid = substr($0, 5, RLENGTH - 5); next }
+      /^## / { flush(); tid = ""; tasks = ($0 ~ /^## Tasks/); next }
+      /^### / { flush(); tid = ""; key = ""
+        if (match($0, /^### T[0-9]+:/)) tid = substr($0, 5, RLENGTH - 5)
+        else if (tasks) print "?\tbadhead\t" $0
+        next }
       tid == "" { next }
       /^[a-z_]+:/ {
         flush(); key = $0; sub(/:.*/, "", key); rest = $0; sub(/^[a-z_]+:[[:space:]]*/, "", rest); sub(/[[:space:]]+#.*/, "", rest)
@@ -899,7 +902,13 @@ JSON
       /^[[:space:]]+[^[:space:]]/ { if (acc != "") { line = $0; sub(/^[[:space:]]+/, "", line); acc = acc " " line }; next }
       { flush() }
       END { flush() }')"
+    # a task heading the plan check cannot read is a task nothing checks, and the guard would refuse
+    printf '%s\n' "$facts" | awk -F'\t' '$2 == "badhead" { print "plan-check: \"" $3 "\" is not a task heading; write it ### T<n>: <title>" }' >> "$problems"
+    printf '%s\n' "$facts" | awk -F'\t' '$2 == "own" || $2 == "entry" || $2 == "accept"' | grep -q . || echo "plan-check: plan.md has no task with owns:, entry_points: or acceptance: under ## Tasks" >> "$problems"
+    facts="$(printf '%s\n' "$facts" | awk -F'\t' '$2 != "badhead"')"
     shared="$(shared_files)"
+    # the guard folds case only on Windows, where file names do
+    fold() { if command -v cygpath >/dev/null 2>&1; then tr '[:upper:]' '[:lower:]'; else cat; fi; }
     as_json() { awk 'NF' | while IFS= read -r g; do json_str "$g"; echo; done | paste -sd, -; }
     for tid in $(printf '%s\n' "$facts" | cut -f1 | awk 'NF && !seen[$0]++'); do
       owned="$(printf '%s\n' "$facts" | awk -F'\t' -v t="$tid" '$1 == t && $2 == "own" { print $3 }')"
@@ -930,10 +939,10 @@ JSON
         hit=""
         case "$p" in
           */)
-            lp="$(printf '%s' "$p" | tr '[:upper:]' '[:lower:]')"
+            lp="$(printf '%s' "$p" | fold)"
             while IFS= read -r g; do
               [ -n "$g" ] || continue
-              g="$(printf '%s' "${g//\\//}" | tr '[:upper:]' '[:lower:]')"; lit="${g%%[*?]*}"
+              g="$(printf '%s' "${g//\\//}" | fold)"; lit="${g%%[*?]*}"
               case "$g" in "$lp"*|"${lp%/}") hit=1;; esac
               if [ "$lit" != "$g" ]; then case "$lp" in "$lit"*) hit=1;; esac; fi
             done <<< "$owned";;

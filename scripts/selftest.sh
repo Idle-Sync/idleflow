@@ -739,6 +739,10 @@ printf '%s\n' '## Tasks' \
 bash "$RUN" plan-check > "$scratch/pc.txt" 2>&1; rc=$?
 check "plan-check reads inline lists, entry points with symbols and items that run on" '[ "$rc" = 1 ] && [ "$(grep -c "^plan-check: T1 " "$scratch/pc.txt")" = 2 ] && grep -q "^plan-check: T1 does not own docs/report.md, which its acceptance A2 names" "$scratch/pc.txt" && grep -q "^plan-check: T1 does not own src/b/c.py, which its acceptance (unnumbered) names" "$scratch/pc.txt"'
 check "plan-check flags a protected file named inside its folder, and every task's wide glob" 'for l in "T2 owns the protected .claude/agents/" "T2 owns the protected .idleflow/" "T2 owns the protected .claude/hooks/" "T3 owns the protected .claude/settings.json" "T3 owns the protected .claude/agents/"; do grep -q "^plan-check: $l;" "$scratch/pc.txt" || exit 1; done && ! grep -q "T2 owns the protected .claude/settings" "$scratch/pc.txt"'
+printf '%s\n' '## Tasks' '### T1 — one' 'owns: [.claude/**]' > .idleflow/runs/active/plan.md
+check "plan-check refuses a task heading it cannot read, and a plan with no task" 'out="$(bash "$RUN" plan-check 2>&1)"; [ $? = 1 ] && echo "$out" | grep -q "### T1 — one\" is not a task heading" && echo "$out" | grep -q "has no task"'
+printf '%s\n' '## Tasks' '### T1: one' 'owns: [.CLAUDE/Agents/**, src/**]' 'entry_points: [src/a.py]' > .idleflow/runs/active/plan.md
+check "plan-check folds case only where the guard does" 'command -v cygpath >/dev/null 2>&1 || bash "$RUN" plan-check >/dev/null'
 bash "$RUN" finish "done" >/dev/null
 
 echo "--- conventional commits"
