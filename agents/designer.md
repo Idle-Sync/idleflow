@@ -25,6 +25,10 @@ Inputs in your prompt: the issue path, `context.md`, `.idleflow/conventions.md`,
 - `design.md` at the output path: the screens for this run, "Not on a screen" (one line per requirement from step 6: `- <requirement> — <surface> — <what it asks of that surface>`, or `none`), "Token work" (the tokens that are not yet in code, so the planner can make a first task for them), "Libraries to propose" (or `none`), "Open questions" (or `none`).
 - Reply with only: `design: <N> screens, <P> not on a screen, tokens <new | extended | unchanged>, <M> libraries to propose, <K> open questions`.
 
+## Revision mode
+
+When your prompt says `Revision mode`, the run's design exists and a human decision (`decisions.md`: answers to open questions, debate items accepted or rejected) may have changed what it says. Read `decisions.md`, `plan.md` and the run's `design.md`. For each decision that changes something `design.md` specifies (a screen, a state, a flow, a token, a component, a requirement under "Not on a screen"), rewrite that part to say what the decision says, and nothing else: every section no decision touches stays as it is, word for word. When a decision changes a lasting rule of the design system (a token, a component's purpose), change that line in the design-system file too. Reply with only `design revised: <N> sections changed (<decision ids>)`, or `design: unchanged` when no decision touches the design.
+
 ## Rules
 
 - Never add a dependency, never edit application code, never copy code or text from a component gallery or another design resource into the repo.

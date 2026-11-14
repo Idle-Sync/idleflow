@@ -88,6 +88,8 @@ If "Open questions for the human" is non-empty, ask them now with AskUserQuestio
 
 **Plan check**, after this and every later planner call that writes plan.md (a revision, a split): `bash "$RUN" plan-check`. It matches with the guard's own matcher, so a plan it passes is one the guard lets build: each file a task's entry points or acceptance name must be in its `owns:` or `shared_files`, and no `owns:` glob may cover a protected file (the list in the planner's ownership rule: `prd.md`, `progress.md`, `index.md`, `CLAUDE.md`, the lessons file, anything under `.idleflow/`, and the Claude Code configuration `.claude/settings.json`, `.claude/settings.local.json`, `.claude/agents/` and `.claude/hooks/`), directly or through a wide glob (`.claude/**`). When it exits 1, send its lines and the issue path to the planner once for a revision, then run it again; a second failure stops the run with `needs-human` and those lines.
 
+**Design follows decisions**, when step 2c ran, after every planner call given `decisions.md` (the open questions above, the debate in step 4, a later revision that applies a decision): spawn the designer (as **Spawning an agent** says) with `Revision mode`, the `decisions.md`, `plan.md`, `.idleflow/runs/active/design.md` and `DESIGN_SYSTEM` paths and the two procedure paths, before the plan check that follows that call. It rewrites the sections of `design.md` a decision changes, so the spec the implementers and the design reviewer read never says something the plan no longer does. Repeat its one-line reply to the human; `design: unchanged` needs nothing more.
+
 ## 4. Debate (Opus × 2) — only for size L or risk high (or `STEP_DEBATE` says otherwise)
 
 Otherwise skip to the "Plan locked" line at the end of this step.
