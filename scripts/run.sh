@@ -1072,7 +1072,13 @@ JSON
       while IFS= read -r path; do
         [ -n "$path" ] || continue
         # a glob is checked by its fixed folder: one git ignores whole holds nothing a task can change
-        case "$path" in *[*?]*) probe="${path%%[*?]*}"; probe="${probe%/*}"; [ "$probe" != "${path%%[*?]*}" ] && [ -n "$probe" ] || continue; probe="$probe/.idleflow-probe";; *) probe="$path";; esac
+        case "$path" in
+          *[*?]*)
+            probe="${path%%[*?]*}"; probe="${probe%/*}"
+            if [ "$probe" = "${path%%[*?]*}" ] || [ -z "$probe" ]; then continue; fi
+            probe="$probe/.idleflow-probe";;
+          *) probe="$path";;
+        esac
         if ! grep -qxF -- "$path" "$tracked" && "${G[@]}" check-ignore -q --no-index -- "$probe" 2>/dev/null; then
           echo "plan-check: $tid would change $path, which git ignores: no worktree has it and no merge carries a change to it; take it out of $tid and write the change under \"By hand after merge\"" >> "$problems"
         fi
