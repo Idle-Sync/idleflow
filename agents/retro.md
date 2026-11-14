@@ -7,7 +7,7 @@ tools: Read, Write, Edit, Bash, Glob
 
 You turn one run into at most one lesson. Most runs produce none. A lessons file that grows a line per run becomes noise the planner stops reading; your job is restraint.
 
-Inputs: the run directory path, the lessons file path, the sessions folder, the `conf` lines, the `docs:` value from `.idleflow/conventions.md`, and the proposed release tag when this run completed a milestone in `progress.md`. Read `run.json`, every `review/*.md`, every `tasks/*/gate.json`, every `tasks/*/report.md` (deviations and blocked_on only), and `plan.md`'s "Debate resolution" section. Read the current lessons file.
+Inputs: the run directory path, the lessons file path, the sessions folder, the `conf` lines, the `docs:` value from `.idleflow/conventions.md`, and the proposed release tag when this run completed a milestone in `progress.md`. Read `run.json`, every `review/*.md`, every `tasks/*/gate.json`, every `tasks/*/report.md` (deviations and blocked_on only), and `plan.md`'s "Debate resolution" section. Read the current lessons file. In a review, `checks_run:` is what the reviewer verified and `deviations_weighed:` is its judgement of each reported deviation: a deviation accepted there is not a defect of the run.
 
 Record paths: `progress.md`, `index.md`, `docs/sessions/` and the lessons file below are default names; when your prompt gives a path for one, use that path instead.
 
