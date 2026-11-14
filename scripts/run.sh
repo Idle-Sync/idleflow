@@ -4,7 +4,8 @@
 #
 #   run.sh new <slug>                     -> creates .idleflow/runs/active/ for a new run, prints its <id>
 #   run.sh wt add <task-id> [base-ref]    -> creates the task's worktree and branch, records its base sha, runs the approved
-#                                            worktree_setup there (exit 6: setup failed, 7: not approved), prints the path
+#                                            worktree_setup there (exit 6: setup failed, 7: not approved, 8: the plan
+#                                            marks it blocked_until a revision), prints the path
 #   run.sh wt rm <task-id>                -> removes the worktree (keeps the branch); works with or without an active run
 #   run.sh wt list                        -> lists idleflow worktrees
 #   run.sh own <task-id> '<globs json>'   -> registers file ownership for the guard hook
@@ -23,6 +24,7 @@
 #   run.sh get <key>                      -> prints a value from run.json (dotted keys ok)
 #   run.sh set <key> <json>               -> sets a value in run.json (dotted keys ok)
 #   run.sh inc <key> [n]                  -> adds n (default 1) to a counter in run.json
+#   run.sh plan-field <task-id> <key>     -> one field of the task's plan section (blocked_until, model, ...), empty when missing
 #   run.sh plan-check                     -> checks plan.md before anyone builds: every file a task's entry points or
 #                                            acceptance name is in its owns: or shared_files, and no owns: glob covers a
 #                                            protected file; prints one line per problem and exits 1, or exits 0
@@ -107,6 +109,18 @@ json_str() { printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')";
 
 plugin_version() { idleflow_rt get "$HERE/../.claude-plugin/plugin.json" version 2>/dev/null || echo unknown; }
 
+# a field of the task's own plan section ("<key>: <value>", a comment after two spaces and a # left
+# out), empty when the section or the field is missing; a fenced block in the section is text, not
+# fields. awk reads the file itself: one that stops early must not leave a writer on a broken pipe.
+plan_field() { # plan_field <task-id> <key>
+  [ -f "$ACTIVE/plan.md" ] || return 0
+  H="### $1:" K="$2:" awk '
+    { sub(/\r$/, "") }
+    /^(```|~~~)/ { fence = !fence; next }
+    fence { next }
+    /^##/ { task = (index($0, ENVIRON["H"]) == 1); next }
+    task && index($0, ENVIRON["K"]) == 1 { v = substr($0, length(ENVIRON["K"]) + 1); sub(/[[:space:]][[:space:]]+#.*/, "", v); gsub(/^[[:space:]]+|[[:space:]]+$/, "", v); print v; exit }' "$ACTIVE/plan.md"
+}
 # the title in the plan's "### <task-id>: <title>" heading, empty when there is none
 plan_title() { # plan_title <task-id>
   [ -f "$ACTIVE/plan.md" ] || return 0
@@ -653,7 +667,9 @@ ignore_file() {
 
 add_ignore() { # add_ignore <file> <pattern>
   local f="$1" pat="$2"
-  [ -f "$f" ] && tr -d '\r' < "$f" | grep -qxF -- "$pat" && return 0
+  # grep reads to the end (no -q): one that stopped at the first match would break the pipe under
+  # pipefail on a long file, and the line would be added twice
+  [ -f "$f" ] && tr -d '\r' < "$f" | grep -xF -- "$pat" >/dev/null && return 0
   mkdir -p "$(dirname "$f")"
   # a file without a final newline would otherwise glue our line onto its last entry
   [ ! -s "$f" ] || [ -z "$(tail -c1 "$f")" ] || echo >> "$f"
@@ -740,6 +756,10 @@ JSON
       add)
         id="$(active_id)"
         tid="${1:?task-id}"; check_task_id "$tid"; base="${2:-$(idleflow_rt get "$ACTIVE/run.json" base)}"
+        # a task the plan could not finish until an earlier group ran waits for its revision, so it never
+        # starts from a section with placeholders in it
+        blocked="$(plan_field "$tid" blocked_until)"
+        case "$(printf '%s' "$blocked" | tr '[:upper:]' '[:lower:]')" in ""|none) ;; *) echo "wt add: $tid is blocked until a revision ($blocked); have the planner revise its section first, which sets blocked_until: none" >&2; exit 8;; esac
         p="$(wt_path "$tid")"; br="idleflow/$id/$tid"
         "${G[@]}" rev-parse -q --verify "$base^{commit}" >/dev/null || { echo "base '$base' has no commits yet; commit first (run.sh snapshot)" >&2; exit 1; }
         # a leftover from a crashed run must not make `add` fail, nor a base checkout of an earlier base stay
@@ -860,6 +880,10 @@ JSON
   inc)
     key="${1:?key}"; n="${2:-1}"; active_id >/dev/null
     idleflow_rt inc "$ACTIVE/run.json" "$key" "$n"
+    ;;
+  plan-field)
+    tid="${1:?task-id}"; check_task_id "$tid"; active_id >/dev/null
+    plan_field "$tid" "${2:?field name}"
     ;;
   plan-check)
     # A task can only satisfy a criterion in files it may change, and the guard refuses the rest; so
