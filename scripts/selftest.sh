@@ -45,7 +45,7 @@ commit() { git -c user.name=t -c user.email=t@t commit -q "$@"; }
 
 echo "runtime: $(idleflow_rt_name)"
 d="$(mktemp -d)"; d="$(cd "$d" && pwd)"
-cleanup() { cd / ; rm -rf "$d" "$d-tmp" "${d}__wt" "$d.link" "${d}__wt.link" "$d-mig" "$d-human" "${d}-human__wt" "$d-stray" 2>/dev/null || true; }
+cleanup() { cd / ; rm -rf "$d" "$d-tmp" "${d}__wt" "$d.link" "${d}__wt.link" "$d-mig" "$d-human" "${d}-human__wt" "$d-stray" "$d-pin" 2>/dev/null || true; }
 trap cleanup EXIT
 # the suite's own root for task temp folders and port claims, so a suite running beside it never meets it
 export IDLEFLOW_TMP_ROOT="$d-tmp"; mkdir -p "$IDLEFLOW_TMP_ROOT"; utmp="$IDLEFLOW_TMP_ROOT/idleflow-$(id -u)"
@@ -237,6 +237,21 @@ check "tests that use changed code reach the plan's ownership" 'grep -q "grep th
 check "the session template and CLAUDE.md block follow a relocated sessions folder" 'grep -q "path progress|index|sessions\`)" "$HERE/../commands/feature.md" && grep -q "the sessions folder," "$HERE/../agents/retro.md" && grep -q "\`TEMPLATE.md\` in the sessions folder your prompt names" "$HERE/../agents/retro.md" && ! grep -q "fill \`docs/sessions/TEMPLATE.md\`" "$HERE/../agents/retro.md" && grep -q "repo-relative paths \`bash \"\$RUN\" path --relative progress|index|sessions\`" "$HERE/../procedures/repo-setup.md" && grep -q "the sessions folder (\`bash \"\$RUN\" path sessions\`), \`.idleflow/conventions.md\`" "$HERE/../commands/feature.md"'
 check "only Claude Code configuration under .claude/ is protected, and the planner knows the list" 'for f in agents/planner.md commands/feature.md; do grep -q "\`.claude/settings.json\`, \`.claude/settings.local.json\`, \`.claude/agents/\`" "$HERE/../$f" || exit 1; done && ! grep -q "under \`.idleflow/\` or \`.claude/\`" "$HERE/../commands/feature.md" && grep -q "tracked skills and commands" "$HERE/../agents/planner.md"'
 check "doc-keeper's Bash write ban leaves its gaps.md append allowed" 'grep -q "never change a doc or any other tracked file through Bash" "$HERE/../agents/doc-keeper.md" && grep -q "The one write Bash may make is the single-line append to the run.s \`gaps.md\`" "$HERE/../agents/doc-keeper.md" && ! grep -q "never write a file through Bash" "$HERE/../agents/doc-keeper.md"'
+# unpinned_actions <workflows dir>: prints each uses: line that is not pinned; exit 2 when there is no workflow.
+# Pinned: a 40-hex commit, a docker image by sha256 digest, or a local ./ action (fixed by the checkout).
+unpinned_actions() {
+  local f files=()
+  for f in "$1"/*.yml "$1"/*.yaml; do [ -f "$f" ] && files+=("$f"); done
+  [ "${#files[@]}" -gt 0 ] || return 2
+  grep -hE '(^|[{,])[[:space:]]*-?[[:space:]]*uses:' "${files[@]}" \
+    | grep -vE '^[[:space:]]*-?[[:space:]]*uses:[[:space:]]*["'\'']?([^@[:space:]"'\'']+@[0-9a-f]{40}|docker://[^@[:space:]"'\'']+@sha256:[0-9a-f]{64}|\./[^[:space:]"'\'']*)["'\'']?[[:space:]]*(#.*)?$' || true
+}
+pin="$d-pin"; mkdir -p "$pin/a" "$pin/b" "$pin/c" "$pin/none"
+printf '    steps:\n      - uses: a/b@%s # v1\n      - uses: ./.github/actions/x\n      - uses: docker://alpine@sha256:%s\n' "$(printf '%040d' 0 | tr 0 a)" "$(printf '%064d' 0 | tr 0 b)" > "$pin/a/ok.yml"
+printf '      - uses: a/b@v4\n' > "$pin/b/late.yaml"
+printf '      - {uses: a/b@v4}\n      - uses: a/b@v4 # uses: a/b@%s\n' "$(printf '%040d' 0 | tr 0 a)" > "$pin/c/sly.yml"
+check "every CI action is pinned to a commit, and Dependabot bumps them" 'out="$(unpinned_actions "$HERE/../.github/workflows")" && [ -z "$out" ] && grep -q "package-ecosystem: github-actions" "$HERE/../.github/dependabot.yml"'
+check "the pin check reads .yaml, flow and commented forms, and needs a workflow" '[ -z "$(unpinned_actions "$pin/a")" ] && [ -n "$(unpinned_actions "$pin/b")" ] && [ "$(unpinned_actions "$pin/c" | grep -c .)" = 2 ] && { unpinned_actions "$pin/none"; [ $? = 2 ]; }'
 check "every unverified check is written where the reports read it" 'for a in implementer implementer-hard; do grep -q "blocked_on: <none | file + reason | environment: <the cause> — <the quoted output line>>" "$HERE/../agents/$a.md" || exit 1; done && grep -q "appends \`- repo gate on main — environment:" "$HERE/../commands/feature.md" && grep -q "write \`review/merged-design.md\` with an \`unverified:\` line" "$HERE/../commands/feature.md" && grep -q "of \`review/merged-correct.md\` and \`review/merged-design.md\`" "$HERE/../commands/feature.md" && grep -q "an \`environment:\` entry as the check to run once its cause is fixed" "$HERE/../agents/retro.md"'
 check "every plan is checked by plan-check, and the planner knows what it checks" 'grep -q "after this and every later planner call that writes plan.md (a revision, a split): \`bash \"\$RUN\" plan-check\`" "$HERE/../commands/feature.md" && grep -q "which \`run.sh plan-check\` checks" "$HERE/../agents/planner.md"'
 check "a fix round names what it could not fix apart from the build's deviations" 'for a in implementer implementer-hard; do grep -q "^unfixed: <none | Fix mode only" "$HERE/../agents/$a.md" && grep -q "name it under \`unfixed\`, never under \`deviations\`" "$HERE/../agents/$a.md" || exit 1; done && grep -q "report names a finding under \`unfixed:\`" "$HERE/../commands/feature.md" && ! grep -q "fix round.s report named a deviation" "$HERE/../commands/feature.md" && grep -q "\`blocked_on:\` and \`unfixed:\` that is not" "$HERE/../commands/endsession.md"'
