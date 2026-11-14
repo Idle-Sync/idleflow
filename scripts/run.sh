@@ -106,15 +106,17 @@ json_str() { printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')";
 
 plugin_version() { idleflow_rt get "$HERE/../.claude-plugin/plugin.json" version 2>/dev/null || echo unknown; }
 
-# a field of the task's own plan section ("<key>: <value>", a trailing # comment left out), empty
-# when the section or the field is missing; a fenced block in the section is text, not fields
+# a field of the task's own plan section ("<key>: <value>", a comment after two spaces and a # left
+# out), empty when the section or the field is missing; a fenced block in the section is text, not
+# fields. awk reads the file itself: one that stops early must not leave a writer on a broken pipe.
 plan_field() { # plan_field <task-id> <key>
   [ -f "$ACTIVE/plan.md" ] || return 0
-  tr -d '\r' < "$ACTIVE/plan.md" | H="### $1:" K="$2:" awk '
+  H="### $1:" K="$2:" awk '
+    { sub(/\r$/, "") }
     /^(```|~~~)/ { fence = !fence; next }
     fence { next }
     /^##/ { task = (index($0, ENVIRON["H"]) == 1); next }
-    task && index($0, ENVIRON["K"]) == 1 { v = substr($0, length(ENVIRON["K"]) + 1); sub(/[[:space:]]+#.*/, "", v); gsub(/^[[:space:]]+|[[:space:]]+$/, "", v); print v; exit }'
+    task && index($0, ENVIRON["K"]) == 1 { v = substr($0, length(ENVIRON["K"]) + 1); sub(/[[:space:]][[:space:]]+#.*/, "", v); gsub(/^[[:space:]]+|[[:space:]]+$/, "", v); print v; exit }' "$ACTIVE/plan.md"
 }
 # the title in the plan's "### <task-id>: <title>" heading, empty when there is none
 plan_title() { # plan_title <task-id>
@@ -662,7 +664,9 @@ ignore_file() {
 
 add_ignore() { # add_ignore <file> <pattern>
   local f="$1" pat="$2"
-  [ -f "$f" ] && tr -d '\r' < "$f" | grep -qxF -- "$pat" && return 0
+  # grep reads to the end (no -q): one that stopped at the first match would break the pipe under
+  # pipefail on a long file, and the line would be added twice
+  [ -f "$f" ] && tr -d '\r' < "$f" | grep -xF -- "$pat" >/dev/null && return 0
   mkdir -p "$(dirname "$f")"
   # a file without a final newline would otherwise glue our line onto its last entry
   [ ! -s "$f" ] || [ -z "$(tail -c1 "$f")" ] || echo >> "$f"
@@ -752,7 +756,7 @@ JSON
         # a task the plan could not finish until an earlier group ran waits for its revision, so it never
         # starts from a section with placeholders in it
         blocked="$(plan_field "$tid" blocked_until)"
-        case "$blocked" in ""|none) ;; *) echo "wt add: $tid is blocked until a revision ($blocked); have the planner revise its section first, which sets blocked_until: none" >&2; exit 8;; esac
+        case "$(printf '%s' "$blocked" | tr '[:upper:]' '[:lower:]')" in ""|none) ;; *) echo "wt add: $tid is blocked until a revision ($blocked); have the planner revise its section first, which sets blocked_until: none" >&2; exit 8;; esac
         p="$(wt_path "$tid")"; br="idleflow/$id/$tid"
         "${G[@]}" rev-parse -q --verify "$base^{commit}" >/dev/null || { echo "base '$base' has no commits yet; commit first (run.sh snapshot)" >&2; exit 1; }
         # a leftover from a crashed run must not make `add` fail, nor a base checkout of an earlier base stay

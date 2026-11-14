@@ -727,7 +727,10 @@ check "extract reads a CRLF plan and keeps code fences in the task" '[ "$(cat "$
 printf '%s\n' '## Tasks' '### T1: first' 'blocked_until: none   # nothing to wait for' '### T2: waits' 'depends_on: [T1]' 'blocked_until: revision — the error code CI prints for T1' '```' 'blocked_until: none' '```' '### T3: plain' 'owns: [c]' > .idleflow/runs/active/plan.md
 check "plan-field reads a task's own field, not another's or a fenced one" '[ "$(bash "$RUN" plan-field T1 blocked_until)" = none ] && [ "$(bash "$RUN" plan-field T2 blocked_until)" = "revision — the error code CI prints for T1" ] && [ -z "$(bash "$RUN" plan-field T3 blocked_until)" ]'
 out="$(bash "$RUN" wt add T2 2>&1)"; rc=$?
-check "wt add refuses a task blocked until a revision" '[ "$rc" = 8 ] && echo "$out" | grep -q "T2 is blocked until a revision (revision — the error code CI prints for T1)" && [ ! -d "$(dirname "$d")/$(basename "$d")__wt/T2" ]'
+check "wt add refuses a task blocked until a revision, and creates nothing" '[ "$rc" = 8 ] && echo "$out" | grep -q "T2 is blocked until a revision (revision — the error code CI prints for T1)" && [ ! -d "$(dirname "$d")/$(basename "$d")__wt/T2" ] && ! git rev-parse -q --verify "refs/heads/idleflow/$(bash "$RUN" get id)/T2" >/dev/null && [ -z "$(bash "$RUN" get tasks.T2 2>/dev/null)" ]'
+# a plan longer than a pipe holds, with the field near its top: the reader must still exit 0
+{ printf '%s\n' '## Tasks' '### T1: first' 'blocked_until: revision — the code CI prints for #47   # waits on T0'; for _ in $(seq 1 3000); do printf 'notes: %s\n' "a line of text that makes the plan long enough to fill a pipe"; done; } > .idleflow/runs/active/plan.md
+check "plan-field reads a long plan and keeps a # in the field's text" 'v="$(bash "$RUN" plan-field T1 blocked_until)" && [ "$v" = "revision — the code CI prints for #47" ]'
 bash "$RUN" finish "done" >/dev/null
 
 echo "--- conventional commits"
