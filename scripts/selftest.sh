@@ -604,10 +604,14 @@ job="$(sed -n 's/.*job \([0-9]*\) of TA is still running.*/\1/p' "$scratch/job.e
 for _ in 1 2 3 4 5; do bash "$RUN" wait TA "$job" >/dev/null 2> "$scratch/job.err"; rc=$?; [ "$rc" = 75 ] || break; done
 check "a job past its --limit is stopped with what it started and exits 124" '[ "$rc" = 124 ] && grep -q "passed its limit of 2 s" "$scratch/job.err" && ! kill -0 "$(cat "$wa/child.pid")" 2>/dev/null && [ "$(cat .idleflow/runs/active/tasks/TA/jobs/$job/status)" = 124 ]'
 check "a job within its --limit passes its exit code" 'bash "$RUN" exec TA --limit 30 -- sh -c "exit 3" 2>/dev/null; [ $? = 3 ]'
-bash "$RUN" exec TA --limit 2 -- sleep 1.5 >/dev/null 2> "$scratch/job.err"; rc=$?
+# The whole limit is proved by the deadline the job keeps, not by timing a command against it: the
+# start is recorded in whole seconds, so the deadline must be one second past start + limit. A timed
+# command close to its limit fails on a busy machine for reasons that are not the limit's.
+bash "$RUN" exec TA --limit 6 -- sleep 1.5 >/dev/null 2> "$scratch/job.err"; rc=$?
 job="$(sed -n 's/.*job \([0-9]*\) of TA started.*/\1/p' "$scratch/job.err")"
 for _ in 1 2 3 4 5; do [ "$rc" = 75 ] || break; bash "$RUN" wait TA "$job" >/dev/null 2> "$scratch/job.err"; rc=$?; done
-check "a job gets its whole --limit and says how long it ran" '[ "$rc" = 0 ] && grep -q "^\[idleflow\] job $job of TA ran for [12] s$" "$scratch/job.err"'
+jd=".idleflow/runs/active/tasks/TA/jobs/$job"
+check "a job gets its whole --limit and says how long it ran" '[ "$rc" = 0 ] && [ "$(cat "$jd/deadline")" = "$(( $(cat "$jd/started") + 6 + 1 ))" ] && grep -q "^\[idleflow\] job $job of TA ran for [1-5] s$" "$scratch/job.err"'
 check "exec refuses a --limit that is not whole seconds" '! bash "$RUN" exec TA --limit 0 -- true 2>/dev/null && ! bash "$RUN" exec TA --limit 1.5 -- true 2>/dev/null && ! bash "$RUN" exec TA --limit -- true 2>/dev/null'
 bash "$RUN" exec TA -- sh -c 'sleep 30 >/dev/null 2>&1 &' >/dev/null 2> "$scratch/job.err"; rc=$?
 job="$(sed -n 's/.*job \([0-9]*\) of TA started.*/\1/p' "$scratch/job.err")"
