@@ -746,7 +746,7 @@ printf '{"id":"r1","tasks":{"T9":{"port":4402},"T8":{"port":4400}}}\n' > "$o/.id
 printf '%s\tr1\tT8\n' "$o" > "$utmp/ports/4400"
 out="$(bash "$RUN" preview main start 2>/dev/null)"; pid="$(cat .idleflow/runs/active/tasks/main/preview.pid 2>/dev/null)"; sleep 1
 check "preview main claims a free port of its own" '[ "$(cut -f2,3 "$utmp/ports/4401" 2>/dev/null)" = "$(bash "$RUN" get id)	main" ] && [ "$(cut -f3 "$utmp/ports/4400")" = T8 ]'
-check "a second preview main start is refused while the first serves" '! bash "$RUN" preview main start >/dev/null 2>&1 && [ "$(cat .idleflow/runs/active/tasks/main/preview.pid)" = "$pid" ] && [ "$(grep -ls "	main$" "$utmp"/ports/* | wc -l | tr -d " ")" = 1 ]'
+check "a second preview main start reports the server already serving and claims nothing" 'again="$(bash "$RUN" preview main start 2>/dev/null)" && echo "$again" | grep -q "^preview main: serving at http://localhost:4173 (already running" && [ "$(cat .idleflow/runs/active/tasks/main/preview.pid)" = "$pid" ] && [ "$(grep -ls "	main$" "$utmp"/ports/* | wc -l | tr -d " ")" = 1 ]'
 check "under preview_in: main the main checkout is served" 'echo "$out" | grep -q "^preview main: serving at http://localhost:4173" && kill -0 "$pid" 2>/dev/null && [ "$(cat "$utmp"/*/main/where 2>/dev/null)" = "$(pwd -P)" ]'
 bash "$RUN" preview main stop >/dev/null; sleep 1
 check "preview main stop ends it" '! kill -0 "$pid" 2>/dev/null'

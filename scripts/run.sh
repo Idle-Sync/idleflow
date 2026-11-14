@@ -667,7 +667,7 @@ base_worktree() { # base_worktree <task-id>: prints its path; exits as worktree_
     for jd in "$ACTIVE/tasks/$tid/jobs"/*/; do
       [ -d "$jd" ] || continue
       case "$(cat "${jd}checkout" 2>/dev/null)" in base*) job_ended "${jd%/}" || {
-        rm -f "$d/lock/pid"; rmdir "$d/lock"; echo "exec --base: job $(basename "$jd") of $tid still runs in the base checkout; wait for it or stop it first" >&2; return 1; };;
+        unlock_dir "$d/lock"; echo "exec --base: job $(basename "$jd") of $tid still runs in the base checkout; wait for it or stop it first" >&2; return 1; };;
       esac
     done
     rm -f "$d/ready"; "${G[@]}" worktree remove --force "$p" 2>/dev/null || true
@@ -676,7 +676,7 @@ base_worktree() { # base_worktree <task-id>: prints its path; exits as worktree_
     rm -f "$d/ready"
     "${G[@]}" worktree prune
     if ! "${G[@]}" worktree add -q --detach "$p" "$base" >/dev/null 2>&1; then
-      rmdir "$d/lock"; echo "exec --base: could not check out $base for $tid" >&2; return 1
+      unlock_dir "$d/lock"; echo "exec --base: could not check out $base for $tid" >&2; return 1
     fi
     idleflow_rt own "$ACTIVE/ownership.json" "_base-$tid" "$(native_path "$p")" '[]'
     # the marker lets the guard find the ownership map from inside this checkout too
@@ -684,11 +684,11 @@ base_worktree() { # base_worktree <task-id>: prints its path; exits as worktree_
     rc=0; ( run_worktree_setup "_base-$tid" "$p" ) >&2 || rc=$?
     if [ "$rc" -ne 0 ]; then
       "${G[@]}" worktree remove --force "$p" 2>/dev/null || true
-      rm -f "$d/lock/pid"; rmdir "$d/lock"; return "$rc"
+      unlock_dir "$d/lock"; return "$rc"
     fi
     echo "$base" > "$d/ready"
   fi
-  rm -f "$d/lock/pid"; rmdir "$d/lock"
+  unlock_dir "$d/lock"
   # never run in a checkout that could not be made again: it is a proof only when it is the base
   if [ "$(cat "$d/ready" 2>/dev/null)" != "$base" ] || [ "$(git -C "$p" rev-parse HEAD 2>/dev/null)" != "$base" ] \
      || [ -n "$(git -C "$p" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
@@ -1581,10 +1581,12 @@ Task: $tid")
     if [ "$act" = stop ]; then
       # the server runs in its own session, so its whole process group goes (dev servers start children)
       if [ -f "$pidf" ]; then pid="$(cat "$pidf")"; kill -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true; fi
-      rm -f "$pidf"; [ "$tid" != main ] || release_ports main; echo "preview $tid: stopped"; exit 0
+      rm -f "$pidf" "$ACTIVE/tasks/$tid/preview.url"; [ "$tid" != main ] || release_ports main; echo "preview $tid: stopped"; exit 0
     fi
-    if [ -f "$pidf" ] && kill -0 "$(cat "$pidf")" 2>/dev/null; then
-      echo "preview $tid: already running (pid $(cat "$pidf")); stop it first: run.sh preview $tid stop" >&2; exit 1
+    # a start while the last one still serves (its group: a dev server's leader may have exited while
+    # a child serves) reports that server again, so it never claims a second port beside it
+    if [ -f "$pidf" ] && { kill -0 -- "-$(cat "$pidf")" 2>/dev/null || kill -0 "$(cat "$pidf")" 2>/dev/null; }; then
+      echo "preview $tid: serving at $(cat "$ACTIVE/tasks/$tid/preview.url" 2>/dev/null || echo "an earlier address") (already running; log: $(native_path "$ACTIVE/tasks/$tid/preview.log"); stop with: run.sh preview $tid stop)"; exit 0
     fi
     cmd="$(idleflow_rt get "$ACTIVE/run.json" preview 2>/dev/null || true)"
     case "$cmd" in ""|null) echo "preview: none"; exit 0;; esac
@@ -1602,6 +1604,7 @@ Task: $tid")
     ( without_agent_markers; clear_bytecode "$dir"
       MAIN="$REPO" IDLEFLOW_TASK="$tid" IDLEFLOW_PORT="$port" IDLEFLOW_TMP="$ptmp" TMPDIR="$ptmp" \
         idleflow_rt detach "$dir" "$ACTIVE/tasks/$tid/preview.log" "$pidf" "$cmd" )
+    printf '%s\n' "$url" > "$ACTIVE/tasks/$tid/preview.url"
     echo "preview $tid: serving at $url (log: $(native_path "$ACTIVE/tasks/$tid/preview.log"); stop with: run.sh preview $tid stop)"
     ;;
   commands)
