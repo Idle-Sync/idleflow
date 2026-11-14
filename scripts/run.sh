@@ -1293,7 +1293,7 @@ Task: $tid")
         continue;; esac
       # a time-limit stop leaves worktrees: work only they hold is never removed. That is a change to a
       # tracked file, or a new file inside the task's globs; files worktree_setup made elsewhere are not
-      owned="$(idleflow_rt get "$src/ownership.json" "tasks.$tid" 2>/dev/null || true)"
+      owned="$(idleflow_rt get "$src/ownership.json" "tasks.$tid.owns" 2>/dev/null || true)"
       case "$owned" in "["*) ;; *) owned='["*"]';; esac
       for p in "$(wt_path "$tid")" "$(wt_path "_base-$tid")"; do
         [ -d "$p" ] || continue
@@ -1301,7 +1301,8 @@ Task: $tid")
         if [ -z "$dirty" ]; then
           new="$(git -C "$p" ls-files -o --exclude-standard -z 2>/dev/null | tr '\0' '\n' | grep -v '^\.idleflow-run/' || true)"
           outside="$(printf '%s\n' "$new" | awk 'NF' | tr '\n' '\0' | idleflow_rt outside "$owned" 2>/dev/null || true)"
-          dirty="$(printf '%s\n' "$new" | awk 'NF' | grep -vxF -f <(printf '%s\n' "$outside" | awk 'NF') | head -n 3 || true)"
+          # the new files the globs cover: all of them less those `outside` printed
+          dirty="$(awk 'NR == FNR { if (NF) skip[$0] = 1; next } NF && !($0 in skip)' <(printf '%s\n' "$outside") <(printf '%s\n' "$new") | head -n 3)"
         fi
         if [ -n "$dirty" ]; then
           echo "resume: $(native_path "$p") holds work of $tid that is not committed ($(printf '%s' "$dirty" | tr '\n' ' ')); commit or discard it first" >&2; exit 1
@@ -1313,12 +1314,14 @@ Task: $tid")
     if [ "$src" = "$ACTIVE" ]; then
       for jd in "$ACTIVE"/tasks/*/jobs/*/; do
         [ -d "$jd" ] || continue
-        job_ended "${jd%/}" || { echo "resume: job ${jd%/} of run $rid still runs; wait for it or stop it first (run.sh stop <task> <n>)" >&2; exit 1; }
+        jd="${jd%/}"; jn="${jd##*/}"; jt="${jd%/jobs/*}"; jt="${jt##*/}"
+        job_ended "$jd" || { echo "resume: run $rid may still be built by another session: job $jn of $jt still runs. Wait for it, or end it with: bash \"$0\" stop $jt $jn" >&2; exit 1; }
       done
       for pf in "$ACTIVE"/tasks/*/preview.pid; do
         [ -f "$pf" ] || continue
+        pt="${pf%/preview.pid}"; pt="${pt##*/}"
         if kill -0 -- "-$(cat "$pf")" 2>/dev/null || kill -0 "$(cat "$pf")" 2>/dev/null; then
-          echo "resume: a preview of run $rid still serves ($pf); stop it first (run.sh preview <task> stop)" >&2; exit 1
+          echo "resume: run $rid may still be built by another session: the preview of $pt still serves. End it with: bash \"$0\" preview $pt stop" >&2; exit 1
         fi
       done
     fi

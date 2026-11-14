@@ -869,9 +869,9 @@ bash "$RUN" wt rm T1; bash "$RUN" finish needs-human >/dev/null
 echo dirty > "$wr2/dirty.txt"
 check "resume refuses while a left worktree holds uncommitted work, and moves nothing" '! bash "$RUN" resume "$rid" 2>/dev/null && [ -d ".idleflow/runs/$rid" ] && [ ! -d .idleflow/runs/active ] && [ -f "$wr2/dirty.txt" ]'
 rm "$wr2/dirty.txt"
-idleflow_rt set ".idleflow/runs/$rid/ownership.json" tasks.T2 '["src/**"]'
+idleflow_rt set ".idleflow/runs/$rid/ownership.json" tasks.T2.owns '["src/**"]'
 echo link > "$wr2/setup-made.txt"; echo new > "$wr2/src/new-of-t2.py"
-check "a new file inside the task's globs still stops the resume, and names it" '! bash "$RUN" resume "$rid" 2>"$scratch/resume.err" && grep -q "src/new-of-t2.py" "$scratch/resume.err" && [ -d ".idleflow/runs/$rid" ]'
+check "a new file inside the task's globs still stops the resume, and names only it" '! bash "$RUN" resume "$rid" 2>"$scratch/resume.err" && grep -q "src/new-of-t2.py" "$scratch/resume.err" && ! grep -q "setup-made.txt" "$scratch/resume.err" && [ -d ".idleflow/runs/$rid" ]'
 rm "$wr2/src/new-of-t2.py"
 t1_merge="$(git log -1 --format=%H --all-match --grep="^Run: $rid\$" --grep="^Task: T1\$" HEAD)"; tip="$(git rev-parse HEAD)"
 git branch -q -m "idleflow/$rid/T1" "idleflow/$rid/T1-away"; git reset -q --hard "$t1_merge^1"
@@ -889,7 +889,7 @@ check "resume moves the review of the old build aside and takes the base failure
 wr2b="$(bash "$RUN" wt add T2 2>/dev/null)"
 # a job another session still runs: a job folder with a live process and no exit code yet
 sleep 30 & busy=$!; jb=".idleflow/runs/active/tasks/T2/jobs/99"; mkdir -p "$jb"; echo "$busy" > "$jb/pid"
-check "a resume in place refuses while a job of the run still runs" '! bash "$RUN" resume "$rid" 2>"$scratch/resume.err" && grep -q "still runs; wait for it or stop it first" "$scratch/resume.err" && [ -d "$wr2b" ]'
+check "a resume in place refuses while a job of the run still runs" '! bash "$RUN" resume "$rid" 2>"$scratch/resume.err" && grep -q "may still be built by another session: job 99 of T2 still runs" "$scratch/resume.err" && grep -q "stop T2 99" "$scratch/resume.err" && [ -d "$wr2b" ]'
 kill "$busy" 2>/dev/null; wait "$busy" 2>/dev/null; echo 143 > "$jb/status"
 check "a reset task builds from the branch as it is now" '[ "$(bash "$RUN" get tasks.T2.base_sha)" = "$(git rev-parse HEAD)" ] && grep -q "^r1$" "$wr2b/src/keep.py" && ! grep -q "^r2$" "$wr2b/src/keep.py"'
 # stopped and resumed again: the second build's commits get a name of their own too
