@@ -932,6 +932,9 @@ printf '%s\n' '## Tasks' '### T2: part a' 'from: T1' 'owns: [src/sa/**]' '### T3
 check "plan-check passes a split whose sub-tasks own every file it changed" '[ "$(bash "$RUN" plan-check 2>&1)" = "plan-check: every file each task names is in its owns: or shared_files, and no task owns a protected file" ]'
 out="$(bash "$RUN" wt add T6 HEAD 2>&1)"; rc=$?
 check "wt add refuses a sub-task that owns nothing yet, and creates nothing (exit 9)" '[ "$rc" = 9 ] && echo "$out" | has -F "T6 has from: T1 but owns nothing yet; run.sh own T6 first" && [ ! -d "$(dirname "$d")/$(basename "$d")__wt/T6" ] && ! git rev-parse -q --verify "refs/heads/idleflow/$(bash "$RUN" get id)/T6" >/dev/null'
+printf '%s\n' '### T7: from a path' 'from: ../T1' 'owns: [src/sf/**]' >> .idleflow/runs/active/plan.md
+out="$(bash "$RUN" wt add T7 HEAD 2>&1)"; rc=$?
+check "wt add refuses a from: that is not a split task's id (exit 9)" '[ "$rc" = 9 ] && echo "$out" | has -F "T7 has from: ../T1, which is not a task the diff gate split" && [ ! -d "$(dirname "$d")/$(basename "$d")__wt/T7" ]'
 bash "$RUN" own T2 '["src/sa/**"]'; bash "$RUN" own T3 '["src/sb/**","src/sc/**"]'
 w2="$(bash "$RUN" wt add T2 HEAD 2> "$scratch/bring2.err")"
 w3="$(bash "$RUN" wt add T3 HEAD 2> "$scratch/bring3.err")"

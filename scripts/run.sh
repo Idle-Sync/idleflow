@@ -796,7 +796,12 @@ split_files() { # split_files <split task-id> <run id>
 }
 # Before anything is created: work that cannot be found would otherwise be built again unnoticed.
 split_ready() { # split_ready <task-id> <split task-id> <run id>
-  local fbase; fbase="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$2.base_sha" 2>/dev/null || true)"
+  local fbase
+  # the same refusal as plan-check's: the value names a run.json key and a branch, so only an id will do
+  if ! [[ "$2" =~ ^T[0-9]+$ ]] || [ "$(idleflow_rt get "$ACTIVE/run.json" "tasks.$2.status" 2>/dev/null || true)" != split ]; then
+    echo "wt add: $1 has from: $2, which is not a task the diff gate split (status split); write from: T<n> or from: none and run plan-check" >&2; return 1
+  fi
+  fbase="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$2.base_sha" 2>/dev/null || true)"
   if [ -z "$fbase" ] || [ "$fbase" = null ] || ! "${G[@]}" rev-parse -q --verify "$fbase^{commit}" >/dev/null \
      || ! "${G[@]}" rev-parse -q --verify "refs/heads/idleflow/$3/$2^{commit}" >/dev/null; then
     echo "wt add: $1 has from: $2, but $2's branch idleflow/$3/$2 or its base sha is gone; nothing to bring over, so give $1 from: none and run plan-check" >&2; return 1
