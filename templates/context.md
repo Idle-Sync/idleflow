@@ -4,6 +4,8 @@
 <What is broken or wanted. What "done" observably means.>
 
 ## 2. Entry points
+
+<!-- for a bug, first: source: <file>:<function> — <how it produces the bad state>, then one sibling: <file>:<function> — <the case> line each, or sibling: none -->
 - `path/to/file.py` — <what it does> — `func_a`, `ClassB.method`
 - ...
 

@@ -18,6 +18,8 @@ Subcommands:
   entries <file> <key>                    one "name<TAB>value" line per entry of the object at that top-level key
   clip   <n> <text>                       the text cut to at most n characters (not bytes), "..." marking a cut
   unowned <file> <task-id>                NUL-separated paths on stdin; prints those the task may not change
+  outside <globs-json>                    NUL-separated paths on stdin; prints those no glob covers
+  port-free <port>                        exit 0 when nothing on this machine listens on the TCP port, else 1
 """
 import json
 import os
@@ -35,10 +37,13 @@ def load(path):
 
 
 def save(path, obj):
-    # LF and raw UTF-8 so the bytes match what idleflow.js writes, on every platform
-    with open(path, "w", encoding="utf-8", newline="\n") as f:
+    # LF and raw UTF-8 so the bytes match what idleflow.js writes, on every platform. Written beside
+    # the file and renamed over it, so a reader in another run never sees it half written.
+    tmp = "%s.%d.tmp" % (path, os.getpid())
+    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
         json.dump(obj, f, indent=1, ensure_ascii=False)
         f.write("\n")
+    os.replace(tmp, path)
 
 
 def to_number(v):
@@ -352,6 +357,14 @@ def cmd_unowned(path, tid):
     allowed = list(task.get("owns") or []) + [".idleflow-run/**"] + list(omap.get("shared") or [])
     # paths come NUL-separated (`git diff -z --name-only`), so none is quoted. git separates folders
     # with `/` on every OS; a `\` is part of a name and is kept, or `src\x.py` would pass as `src/x.py`.
+    for rel in sys.stdin.buffer.read().decode("utf-8", "replace").split("\0"):
+        if rel and not glob_match(rel.lower() if WIN else rel, allowed):
+            print(rel)
+
+
+def cmd_outside(globs):
+    # The plan check's matcher is the guard's, so a plan that passes is one the guard lets build.
+    allowed = json.loads(globs)
     for rel in sys.stdin.buffer.read().decode("utf-8", "replace").split("\0"):
         if rel and not glob_match(rel.lower() if WIN else rel, allowed):
             print(rel)
@@ -875,6 +888,39 @@ def cmd_killguard():
     sys.exit(0)
 
 
+def cmd_port_free(port):
+    # Free means a server could take it now: a wildcard bind succeeds on IPv4 and, where the machine
+    # has it, IPv6, with SO_REUSEADDR as Node binds (so a port in TIME_WAIT counts as free), and
+    # nothing answers on localhost over either: BSD lets that bind pass over a specific listener.
+    import errno
+    import socket
+    port = int(port)
+    for family, host in ((socket.AF_INET, "0.0.0.0"), (getattr(socket, "AF_INET6", None), "::")):
+        if family is None:
+            continue
+        try:
+            s = socket.socket(family, socket.SOCK_STREAM)
+        except OSError:
+            continue
+        try:
+            if not WIN:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind((host, port))
+        except OSError as e:
+            if family != socket.AF_INET and e.errno in (errno.EADDRNOTAVAIL, errno.EAFNOSUPPORT):
+                continue
+            sys.exit(1)
+        finally:
+            s.close()
+    for host in ("127.0.0.1", "::1"):
+        try:
+            socket.create_connection((host, port), timeout=0.5).close()
+        except OSError:
+            continue
+        sys.exit(1)
+    sys.exit(0)
+
+
 def cmd_clip(n, text):
     n = int(n)
     print(text if len(text) <= n else text[: n - 3] + "...")
@@ -895,7 +941,7 @@ def main(argv):
     table = {
         "get": cmd_get, "set": cmd_set, "inc": cmd_inc, "finish": cmd_finish,
         "own": cmd_own, "gate": cmd_gate, "guard": cmd_guard, "killguard": cmd_killguard, "detach": cmd_detach, "entries": cmd_entries,
-        "unowned": cmd_unowned, "clip": cmd_clip,
+        "unowned": cmd_unowned, "outside": cmd_outside, "clip": cmd_clip, "port-free": cmd_port_free,
     }
     if cmd not in table:
         sys.stderr.write("idleflow.py: unknown subcommand %r\n" % cmd)

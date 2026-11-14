@@ -113,7 +113,7 @@ words). Internal ids (T2, R3, C1) are never shown on their own in any tone.
 ## Repo fit
 
 How idleflow fits a repo that already has its own rules. Unset or missing lines keep idleflow's
-defaults. A command here (`worktree_setup`, `gate`) runs only as committed, and only after each
+defaults. A command here (`worktree_setup`, `gate`, `services`) runs only as committed, and only after each
 person approved that exact text on their own clone (`run.sh approve <key>`, kept in local git
 config); a changed command is asked about again. `unset` means nobody has decided yet, so setup and
 the end of a run may propose one; `none` means the repo has decided to go without.
@@ -127,6 +127,7 @@ gate_runs: every-task
 preview: unset
 preview_url: unset
 preview_in: worktree
+services: unset
 
 - `worktrees_in`: `sibling` puts task worktrees next to the repo (`<repo>__wt/<task>`); `inside` puts
   them in `.idleflow/worktrees/` (ignored), for projects that must not write outside their own folder.
@@ -148,6 +149,12 @@ preview_in: worktree
   tasks' previews never share a port; `${IDLEFLOW_PORT}` is replaced with the task's port). The design
   reviewer starts it in a task's worktree only through `run.sh preview`, to take screenshots at phone and
   desktop widths when a browser tool is available. Same approval rule as `gate`.
+- `services`: one quick shell command that exits 0 when every service the repo's tests need is up (a
+  database, a cache, a queue: `pg_isready -t 3 -h localhost -p 5433 && redis-cli -p 6380 ping`), each
+  part limiting its own wait so a service that hangs fails in seconds. Run from
+  the main checkout before the gate's baseline and before each group's build and review, so a service
+  that is down stops the run with a question instead of reaching an agent as a failed test. It checks;
+  it never starts anything. Same approval rule as `gate`.
 - `preview_in`: `worktree` serves each task's worktree before review; `main` is for an app that runs only
   from the main checkout (a dev stack whose containers mount it): the screens are then checked once,
   from the main checkout, after the last merge, and the plan writes a browser criterion as

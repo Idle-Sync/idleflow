@@ -1,6 +1,6 @@
 ---
-description: Start a project from an empty or near-empty folder. Brainstorms with the human, researches the market and the stack, writes prd.md and the project docs, sets the repo's rules (readability mode, attribution, releases, no meta commentary) in CLAUDE.md, makes the first commit, and optionally creates the GitHub repo. Usage: /idleflow:init [one-line idea]
-argument-hint: [one-line idea]
+description: "Start a project from an empty or near-empty folder. Brainstorms with the human, researches the market and the stack, writes prd.md and the project docs, sets the repo's rules (readability mode, attribution, releases, no meta commentary) in CLAUDE.md, makes the first commit, and optionally creates the GitHub repo. Usage: /idleflow:init [one-line idea]"
+argument-hint: "[one-line idea]"
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob, Agent, AskUserQuestion
 ---
 

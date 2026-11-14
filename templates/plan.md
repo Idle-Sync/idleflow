@@ -23,10 +23,12 @@ issue: <link or one-line reference>
 ### T1: <title: what the task delivers, in a few words; the merge commit's subject uses it, so it does not start with "merge">
 group: 1                      # tasks in the same group run in parallel; groups run in order
 depends_on: []                # task ids
+blocked_until: none           # or: revision — <what it waits to learn, from which task>; its section is final only after that task has run
 model: sonnet | opus
 tests_first: true | false     # true when context.md §4 shows no tests for the entry points
 mutation: true | false        # the implementer proves the tests catch deliberate faults in the code this task changes, in files it owns (see STEP_MUTATION)
 ui: true | false              # touches what a person sees; gets the design spec and the design reviewer
+cause: none                   # for a bug: source <file>:<function> | with <task-id> | symptom — <why the source cannot be fixed>
 estimate_lines: <N>           # hand-written code lines, added+deleted
 estimate_minutes: <N>         # from the time log's rows for similar tasks; say so in notes when there are none
 owns:                         # globs; no overlap with other tasks in the same group
@@ -46,6 +48,9 @@ notes: <anything the implementer must know that context.md doesn't say; max 5 li
 
 ## Verification after merge
 <The one command that runs the suite / smoke test. Required.>
+
+## By hand after merge
+<Changes to files git ignores (a local design-system copy, a config kept out of git): no task can make them, since no worktree has the file and no merge carries it. One line each: `- <path> — <the change>`, or `none`. The run's final message repeats them.>
 
 ## Open questions for the human
 <Only things the plan cannot resolve. Empty is fine. One line each, numbered, with what the plan assumes until answered:>

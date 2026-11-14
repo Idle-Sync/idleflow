@@ -28,10 +28,20 @@ When unsure between `bug` and `workflow`: if the docs promise the behaviour, it 
 
 ## Title
 
-`<kind>: <what is wrong, in about six words>`
+`<kind>: <about six words>`, and what the words name depends on the kind:
 
-Name the problem, not the fix. `bug: diff gate counts generated lockfiles` is right;
-`bug: add lockfiles to the ignore list` is a fix pretending to be a problem.
+| Kind | Title form |
+|---|---|
+| `bug` | `bug: <what is wrong, in about six words>` |
+| `workflow` | `workflow: <what is wrong, in about six words>` |
+| `idea` | `idea: <what idleflow should be able to do, in about six words>` |
+| `pushback` | `pushback: <the point of disagreement, in about six words>` |
+
+For `bug` and `workflow`, name the problem, not the fix. `bug: diff gate counts generated lockfiles`
+is right; `bug: add lockfiles to the ignore list` is a fix pretending to be a problem. An `idea` names
+the capability (`idea: resume a run from a locked plan`), a `pushback` the point in dispute
+(`pushback: planner split one change into three`). `customization` titles are fixed; see the end
+of this file.
 
 ## Body
 

@@ -1,6 +1,6 @@
 ---
-description: Customize idleflow for this project: numbers (diff limit, implementers, retries, debate rounds, size budgets), steps on or off (debate, stack and library research, tooling, doc-keeper), the model of any agent, extra instructions for an agent, or a full replacement of an agent's prompt. Saved in .idleflow/ and .claude/agents/, committed for the team, kept mergeable with plugin updates. Each change can be reported to Idle-Sync/idleflow (asked once, remembered) so idleflow learns what projects change. Use when asked to "customize idleflow", "change the diff limit", "turn off the debate", "use opus for the planner", "change how the reviewer works", or to restore a default. Usage: /idleflow:customize [what to change]
-argument-hint: [what to change]
+description: "Customize idleflow for this project: numbers (diff limit, implementers, retries, debate rounds, size budgets), steps on or off (debate, stack and library research, tooling, doc-keeper), the model of any agent, extra instructions for an agent, or a full replacement of an agent's prompt. Saved in .idleflow/ and .claude/agents/, committed for the team, kept mergeable with plugin updates. Each change can be reported to Idle-Sync/idleflow (asked once, remembered) so idleflow learns what projects change. Use when asked to \"customize idleflow\", \"change the diff limit\", \"turn off the debate\", \"use opus for the planner\", \"change how the reviewer works\", or to restore a default. Usage: /idleflow:customize [what to change]"
+argument-hint: "[what to change]"
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 ---
 
@@ -23,7 +23,7 @@ Change: $ARGUMENTS
 When `$ARGUMENTS` (or a suggestion that brought you here) already names the change, take it. Otherwise ask with AskUserQuestion: **A number** / **A step on or off** / **An agent** (model, extra instructions, full replacement) / **Back to a default**, then the specifics in a second call:
 
 - **Numbers.** `DIFF_LIMIT`, `DIFF_SLACK`, `MAX_IMPLEMENTERS` (1–8), `SIZE_M_IMPLEMENTERS` (1–8), `DEBATE_ROUNDS` (1–2), `MAX_RETRIES` (0–3), `SIZE_S_MAX`, `SIZE_M_MAX`, `SIZE_S_OVERRUN`, `LARGE_REPO_LOC`, and `DIFF_EXCLUDE_ADD` (space-separated `**/`-prefixed globs added to the diff gate's excludes). Show the current value and what it controls (the comment above it in `${CLAUDE_PLUGIN_ROOT}/config/idleflow.conf`).
-- **Steps.** `STEP_DEBATE`, `STEP_STACK`, `STEP_LIBRARIES`, `STEP_TOOLING`, `STEP_DOC_KEEPER`, `STEP_MUTATION` (implementers break their own change on purpose to prove the tests catch it), `STEP_DESIGN` (the designer and design reviewer for work a person sees): `auto` (the run's own condition), `on`, `off`.
+- **Steps.** `STEP_DEBATE`, `STEP_STACK`, `STEP_LIBRARIES`, `STEP_TOOLING`, `STEP_DOC_KEEPER`, `STEP_MUTATION` (implementers break their own change on purpose to prove the tests catch it), `STEP_DESIGN` (the designer and design reviewer for work a person sees), `STEP_DESIGN_OPTIONS` (three design directions for the human to choose from before the design system is written; only when the design step runs): `auto` (the run's own condition), `on`, `off`.
 - **An agent.** Pick it from `ls "${CLAUDE_PLUGIN_ROOT}/agents"`. Then one of:
   - **Model** (`MODEL_<AGENT>`, e.g. `MODEL_REVIEW_CORRECT`): `haiku`, `sonnet`, `opus`, `fable`.
   - **Extra instructions (Recommended)**: written to `.idleflow/agents/<agent>.md` and added to the built-in prompt every time it runs; plugin updates keep reaching the agent. Write what the human wants as plain rules, no meta commentary.
