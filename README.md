@@ -33,12 +33,19 @@ For work a person sees (the classifier reports `ui: true`, or `STEP_DESIGN=on`),
   checklists by screen type). It writes or extends the repo's lasting design system (`docs/design-system.md`,
   or `.idleflow/design-system.md` without docs): a direction, tokens with measured contrast for light and dark,
   components. For this run it writes `design.md`: a spec per screen with layout, hierarchy, every state,
-  motion and accessibility. Token work becomes the plan's first task.
+  motion and accessibility, plus the issue's requirements that no screen shows (an API payload, CLI output),
+  which the plan gives to the tasks that build those surfaces. Token work becomes the plan's first task.
+- **Directions to choose from.** On a greenfield run, or in a repo with no design system yet, the designer first
+  writes three distinct directions, each with its tokens and one self-contained HTML page showing the palette,
+  the type pairing and one screen. The human picks one, or rejects them all and says why, and the design system
+  is written from the pick. `STEP_DESIGN_OPTIONS` turns this on or off whenever the design step runs.
 - **Libraries** it would use (an animation library such as GSAP, a component set such as shadcn/ui) go to the
   library step for research and the human's yes; it never installs anything.
 - **`idleflow:review-design`** reviews every `ui` task against the spec and tokens, checks accessibility and the
   signs of a generic look, and, when a browser tool is available and the repo has an approved `preview:`
-  command, renders the changed screens at 390 and 1440 px and reviews the images.
+  command, renders the changed screens at 390 and 1440 px and reviews the images. For an app that runs
+  only from the main checkout (`preview_in: main`), it checks the merged screens, and each
+  `verify: browser after merge` criterion, once after the last merge (`run.sh preview main`).
 
 ## What it adds over plain Claude Code
 
@@ -60,12 +67,15 @@ For work a person sees (the classifier reports `ui: true`, or `STEP_DESIGN=on`),
 | Sizing | Haiku reports size, risk and new dependency; size sets implementers and reviewers, risk (or size L) the debate, a new dependency the stack and library research; an S overrun adds the conformance reviewer | `agents/classifier.md`, `SIZE_*` in conf |
 | Fan-out | ≤4 implementers, partitioned by file globs, Sonnet default / Opus when plan says | `MAX_IMPLEMENTERS`, `model:` per task in plan |
 | Diff gate | 1500 code lines per task (+300 slack); `.md`, `.txt`, lockfiles, generated excluded | `DIFF_LIMIT`, `DIFF_SLACK`, `DIFF_EXCLUDE` |
-| Retry | one per task, on Opus, then stop and ask | `MAX_RETRIES`, steps 5 and 7 of `commands/feature.md` |
+| Retry | one per task, on Opus, then stop and ask; a reject whose findings need only a reworded message, a report fix or a small edit takes a cheaper round instead (up to two per task), and a widened ownership map is never a retry | `MAX_RETRIES`, steps 5 and 7 of `commands/feature.md` |
+| Findings on approved tasks | counted in `review_findings`, and listed in the run's final message so the human can fix them or file a follow-up | reviewers, `run.sh findings` |
 | Tests | `tests_first: true` forced wherever entry points have no tests | planner §3, conformance reviewer §4 |
 | Mutation sweep | implementers break their own change on purpose; a fault no test catches needs a test or a reason | `STEP_MUTATION`, plan `mutation:`, implementer, correctness reviewer |
-| Design | designer before planning and a design reviewer on `ui` tasks; a lasting design system per repo | `STEP_DESIGN`, `agents/designer.md`, `agents/review-design.md`, `procedures/design.md` |
+| Design | designer before planning and a design reviewer on `ui` tasks; a lasting design system per repo | `STEP_DESIGN`, `STEP_DESIGN_OPTIONS`, `agents/designer.md`, `agents/review-design.md`, `procedures/design.md` |
 | Placeholders | code that cannot do its job yet fails loudly; a plausible default is a blocking finding | implementer, correctness reviewer |
 | Checkable findings | each review finding says whether a deterministic check would have caught it; repeats become a lesson | reviewers, `agents/retro.md` |
+| Known base failures | a failure already on the commit a task started from is shown there with `run.sh exec --base`, never argued; the gate's baseline and every task's proven ones go into the run's `known-failures.md`, which later implementers and the correctness reviewer get, with or without a gate | step 5 of `commands/feature.md`, `agents/implementer.md` |
+| Unverified checks | a check that cannot decide for a cause outside the task is listed, never passed and never retried; an environment cause asks the human, a CI job still owed goes into the run's reports | `agents/review-correct.md`, `agents/review-design.md`, plan `verify: ci <job name>`, `commands/feature.md` §5 and §7 |
 | Lessons | per repo, `.idleflow/lessons.md` or `docs/lessons.md` (`lessons_in:`), ≤1 per run | `agents/retro.md`, `run.sh path lessons` |
 | Metrics | `.idleflow/runs/log.jsonl` per run; the time log (estimate against actual lines, minutes and reported tokens per task, with why) feeds the planner's estimates | `scripts/run.sh finish`, `time_log`, `agents/retro.md` |
 | Priority | quality > tokens > time | retry on Opus; `opus` allowed per task; critics on Opus |
@@ -90,6 +100,9 @@ are committed, so everyone who pulls plans with the same rules and lessons. What
   the doctor reports a milestone item listed twice so one line can be kept.
 - **Session notes.** Named `s_<YYYYMMDD-HHMM>-<author>.md` (`run.sh session-name`), never by a running
   number two people could both pick.
+- **A run that stopped.** `/idleflow:feature resume <run id>` goes on with a run that stopped before it
+  finished (a `needs-human` stop, a time limit): its merged tasks stay merged, the rest are built from its
+  locked plan on the branch as it is now, without exploring, planning or debating again.
 - **A stale base.** `/idleflow:feature` checks `run.sh behind` first and offers to pull, so a run plans with
   the team's latest lessons and settings.
 - **Who did what.** `run.json` records `by`; merge commits carry the run id; `/idleflow:progress` shows the
@@ -134,6 +147,7 @@ beside it. Every key is optional and missing keys keep the defaults, so older re
 | `session_names: per-person` | Notes in a folder per person, `<github-login>/s_0001.md`, each numbered on its own, so a team never collides (`git config idleflow.person <name>` names the folder) |
 | `session_names: numbered` | Keep a repo's `s_0001.md` numbering (two writers can collide) |
 | `gate: <command>` | The repo's own check is the definition of done: run on the base first (old failures are not blamed on the run), by implementers and the correctness reviewer, and after merge. Same approval rule as `worktree_setup` |
+| `services: <command>` | A quick check that the services the tests need are up (`pg_isready -t 3 -p 5433`): run before the baseline and before each group's build, review and the gate after merge, so a database that is down stops the run with a question, not as a failed test. Same approval rule as `gate` |
 | `gate_runs: once` + `gate_quick: <command>` | For a slow gate (over `SLOW_GATE_SECONDS`, 120 by default): a quick check per task and the full gate once after merge, the base checked only if it fails. `repo-gate` times every run; `detect` suggests this and points out commit or push hooks that run the tests every time (idleflow never edits hooks) |
 | `commit_format: conventional` | Task and merge commits as Conventional Commits (subject at most 72 characters, ids in the body) |
 | `commit_format: plain` | Task and merge commits as plain sentences with no prefix (merges `Merge <task title>`, ids in the body) |
@@ -149,7 +163,7 @@ suggestions until they are answered. A repo already on idleflow changes nothing 
 
 Every number in `config/idleflow.conf` is a default. `/idleflow:customize` overrides it for one repo in
 `.idleflow/idleflow.conf`, turns a step on or off (`STEP_DEBATE`, `STEP_STACK`, `STEP_LIBRARIES`,
-`STEP_TOOLING`, `STEP_DOC_KEEPER`), sets an agent's model (`MODEL_<AGENT>`), adds instructions to an
+`STEP_TOOLING`, `STEP_DOC_KEEPER`, `STEP_MUTATION`, `STEP_DESIGN`, `STEP_DESIGN_OPTIONS`), sets an agent's model (`MODEL_<AGENT>`), adds instructions to an
 agent (`.idleflow/agents/<agent>.md`), or replaces an agent's prompt (`.claude/agents/idleflow-<agent>.md`,
 with a base copy so `/idleflow:doctor` can merge later plugin updates into it). A replaced agent keeps the
 built-in output contract. Everything is committed, so the team shares it. The project file is parsed, never
@@ -182,9 +196,9 @@ commands/customize.md           per-project settings, step toggles, agent models
 commands/doctor.md              check the repo's idleflow setup and for a newer release; offers the safe fixes
 agents/                         one file per role; frontmatter sets the model
 hooks/hooks.json                PreToolUse → ownership-guard
-scripts/run.sh                  run lifecycle: new / wt / own / get / set / inc / report / gate / merge / snapshot / finish / loc / conf,
-                                plus path / migrate / doctor / update-check / detect / repo-gate / commands / approve /
-                                session-name / behind / team-install / custom / agent (`bash scripts/run.sh` lists them)
+scripts/run.sh                  run lifecycle: new / wt / own / get / set / inc / report / keep / gate / merge / snapshot / finish / loc /
+                                conf, plus path / migrate / doctor / update-check / detect / repo-gate / commands / approve /
+                                reword / findings / session-name / behind / team-install / custom / agent (`bash scripts/run.sh` lists them)
 scripts/diff-gate.sh            counts hand-written code lines vs base, emits JSON verdict
 scripts/ownership-guard.sh      the hook; blocks edits outside a task's globs
 scripts/rt.sh                   picks Python or Node, whichever is installed
@@ -234,7 +248,7 @@ docs/sessions/s_<time>-<author>.md one note per run or session, named so teammat
 .idleflow/runs/active/gaps.md        plugin_gap lines agents append; asked about before every finish
 .idleflow/runs/<id>/                 ignored (.git/info/exclude or .gitignore, asked once); issue, context, plan, debate/, tasks/, review/, run.json
 .idleflow/runs/log.jsonl             one line per finished run — tokens aren't captured yet, but
-                                   size, retries, gate trips and review findings are
+                                   size, retries, fix rounds, gate trips and review findings are
 .idleflow/runs/config-proposals.md   the retro's customization suggestions, with evidence; offered once at the end of a run
 .idleflow/suggestions.md             suggestions the team declined, so they are not offered again; commit this
 <repo>__wt/<task-id>               sibling directory holding task worktrees during a run
@@ -252,6 +266,6 @@ Older Claude Code: `claude plugin marketplace add Idle-Sync/idleflow` then `clau
 
 - Token counts per phase aren't captured; `/cost` after a run is the stopgap. OTEL export is planned.
 - `${CLAUDE_PLUGIN_ROOT}` in command files assumes plugin install; Option B in setup.md rewrites it.
-- In ownership globs `*` and `?` are the only wildcards and both cross `/`; every other character is literal, so `src/pages/[slug].astro` names that file. `src/**` is the usual shape. The guard hook and both reviewers (through `run.sh unowned`) use the same matcher. Diff-gate excludes use git pathspec globs and are all `**/`-prefixed so they match at any depth.
+- In ownership globs `*` and `?` are the only wildcards and both cross `/`; every other character is literal, so `src/pages/[slug].astro` names that file. `src/**` is the usual shape. The guard hook, both reviewers (through `run.sh unowned`) and the plan check (`run.sh plan-check`) use the same matcher. Diff-gate excludes use git pathspec globs and are all `**/`-prefixed so they match at any depth.
 - `model: fable` in agent frontmatter depends on account access; setup.md step 3 checks and falls back.
 - The orchestrator is a prompt, not code. It will occasionally drift. The "Rules you never break" block at the bottom of `commands/feature.md` is the first thing to tighten when it does.

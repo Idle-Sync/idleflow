@@ -1,6 +1,6 @@
 ---
-description: Where the project stands, for one person or a whole team. Shows each milestone in progress.md with its boxes ticked and open, what landed recently and who landed it, the run in progress, what's next from the latest handoff, and what is waiting on a human. Read-only. Use when asked "where are we", "project status", "what's left for the milestone", "what did the team do this week", "progress". Usage: /idleflow:progress [milestone, person, or number of days]
-argument-hint: [milestone, person, or number of days]
+description: "Where the project stands, for one person or a whole team. Shows each milestone in progress.md with its boxes ticked and open, what landed recently and who landed it, the run in progress, what's next from the latest handoff, and what is waiting on a human. Read-only. Use when asked \"where are we\", \"project status\", \"what's left for the milestone\", \"what did the team do this week\", \"progress\". Usage: /idleflow:progress [milestone, person, or number of days]"
+argument-hint: "[milestone, person, or number of days]"
 allowed-tools: Bash, Read, Grep, Glob
 ---
 
@@ -34,6 +34,6 @@ In this order, short, paths and names rather than prose:
 2. **Landed** in the window: one line per run or commit group, `<date> <who>: <what> (<run id or sha>)`; at most ten, newest first.
 3. **In progress**: the active run in this clone, or `none here`.
 4. **Next**: the first three items of the newest handoff, in its order.
-5. **Waiting on a human**: needs-human runs with their reason, doctor problems, commits to pull.
+5. **Waiting on a human**: needs-human runs with their reason and `/idleflow:feature resume <run id>` to go on with them, doctor problems, commits to pull.
 
 When the focus names a milestone or a person, filter every section to it. End with one line: `Milestone <n>: <ticked>/<total>; <N> people active in <days> days.`

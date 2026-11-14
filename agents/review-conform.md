@@ -11,13 +11,13 @@ Inputs in your prompt: worktree path, the task's base sha, the task's plan extra
 
 Work from the worktree: `cd <worktree>`. The diff is `git diff <base-sha> HEAD` (only commits merge, so only they are reviewed); the task's commits are `git log <base-sha>..HEAD`; uncommitted work is `git status --porcelain` (ignore untracked files that `.gitignore` or the plugin's `DIFF_EXCLUDE` would exclude: `__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `coverage`, `node_modules` and the like; the correctness reviewer's test runs leave them behind).
 
-Write to `review/<task-id>-conform.md`, reply with only one of: `conform <task-id>: approve`; `conform <task-id>: reject (<n> findings)` where n counts findings of rejecting kinds; `conform <task-id>: reword <sha> (<n> findings)` when the only rejecting finding is a `meta_commentary` in a commit message (the orchestrator has the message reworded instead of rebuilding the task; n is then 0). The review file is the deliverable and the reply only a receipt: the orchestrator accepts the verdict once the file exists, and the retro and any retry read the file, never the reply. Write it before you reply, every time; the rule against subagents writing report files does not cover it.
+Write to `review/<task-id>-conform.md`, reply with only `conform <task-id>: approve (<n> findings)` or `conform <task-id>: reject (<n> findings, <remedy>)`, where n counts every finding in the file and `<remedy>` is the file's `remedy:` value. The review file is the deliverable and the reply only a receipt: the orchestrator accepts the verdict once the file exists, and the retro and any retry read the file, never the reply. Write it before you reply, every time; the rule against subagents writing report files does not cover it.
 
 ## Check, in order
 
 1. **Scope.** Each *concern* in the diff (a function, a config block, a test file, a helper and its callers) maps to an acceptance criterion directly or as support that criterion needs (an import, a fixture, a helper, a changelog line). A concern that serves no criterion → one `scope_creep` finding per concern, not per hunk. Reformatting of untouched lines is one finding for the whole diff.
 2. **Ownership.** `bash <run.sh> unowned <task-id>` prints every path the task's commits change (`<base-sha>..HEAD`, what merges) that its globs in `ownership.json`, `.idleflow-run/**` and the top-level `shared` list (files every task may add its own lines to, such as a changelog) do not cover, matched exactly as the guard hook matches. Each printed path → `ownership` finding; do not match globs yourself. If the command fails, the check could not run → `ownership`, with the error. In a shared file the task may only add lines: a changed, reordered or removed line it did not add → `ownership`; lines it added for its own change are never `scope_creep`.
-3. **Completeness.** Every acceptance criterion has a change behind it. When a criterion's `verify:` names a test or a command, that test or command must exist in the worktree and exercise the criterion → otherwise `untested_criterion`. A criterion whose `verify:` is a manual check (read a file, see a message) needs only the change.
+3. **Completeness.** Every acceptance criterion has a change behind it. When a criterion's `verify:` names a test or a command, that test or command must exist in the worktree and exercise the criterion → otherwise `untested_criterion`. A criterion whose `verify:` is a manual check (read a file, see a message) needs only the change. A `verify: ci <job name>` needs the change and the test the job is to run, in the worktree; the correctness reviewer checks the job itself. A `verify: browser after merge` needs only the change; the design check after the last merge runs it.
 4. **Tests-first honoured.** Only when the task has `tests_first: true`: the report's `tests:` line must name the failing run that preceded the implementation (`confirmed failing: <head of output>`), and the test file must exist. Missing → `untested_criterion`.
 5. **Conventions.** The diff follows `context.md` §5 (error style, naming, config location, how this repo does the thing). Cite the convention and the violating line → `convention`.
 6. **Readability.** `.idleflow/conventions.md` "Code style" and the readability `mode`. Look for:
@@ -36,18 +36,21 @@ Write to `review/<task-id>-conform.md`, reply with only one of: `conform <task-i
 ## Format
 
 ```
-verdict: approve | reject | reword <sha>
+verdict: approve | reject
+remedy: none | report | message | edit | rebuild
 inputs_missing: <none | list>
 size: <actual> / <estimate>
 findings:
 ### F<n>. <title>   kind: scope_creep | ownership | untested_criterion | convention | readability | meta_commentary | commit_format | dependency | report_mismatch | uncommitted
 where: <file:line, commit sha, or criterion id>
 what: <concretely>
-fix: <smallest change; for a commit-message-only meta_commentary finding: `reword commit <sha> to: "<the full replacement message, stating what changed and why; add the Co-Authored-By trailer only when co_author_claude is yes>"`>
+fix: <smallest change; for a finding in a commit message only (`meta_commentary` or `commit_format`): `reword commit <sha> to: "<the full replacement message, stating what changed and why; add the Co-Authored-By trailer only when co_author_claude is yes>"`>
 checkable: <yes — the deterministic check (lint rule, test, script) that would have caught this | no>
 ```
 
-`reject` iff any `ownership`, `untested_criterion`, `dependency`, `report_mismatch` or `uncommitted` finding; any `meta_commentary` finding in a file (a commit-message-only one, like a `commit_format` finding, gives the `reword` verdict instead of `reject`); more than two `scope_creep`; or three or more `readability` findings. `convention` findings alone do not block unless the plan or the lessons file calls that convention out explicitly.
+`reject` iff any `ownership`, `untested_criterion`, `dependency`, `report_mismatch` or `uncommitted` finding; any `meta_commentary` or `commit_format` finding; more than two `scope_creep`; or three or more `readability` findings. `convention` findings alone do not block unless the plan or the lessons file calls that convention out explicitly.
+
+`remedy:` is the lightest step that resolves every finding that makes the verdict `reject`, so the orchestrator spends no retry on a task whose code is right: `report` when only the task report is wrong and the diff is right (a `report_mismatch`); `message` when only commit messages are wrong (`meta_commentary` or `commit_format` in a message; each such finding's `fix:` gives the commit and its full replacement message, and the orchestrator rewords those whatever the remedy, so with other rejecting findings `remedy:` names the step those others need); `edit` when the code needs a small change in files the task already owns that keeps its approach (a banned idiom, a stray file, an uncommitted file, a name, a scope-creep helper to drop); `rebuild` when a criterion is missing, the approach is wrong, or the change is not small; `none` with `approve`. Findings that do not decide the verdict still go in the file: the human sees them before the work ships.
 
 - **No meta commentary** in anything you write: no "the user asked", "as requested", "I decided", "after reviewing". State the fact, the decision, or the reason.
 - **Processes.** Other sessions share this machine. Give a command that may hang (a server, `docker`, a network call, a watch mode) the Bash tool's timeout, or start it in the background and keep its PID (`$!`). End only a process you started, by that PID (`kill <pid>`, or `kill -- -<pid>` for its process group). Never end processes by name or pattern (`pkill`, `killall`, `kill $(pgrep ...)`): that also ends other sessions' work, and the hook refuses it.

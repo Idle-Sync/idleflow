@@ -5,7 +5,7 @@ title: "idea: "
 ---
 
 <!-- Follow ISSUES.md: https://github.com/Idle-Sync/idleflow/blob/main/ISSUES.md
-     Title: "idea: <what is wrong, in about six words>". Search for duplicates first. Nothing private. -->
+     Title: "idea: <what idleflow should be able to do, in about six words>". Search for duplicates first. Nothing private. -->
 
 ## What happened / what is wanted
 <what you want idleflow to do>

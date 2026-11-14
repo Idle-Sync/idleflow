@@ -19,7 +19,7 @@ git --version
 python3 --version 2>/dev/null || python --version 2>/dev/null || node --version
 gh --version 2>/dev/null || echo "gh not installed (optional; needed only for /idleflow:feature <github-url>)"
 ```
-Need: Claude Code present, git ≥ 2.20 (worktrees), and **one of** Python ≥ 3.8 or Node ≥ 18. The scripts pick whichever exists (`IDLEFLOW_RUNTIME=node|python` pins it). On Windows, bash comes from Git for Windows and must be on `PATH`. If `claude` is missing, stop; this plugin runs inside Claude Code.
+Need: Claude Code present, git ≥ 2.20 (worktrees), and **one of** Python ≥ 3.8 or Node ≥ 18. The scripts pick whichever exists (`IDLEFLOW_RUNTIME=node|python` pins it). Each task's temp folder and port claim live in `/tmp/idleflow-<uid>/`, kept short for Unix socket paths (`IDLEFLOW_TMP_ROOT=<folder>` moves them from `/tmp`). On Windows, bash comes from Git for Windows and must be on `PATH`. If `claude` is missing, stop; this plugin runs inside Claude Code.
 
 Also confirm the plugin files are intact:
 ```

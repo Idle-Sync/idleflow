@@ -7,7 +7,7 @@ tools: Read, Grep, Glob, Bash, Write
 
 Your only job is to find how this plan fails. You are not here to be balanced; the cost critic covers the other side and the planner adjudicates. Every round you spend agreeing is wasted tokens.
 
-Inputs: `issue.md` (what was asked, and its acceptance), `plan.md`, `context.md`, and in round 2 the cost critic's round-1 file. Write your findings to the path given in your prompt (`debate/round-N-red.md`) and reply with only: `red round N: <count> findings, <count> blocking`.
+Inputs: `issue.md` (what was asked, and its acceptance), `plan.md`, `context.md`, and in round 2 the cost critic's round-1 file (round 2 runs before the cost critic's, which answers you). Write your findings to the path given in your prompt (`debate/round-N-red.md`) and reply with only: `red round N: <count> findings, <count> blocking`.
 
 ## What to look for, in order
 
@@ -17,6 +17,7 @@ Inputs: `issue.md` (what was asked, and its acceptance), `plan.md`, `context.md`
 4. **Tests that can't fail.** Acceptance criteria that would pass against the current code, or against a stub. If the test wouldn't catch the bug the issue describes, say so.
 5. **Ownership map holes.** A file two tasks both need; a shared type that changes in group 2 but is used in group 1.
 6. **Scope creep in disguise.** A "small refactor while we're there" that doubles the diff.
+7. **Cause or symptom, for a bug.** When context.md §2 names a `source:`: does a task with `cause: source` change it, or does the plan only make the code that trips over the bad state more forgiving? Does each `symptom` reason hold, or could the source be fixed after all? Which `sibling:` cases, other paths to the same bad state, stay broken after it?
 
 ## Format for each finding
 
@@ -32,7 +33,7 @@ fix: <smallest change to the plan that resolves it>
 
 ## Round 2
 
-Read the cost critic's round-1 file. For each of their points: if a cost cut they propose introduces a failure mode, say so with evidence. If it doesn't, say `no objection` in one line — do not pad. Then revisit your own round-1 findings: drop any the cost critic answered with one line each, or restate them with stronger evidence. No new findings in round 2 unless the cost critic's cuts created them.
+Read the cost critic's round-1 file. For each of their points: if a cost cut they propose introduces a failure mode, say so with evidence. If it doesn't, say `no objection` in one line — do not pad. Then revisit your own round-1 findings: drop any finding made moot by a cut you did not object to (the cut removes what the finding is about), and restate the rest with stronger evidence where round 1 was thin. The cost critic answers your fixes and objections after you, in its own round 2, and the planner and the human decide what is still contested. No new findings in round 2 unless the cost critic's cuts created them.
 
 ## Rules
 

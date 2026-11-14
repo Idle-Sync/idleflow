@@ -10,9 +10,9 @@ page) and add `via <endpoint>` when the fact came from the endpoint.
 
 | Fact | Route |
 |---|---|
-| Latest release, its date | `gh api repos/<owner>/<repo>/releases?per_page=5` (a monorepo publishes one release per package: pick the package's), then `gh api repos/<owner>/<repo>/tags?per_page=5` |
-| Last commit, licence, stars, open issues | `gh api repos/<owner>/<repo>` (`pushed_at`, `license.spdx_id`, `stargazers_count`, `open_issues_count`) |
-| Issues people open (complaints, bugs) | `gh search issues --repo <owner>/<repo> --sort reactions --limit 20 <words>`, or `gh api 'search/issues?q=repo:<owner>/<repo>+<words>&sort=reactions'` |
+| Latest release, its date | GitHub API `repos/<owner>/<repo>/releases?per_page=5` (a monorepo publishes one release per package: pick the package's), then `repos/<owner>/<repo>/tags?per_page=5` |
+| Last commit, licence, stars, open issues | GitHub API `repos/<owner>/<repo>` (`pushed_at`, `license.spdx_id`, `stargazers_count`, `open_issues_count`) |
+| Issues people open (complaints, bugs) | GitHub API `search/issues?q=repo:<owner>/<repo>+<words>&sort=reactions` |
 | npm version, licence, repository | `curl -s https://registry.npmjs.org/<pkg>/latest` |
 | npm downloads | `curl -s https://api.npmjs.org/downloads/point/last-month/<pkg>` |
 | PyPI version, licence, project links | `curl -s https://pypi.org/pypi/<pkg>/json` |
@@ -20,7 +20,15 @@ page) and add `via <endpoint>` when the fact came from the endpoint.
 | Go module version | `curl -s https://proxy.golang.org/<module>/@latest` |
 | Developer discussion, first-hand | Hacker News: `curl -s 'https://hn.algolia.com/api/v1/search?query=<words>&tags=story'` (comments: `tags=comment`); Stack Overflow: `curl -s 'https://api.stackexchange.com/2.3/search/advanced?order=desc&sort=votes&q=<words>&site=stackoverflow'` |
 | Buyer reviews (G2, Capterra, Trustpilot, app stores), Reddit | WebSearch for the quoted complaint, then WebFetch on the result; when that is refused and a browser tool is available in this session (a `mcp__*browser*`, `mcp__playwright__*` or `mcp__claude-in-chrome__*` tool), open the page with it; otherwise the source is unreachable |
-| Official docs, install commands | WebFetch on the docs page; for a repository README, `gh api repos/<owner>/<repo>/readme -H 'Accept: application/vnd.github.raw'` |
+| Official docs, install commands | WebFetch on the docs page; for a repository README, GitHub API `repos/<owner>/<repo>/readme` with the header `Accept: application/vnd.github.raw` |
+
+A "GitHub API `<path>`" route is GitHub's public REST API, which needs no login: call it with
+`gh api '<path>'` when `gh auth status` succeeds, and otherwise with
+`curl -s -A "research-client/1.0" 'https://api.github.com/<path>'` (add `-H '<header>'` where the row
+names one). In the path, words are joined with `+` and other characters percent-encoded (a space
+breaks the curl URL). Without a login GitHub allows 60 requests an hour and 10 searches a minute, so
+ask only for what the claim needs; a `403` or `429` for the rate limit goes under `unreachable:` like
+any other. A private or GitHub Enterprise repository answers only with a login, through `gh`.
 
 Send a plain `User-Agent` with `curl` (`-A "research-client/1.0"`); never one that names the person or
 the project.

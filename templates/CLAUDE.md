@@ -26,8 +26,8 @@ every Claude Code session in this repo, not only to `/idleflow:*` runs.
 `/idleflow:endsession` writes the note and the `progress.md` entry and commits them, with "Next"
 as the ordered handoff; it refuses while a run is still active. Commit the work itself first.
 
-1. Write `docs/sessions/s_<YYYYMMDD-HHMM>-<your git name>.md` from `docs/sessions/TEMPLATE.md` (time and
-   author, so two people never pick the same name):
+1. Write a note in `docs/sessions/` from its `TEMPLATE.md`, named the way the notes already there are
+   (by default `s_<YYYYMMDD-HHMM>-<your git name>.md`, time and author, so two people never pick the same name):
    what was done, which files changed and why, what is next, open questions. Short; paths, not prose.
 2. Add an entry at the top of `progress.md` and bring `index.md` up to date if any file or
    directory a newcomer must know about was added, moved or removed.

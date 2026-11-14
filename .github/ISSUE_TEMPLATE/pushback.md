@@ -5,7 +5,7 @@ title: "pushback: "
 ---
 
 <!-- Follow ISSUES.md: https://github.com/Idle-Sync/idleflow/blob/main/ISSUES.md
-     Title: "pushback: <what is wrong, in about six words>". Search for duplicates first. Nothing private. -->
+     Title: "pushback: <the point of disagreement, in about six words>". Search for duplicates first. Nothing private. -->
 
 ## What happened / what is wanted
 <what idleflow said or did, and what the human said>

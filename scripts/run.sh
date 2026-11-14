@@ -3,27 +3,51 @@
 # Everything is plain git + files so a run can be inspected or resumed by hand.
 #
 #   run.sh new <slug>                     -> creates .idleflow/runs/active/ for a new run, prints its <id>
+#   run.sh services                       -> runs the approved `services:` check (the database, cache or queue the
+#                                            repo's tests need); exit 1 and its last lines when one is down, 7 unapproved
+#   run.sh resume <run-id>                -> makes a stopped run active again from its locked plan: its merged tasks
+#                                            stay merged, every other task starts afresh from the branch as it is now
 #   run.sh wt add <task-id> [base-ref]    -> creates the task's worktree and branch, records its base sha, runs the approved
-#                                            worktree_setup there (exit 6: setup failed, 7: not approved), prints the path
+#                                            worktree_setup there (exit 6: setup failed, 7: not approved, 8: the plan
+#                                            marks it blocked_until a revision, 9: its from: names work that cannot
+#                                            be found), prints the path; a sub-task with from: <split task> starts
+#                                            with that task's changes to the files it owns, as one commit
 #   run.sh wt rm <task-id>                -> removes the worktree (keeps the branch); works with or without an active run
 #   run.sh wt list                        -> lists idleflow worktrees
 #   run.sh own <task-id> '<globs json>'   -> registers file ownership for the guard hook
-#   run.sh skip <key>                     -> this run goes without a repo command (gate, gate_quick, worktree_setup, preview)
+#   run.sh skip <key>                     -> this run goes without a repo command (gate, gate_quick, worktree_setup, preview, services)
 #   run.sh unowned <task-id>              -> paths the task's commits change (base..HEAD, what merges) that its globs,
 #                                            .idleflow-run/** and shared_files do not cover; matched as the guard matches
-#   run.sh exec <task-id> -- <command...> -> runs a command in the task's worktree with its own port (IDLEFLOW_PORT) and
-#                                            its own temp folder (IDLEFLOW_TMP, TMPDIR), as a job; prints its output and exits
-#                                            with its code, or exits 75 while it still runs after EXEC_WAIT_SECONDS
+#   run.sh exec <task-id> [--limit <s>] -- <command...> -> runs a command in the task's worktree with its own port
+#                                            (IDLEFLOW_PORT) and its own temp folder (IDLEFLOW_TMP, TMPDIR), as a job; prints
+#                                            its output and exits with its code, or exits 75 while it still runs after
+#                                            EXEC_WAIT_SECONDS. With --limit, a job still running <s> seconds after it started
+#                                            is stopped at that point by a watcher of its own, even when no one
+#                                            waits; the exec or wait that sees it exits 124. The last stderr line
+#                                            says which: `ended with exit code <c>`, `is still running`, `passed its limit`
+#                                            or `was stopped`, since a command can exit 75 or 124 itself. With --base, it runs
+#                                            in a checkout of the task's base commit instead, to show a failure is already there
+#                                            Python bytecode of the checkout's own code is cleared first, so the source runs as it is
 #   run.sh wait <task-id> <job>           -> waits for a job again, the same way
 #   run.sh stop <task-id> <job>           -> ends a job and every process it started
 #   run.sh get <key>                      -> prints a value from run.json (dotted keys ok)
 #   run.sh set <key> <json>               -> sets a value in run.json (dotted keys ok)
 #   run.sh inc <key> [n]                  -> adds n (default 1) to a counter in run.json
+#   run.sh plan-field <task-id> <key>     -> one field of the task's plan section (blocked_until, model, ...), empty when missing
+#   run.sh plan-check                     -> checks plan.md before anyone builds: every file a task's entry points or
+#                                            acceptance name is in its owns: or shared_files, and no owns: glob covers a
+#                                            protected file, and every file a split task changed is owned by exactly
+#                                            one of its sub-tasks; prints one line per problem and exits 1, or exits 0
 #   run.sh extract <task-id>              -> the task's plan extract: the plan's Stack & style constraints and Interfaces
 #                                            sections, then the task's own ### <task-id>: section
 #   run.sh report <task-id>               -> copies the task's .idleflow-run/result.md into the run dir as report.md, prints its path
+#   run.sh keep [--move] <run file>       -> sets a run file's current version aside as <name>.<n>.<ext> (n past the highest), prints
+#                                            that path; copies (plan.md before a revision) or, with --move, moves (a review)
 #   run.sh gate <task-id> [limit]         -> runs diff-gate against the task's own base, writes tasks/<id>/gate.json, prints it;
 #                                            refreshes the run's report.md when the worktree copy is newer
+#   run.sh reword <task-id> <sha> <file>... -> gives each named commit of the task the message in its file; from the oldest on,
+#                                            the task's commits are re-created on the same trees, so no file changes
+#   run.sh findings <task-id>...          -> every finding in those tasks' current review files, one line each
 #   run.sh merge <task-id>                -> merges the task branch into the current branch (no-ff); exit 3 on conflict, 4 otherwise
 #   run.sh ignore <pattern>               -> adds the pattern to the ignore file `ignore_in:` names, prints that file
 #   run.sh snapshot                       -> commits the repo-level docs the orchestrator writes (conventions, CLAUDE.md, prd, ...)
@@ -31,6 +55,7 @@
 #   run.sh loc                            -> prints hand-written code lines in the repo (DIFF_EXCLUDE applied)
 #   run.sh conf                           -> prints resolved config values and the runtime in use
 #   run.sh path <name>                    -> where a record lives here: conventions, lessons, progress, index, sessions, time-log, runs
+#   run.sh path --relative <name>         -> the same, relative to the repo root: progress, index, sessions, time-log
 #   run.sh migrate                        -> moves files a pre-.idleflow/ version kept under .claude/ and commits the move
 #   run.sh doctor                         -> checks the repo's idleflow setup, one "ok|warn|fail|suggest <check>: <detail> | fix: <how>" line each
 #   run.sh update-check                   -> prints one line when a newer idleflow is tagged on GitHub, nothing otherwise
@@ -40,8 +65,9 @@
 #   run.sh docs [--check]                 -> regenerates the generated blocks in the repo's Markdown (--check: exit 1 if stale)
 #   run.sh detect                         -> suggests Repo fit and Records settings from evidence in the repo (read-only)
 #   run.sh repo-gate <base|main|task> [--quick] -> runs the approved gate (or gate_quick) there, times it; 1 failed, 7 unapproved
-#   run.sh preview <task-id> start|stop   -> serves the app from that worktree for screenshots (approved command, localhost only)
-#   run.sh commands                       -> the repo's commands (worktree_setup, gate) as committed, approved or unapproved here
+#   run.sh preview <task-id|main> start|stop -> serves the app from that worktree, or with preview_in: main from the main
+#                                            checkout after the merge, for screenshots (approved command, localhost only)
+#   run.sh commands                       -> the repo's commands (worktree_setup, gate, ..., services) as committed, approved or unapproved here
 #   run.sh approve <key>                  -> records this person's approval of that exact committed command (local git config)
 #   run.sh agent <name>                   -> how to spawn that agent here: agent, model, extra instructions, contract
 #   run.sh custom list                    -> this repo's customizations (.idleflow/idleflow.conf, agent instructions, replaced agents)
@@ -66,12 +92,14 @@ source "$HERE/rt.sh"
 # shellcheck source=/dev/null
 source "$HERE/conf.sh"
 
+# The run lives in the checkout it was started from, which may itself be a linked worktree. Only
+# from inside one of the run's task worktrees (an agent's `run.sh exec`) does it live elsewhere:
+# `wt add` records each task worktree in this clone's git config, keyed by the worktree's own path,
+# with the checkout of the run that made it. No file in a worktree is trusted for this, and the
+# branch is not needed (a task worktree may be on a detached HEAD).
 REPO="$(git rev-parse --show-toplevel)"
-# Called from inside a linked worktree (an agent's `run.sh exec`), the run still lives in the main
-# checkout. git itself names it: the common git dir's parent. No file in the checkout is trusted
-# for this, since a committed one could point anywhere.
-_git_dir="$(git rev-parse --path-format=absolute --git-dir)"; _common="$(git rev-parse --path-format=absolute --git-common-dir)"
-if [ "$_git_dir" != "$_common" ] && [ "$(basename "$_common")" = .git ]; then REPO="$(dirname "$_common")"; fi
+_run_checkout="$(git config --local --get "idleflow.worktree.$REPO.checkout" 2>/dev/null || true)"
+if [ -n "$_run_checkout" ] && [ -f "$_run_checkout/.idleflow/runs/active/run.json" ]; then REPO="$_run_checkout"; fi
 idleflow_load_conf "$REPO"
 IDLE="$REPO/.idleflow"
 CONVENTIONS="$IDLE/conventions.md"
@@ -91,6 +119,18 @@ json_str() { printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')";
 
 plugin_version() { idleflow_rt get "$HERE/../.claude-plugin/plugin.json" version 2>/dev/null || echo unknown; }
 
+# a field of the task's own plan section ("<key>: <value>", a comment after two spaces and a # left
+# out), empty when the section or the field is missing; a fenced block in the section is text, not
+# fields. awk reads the file itself: one that stops early must not leave a writer on a broken pipe.
+plan_field() { # plan_field <task-id> <key>
+  [ -f "$ACTIVE/plan.md" ] || return 0
+  H="### $1:" K="$2:" awk '
+    { sub(/\r$/, "") }
+    /^(```|~~~)/ { fence = !fence; next }
+    fence { next }
+    /^##/ { task = (index($0, ENVIRON["H"]) == 1); next }
+    task && index($0, ENVIRON["K"]) == 1 { v = substr($0, length(ENVIRON["K"]) + 1); sub(/[[:space:]][[:space:]]+#.*/, "", v); gsub(/^[[:space:]]+|[[:space:]]+$/, "", v); print v; exit }' "$ACTIVE/plan.md"
+}
 # the title in the plan's "### <task-id>: <title>" heading, empty when there is none
 plan_title() { # plan_title <task-id>
   [ -f "$ACTIVE/plan.md" ] || return 0
@@ -259,7 +299,7 @@ generated_doc_files() {
     ""|unset) { "${G[@]}" grep -l -e '<!-- idleflow:generated ' -- '*.md' 2>/dev/null || true; printf '%s\n' "$(index_rel)" "$(progress_rel)" CLAUDE.md; };;
     *) read -ra list <<< "$v"
        for f in "${list[@]}"; do
-         case "$f" in /*|*..*) echo "[idleflow] generated_docs: skipped '$f' (not a path inside the repo)" >&2;; *) echo "$f";; esac
+         repo_relative_path "$f" || echo "[idleflow] generated_docs: skipped '$f' (not a path inside the repo)" >&2
        done;;
   esac | LC_ALL=C sort -u | while IFS= read -r f; do
     [ -f "$REPO/$f" ] && grep -q '<!-- idleflow:generated ' "$REPO/$f" && echo "$f"
@@ -276,14 +316,21 @@ gen_files() { # $1: the block's current text; descriptions written there are kep
              case "$e" in (*/*) printf '%s\n' "${e%%/*}/";; (*) printf '%s\n' "$e";; esac
            done | LC_ALL=C sort -u)
 }
+# The JavaScript install a folder's lockfile pins, as "<command><TAB><lockfile>"; nothing without one.
+# The index's command list and detect's worktree_setup proposal both take it from here.
+node_install() { # node_install <folder>
+  if [ -f "$1/pnpm-lock.yaml" ]; then printf 'pnpm install --frozen-lockfile\tpnpm-lock.yaml\n'
+  elif [ -f "$1/yarn.lock" ] && [ -f "$1/.yarnrc.yml" ]; then printf 'yarn install --immutable\tyarn.lock\n'  # Yarn 2+
+  elif [ -f "$1/yarn.lock" ]; then printf 'yarn install --frozen-lockfile\tyarn.lock\n'
+  elif [ -f "$1/bun.lock" ] || [ -f "$1/bun.lockb" ]; then printf 'bun install --frozen-lockfile\tbun lockfile\n'
+  elif [ -f "$1/package-lock.json" ]; then printf 'npm ci\tpackage-lock.json\n'; fi
+}
 gen_commands() {
-  local pm=npm k v c
+  local pm=npm k v c ni lock
   [ -f pnpm-lock.yaml ] && pm=pnpm; [ -f yarn.lock ] && pm=yarn; { [ -f bun.lock ] || [ -f bun.lockb ]; } && pm=bun
   # first the install a fresh clone runs, as its lockfile pins it
-  if [ -f pnpm-lock.yaml ]; then echo "- \`pnpm install --frozen-lockfile\` — install (pnpm-lock.yaml)"
-  elif [ -f yarn.lock ]; then echo "- \`yarn install --frozen-lockfile\` — install (yarn.lock)"
-  elif [ -f bun.lock ] || [ -f bun.lockb ]; then echo "- \`bun install --frozen-lockfile\` — install (bun lockfile)"
-  elif [ -f package-lock.json ]; then echo "- \`npm ci\` — install (package-lock.json)"; fi
+  IFS=$'\t' read -r ni lock < <(node_install .) || true
+  [ -z "$ni" ] || echo "- \`$ni\` — install ($lock)"
   if [ -f uv.lock ]; then echo "- \`uv sync --frozen\` — install (uv.lock)"
   elif [ -f poetry.lock ]; then echo "- \`poetry install\` — install (poetry.lock)"
   elif [ -f requirements.txt ]; then echo "- \`pip install -r requirements.txt\` — install (requirements.txt)"; fi
@@ -331,7 +378,7 @@ gen_runs() { # the last ten idleflow runs merged here, newest first: merge commi
 gen_settings() {
   local k v
   for k in mode docs lessons_in progress_file index_file index_rewrite sessions_dir session_names time_log shared_files generated_docs \
-           worktrees_in worktree_setup commit_format gate gate_quick gate_runs preview preview_url language tone; do
+           worktrees_in worktree_setup commit_format gate gate_quick gate_runs preview preview_url preview_in services language tone; do
     v="$(conventions_value "$k")"; [ -n "$v" ] && echo "- \`$k\`: $(md_code "$v")"
   done
   [ -f "$PROJECT_CONF" ] && bash "$0" custom list 2>/dev/null | grep -v '^instructions:\|^replaced:' | sed 's/^/- `/; s/=/`: /'
@@ -339,17 +386,19 @@ gen_settings() {
 }
 
 # A task id names a folder (its worktree, tasks/<id>/) and a branch (idleflow/<run>/<id>), so it is
-# one path segment that git also takes in a ref name: no / \ : * ? " < > | ~ ^ [ ] @ { } and no
-# space or control character, no "..", not ending in "." or ".lock", and not starting with "." or
-# "-" or "_" (idleflow's own worktrees, such as _gate-base, start with "_"), and not a name Windows
-# keeps for a device (CON, NUL, COM1, ...). Every subcommand that takes a task id checks it here
-# before building anything from it.
+# one path segment that git also takes in a ref name, and one run.json key (tasks.<id>.status: a
+# dot would nest it under another task): no . / \ : * ? " < > | ~ ^ [ ] @ { } and no space or
+# control character, not starting with "-" or "_" (idleflow's own worktrees, such as _gate-base,
+# start with "_"), and not a name Windows keeps for a device (CON, NUL, COM1, ...). Every
+# subcommand that takes a task id checks it here before building anything from it.
 check_task_id() { # check_task_id <id>
-  local t="$1" bad='[]/\\:*?"<>|~^[@{}[:space:][:cntrl:]]' device='^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$'
-  if [ -z "$t" ] || [[ "$(printf '%s' "$t" | tr '[:upper:]' '[:lower:]')" =~ $device ]] || [[ "$t" =~ $bad ]] || [[ "$t" == *..* ]] || [[ "$t" == [._-]* ]] || [[ "$t" == *. ]] || [[ "$t" == *.lock ]]; then
-    echo "not a task id: '$t' (one name such as T1, with no path or git ref characters)" >&2
+  local t="$1" bad='[].:/\\*?"<>|~^[@{}[:space:][:cntrl:]]' device='^(con|prn|aux|nul|com[1-9]|lpt[1-9])$'
+  if [ -z "$t" ] || [[ "$(printf '%s' "$t" | tr '[:upper:]' '[:lower:]')" =~ $device ]] || [[ "$t" =~ $bad ]] || [[ "$t" == [_-]* ]]; then
+    echo "not a task id: '$t' (one name such as T1, with no dot, path or git ref characters)" >&2
     exit 1
   fi
+  # `main` (run.sh preview main) and `merged` (the browser check after merge) name run-wide records
+  case "$t" in main|merged) echo "not a task id: '$t' is reserved" >&2; exit 1;; esac
 }
 
 # Sibling by default (<repo>__wt/<task>); `worktrees_in: inside` keeps them in an ignored folder
@@ -360,7 +409,7 @@ wt_path() {
 
 # Repo commands come from whoever pushed the repo: they run only as committed at HEAD, and only once
 # this person approved that exact text (a hash in local git config; any change asks again).
-REPO_COMMANDS="worktree_setup gate gate_quick preview"
+REPO_COMMANDS="worktree_setup gate gate_quick preview services"
 repo_command() { # the committed value of a command key, empty when unset
   local v
   v="$({ "${G[@]}" show "HEAD:.idleflow/conventions.md" 2>/dev/null || true; } | sed -n "s/^$1: *//p" | head -1 | tr -d '\r' | sed 's/ *$//')"
@@ -374,29 +423,155 @@ command_approved() { # command_approved <key> <command>
 }
 
 # A worktree isolates files. What a task's commands share at run time is handled here: each task
-# gets its own port and temp folder.
+# gets its own port and temp folder. Both live outside the repo, where every run on the machine
+# meets: the temp folder under a short root, because a Unix socket path may hold only about 104
+# bytes and a repo path can use most of that; the port claims in a registry beside it.
+# IDLEFLOW_TMP_ROOT moves that root (the selftest gives each suite its own).
+tmp_root() { local r="${IDLEFLOW_TMP_ROOT:-/tmp}"; echo "${r%/}"; }
+# The root is shared by every user of the machine and its names are predictable, so everything
+# idleflow keeps there sits in one folder of this user's, mode 700: one another user made, or a
+# symlink, is refused rather than written through.
+owned_by_me() { # owned_by_me <path>
+  [ -O "$1" ] && return 0
+  # Git Bash gives a folder an elevated session made to the Administrators group (gid 544); it is
+  # this user's only when this session is in that group
+  command -v cygpath >/dev/null 2>&1 || return 1
+  [ "$(stat -c %u "$1" 2>/dev/null)" = 544 ] && id -G | tr ' ' '\n' | grep -x 544 >/dev/null
+}
+user_tmp() {
+  local u; u="$(tmp_root)/idleflow-$(id -u)"
+  [ -e "$u" ] || [ -L "$u" ] || mkdir -m 700 "$u" 2>/dev/null || true
+  if [ -L "$u" ] || [ ! -d "$u" ] || ! owned_by_me "$u"; then
+    echo "run.sh: $u is not a folder this user owns; remove it, or set IDLEFLOW_TMP_ROOT to another root" >&2; return 1
+  fi
+  chmod 700 "$u" 2>/dev/null || true
+  echo "$u"
+}
+# One folder per run, named by a short hash of the repo and the run id, so two repos never share it.
+run_tmp() {
+  local u key; u="$(user_tmp)" || return 1; key="$(printf '%s' "$REPO/$(active_id)" | git hash-object --stdin | cut -c1-10)"
+  echo "$u/$key"
+}
 task_port() { idleflow_rt get "$ACTIVE/run.json" "tasks.$1.port" 2>/dev/null || true; }
-task_tmp() { echo "$ACTIVE/tasks/$1/tmp"; }
-# The lowest PORT_BASE + n no other task of this run holds; a task keeps its port when re-added.
+task_tmp() { local r; r="$(run_tmp)" || return 1; echo "$r/$1"; }
+# The sha a task's commits start from: its own, recorded by `wt add`, or the run's for an older run.
+task_base() { # task_base <task-id>
+  local base
+  base="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$1.base_sha" 2>/dev/null || true)"
+  if [ -z "$base" ] || [ "$base" = "null" ]; then base="$(idleflow_rt get "$ACTIVE/run.json" base_sha)"; fi
+  [ -n "$base" ] && [ "$base" != "null" ] || { echo "$1: no base sha recorded (was the worktree created with run.sh wt add?)" >&2; return 1; }
+  echo "$base"
+}
+# A port is claimed by a file in the registry, ports/<port>, holding its owner: `<repo> <run id>
+# <task-id>`. A claim is read and written only under the port's lock, the folder ports/<port>.lock
+# (mkdir is atomic), so two runs never both decide a port is theirs. A run that finds the lock taken
+# moves on to the next port; one whose holder has died (a `wt add` killed while it held it) is taken
+# over (lock_dir). A claim is live while
+# its run is its repo's active run and its task holds that port or has none recorded yet (`wt add`
+# records it right after the claim); any other claim is stale and is replaced.
+port_registry() { local u; u="$(user_tmp)" || return 1; echo "$u/ports"; }
+claim_live() { # claim_live <claim-file> <port>
+  local orepo oid otid oport rj
+  IFS=$'\t' read -r orepo oid otid < "$1" 2>/dev/null || return 1
+  rj="$orepo/.idleflow/runs/active/run.json"
+  [ -f "$rj" ] && [ "$(idleflow_rt get "$rj" id 2>/dev/null)" = "$oid" ] || return 1
+  oport="$(idleflow_rt get "$rj" "tasks.$otid.port" 2>/dev/null || true)"
+  [ "$oport" = "$2" ] || [ -z "$oport" ] || [ "$oport" = null ]
+}
+# A lock is a folder (mkdir is atomic) holding its holder's pid: the shell that holds it, which inside
+# a command substitution is not run.sh's own $$. One whose holder has died (killed while holding it)
+# is taken over, but only under a second short lock, <lock>.takeover, inside which the pid is read
+# again: of two runs that found the same dead holder, the second then sees the first's live pid and
+# backs off. A lock that names no holder yet is being taken, never taken over.
+lock_dir() { # lock_dir <lock-folder>: 0 when this shell now holds it
+  local holder
+  if mkdir "$1" 2>/dev/null; then echo "${BASHPID:-$$}" > "$1/pid"; return 0; fi
+  holder="$(cat "$1/pid" 2>/dev/null || true)"
+  if [ -z "$holder" ] || kill -0 "$holder" 2>/dev/null; then return 1; fi
+  mkdir "$1.takeover" 2>/dev/null || return 1
+  if [ "$(cat "$1/pid" 2>/dev/null || true)" = "$holder" ]; then rm -f "$1/pid"; rmdir "$1" 2>/dev/null || true; fi
+  if mkdir "$1" 2>/dev/null; then echo "${BASHPID:-$$}" > "$1/pid"; rmdir "$1.takeover"; return 0; fi
+  rmdir "$1.takeover"; return 1
+}
+unlock_dir() { rm -f "$1/pid"; rmdir "$1" 2>/dev/null || true; }
+claim_port() { # claim_port <registry> <port> <task-id> <run id> <listening-check: yes|no>
+  local reg="$1" p="$2" me rc=1
+  me="$(printf '%s\t%s\t%s' "$REPO" "$4" "$3")"
+  lock_dir "$reg/$p.lock" || return 1
+  if [ -f "$reg/$p" ] && [ "$(cat "$reg/$p")" != "$me" ] && claim_live "$reg/$p" "$p"; then
+    :
+  elif [ "$5" = no ] || idleflow_rt port-free "$p"; then
+    printf '%s\n' "$me" > "$reg/$p.new.$$" && mv -f "$reg/$p.new.$$" "$reg/$p" && rc=0
+  fi
+  unlock_dir "$reg/$p.lock"
+  return "$rc"
+}
+# The lowest PORT_BASE + n that no task of this run holds, no live claim on the machine holds and
+# nothing on the machine listens on. A task keeps its port when re-added, and claims it again in
+# case the claim was cleaned away.
 allocate_port() { # allocate_port <task-id>
-  local mine used n=0; mine="$(task_port "$1")"
-  case "$mine" in ""|null) ;; *) echo "$mine"; return;; esac
+  local mine used p reg n=0 id; mine="$(task_port "$1")"
+  reg="$(port_registry)" || return 1; mkdir -p "$reg"; id="$(active_id)"
+  case "$mine" in ""|null) ;; *)
+    claim_port "$reg" "$mine" "$1" "$id" no || echo "[idleflow] $1 keeps port $mine, which another run on this machine also claims" >&2
+    echo "$mine"; return;; esac
   used="$(idleflow_rt entries "$ACTIVE/run.json" tasks 2>/dev/null | sed -n 's/.*"port":\([0-9]*\).*/\1/p')"
-  while printf '%s\n' "$used" | grep -qx "$(( ${PORT_BASE:-4400} + n ))"; do n=$((n + 1)); done
-  echo $(( ${PORT_BASE:-4400} + n ))
+  while [ "$n" -lt 1000 ]; do
+    p=$(( ${PORT_BASE:-4400} + n )); n=$((n + 1))
+    printf '%s\n' "$used" | grep -x -- "$p" >/dev/null && continue
+    if claim_port "$reg" "$p" "$1" "$id" yes; then echo "$p"; return 0; fi
+  done
+  echo "allocate_port: no free port from ${PORT_BASE:-4400} to $(( ${PORT_BASE:-4400} + 999 ))" >&2; return 1
+}
+# Gives back every claim the active run holds, or only those of one owner (`main` for preview main),
+# each under its lock.
+release_ports() { # release_ports [<task-id>]
+  local reg f mine fields=1,2; reg="$(port_registry)" || return 0
+  mine="$(printf '%s\t%s' "$REPO" "$(active_id)")"
+  if [ -n "${1:-}" ]; then mine="$mine"$'\t'"$1"; fields=1-3; fi
+  for f in "$reg"/*; do
+    case "$f" in *.lock|*.takeover|*.new.*) continue;; esac
+    if [ ! -f "$f" ] || [ "$(cut -f"$fields" "$f")" != "$mine" ]; then continue; fi
+    lock_dir "$f.lock" || continue
+    if [ "$(cut -f"$fields" "$f")" = "$mine" ]; then rm -f "$f"; fi
+    unlock_dir "$f.lock"
+  done
 }
 # The repo's own commands (setup, gate, tests, preview) run as they would for a person or in CI.
 # Tools change behaviour when they see they run under an agent (Astro's preview detaches, for one),
 # so the variables that say so are removed from every repo command's environment here.
 AGENT_MARKERS=(CLAUDECODE CLAUDE_CODE CLAUDE_CODE_ENTRYPOINT AI_AGENT)
 without_agent_markers() { unset "${AGENT_MARKERS[@]}"; }
+# Python reuses a module's compiled bytecode in __pycache__ while the source keeps its size and its
+# modification time in whole seconds, so an edit that keeps both (a mutant, the restored original, a
+# one-character fix within the same second) would run the old code. Every repo command therefore
+# starts with no bytecode for the checkout's own sources (the .py files git tracks or would add). It
+# is deleted rather than redirected with PYTHONPYCACHEPREFIX, which tox and `python -I` drop. The
+# list comes from git (submodules included), so installed packages keep their bytecode, the walk
+# costs no more than reading the index, and a .pyc the repo itself tracks is never touched. A file it
+# cannot remove is named on stderr and the command still runs.
+clear_bytecode() { # clear_bytecode <checkout>
+  local f dir stem pyc rel tracked
+  tracked="$(git -C "$1" ls-files -z --recurse-submodules -- '*.pyc' | tr '\0' '\n')" || true
+  { git -C "$1" ls-files -z --recurse-submodules -- '*.py'; git -C "$1" ls-files -z -o --exclude-standard -- '*.py'; } |
+  while IFS= read -r -d '' f; do
+    dir="${f%/*}"; [ "$dir" = "$f" ] && dir=.
+    stem="${f##*/}"; stem="${stem%.py}"
+    for pyc in "$1/$dir/__pycache__/$stem".*.pyc; do
+      [ -f "$pyc" ] || continue
+      rel="${pyc#"$1"/}"; rel="${rel#./}"
+      case $'\n'"$tracked"$'\n' in *$'\n'"$rel"$'\n'*) continue;; esac
+      rm -f -- "$pyc" || echo "[idleflow] could not remove stale bytecode: $pyc" >&2
+    done
+  done || true
+}
 
-# Runs a command for a task: in its worktree, with its port and temp folder.
+# Runs a command for a task: in its worktree, with its port and temp folder and no stale bytecode.
 in_task() { # in_task <task-id> <dir> <command...>
   local tid="$1" dir="$2" port tmp rc=0; shift 2
-  port="$(task_port "$tid")"; tmp="$(task_tmp "$tid")"; mkdir -p "$tmp"
+  port="$(task_port "$tid")"; tmp="$(task_tmp "$tid")" || return 1; mkdir -p "$tmp"
   # the caller decides what a failure means; errexit is left as the caller set it
-  (cd "$dir" && without_agent_markers && MAIN="$REPO" IDLEFLOW_TASK="$tid" IDLEFLOW_PORT="$port" IDLEFLOW_TMP="$tmp" TMPDIR="$tmp" "$@") || rc=$?
+  (cd "$dir" && without_agent_markers && clear_bytecode . && MAIN="$REPO" IDLEFLOW_TASK="$tid" IDLEFLOW_PORT="$port" IDLEFLOW_TMP="$tmp" TMPDIR="$tmp" "$@") || rc=$?
   return "$rc"
 }
 
@@ -429,6 +604,11 @@ job_ended() { # job_ended <job dir>: the command ended and nothing of it is left
   if [ -f "$1/status" ] && ! group_alive "$1"; then : > "$1/ended"; return 0; fi
   return 1
 }
+# A job's status is written by more than one process (its own shell, a stop, a waiter), each through a
+# temp name of its own and a move, so no reader sees half of it and no two writers share a temp file.
+write_status() { # write_status <job dir> <code>
+  echo "$2" > "$1/status.tmp.$$" && mv -f "$1/status.tmp.$$" "$1/status"
+}
 stop_job() { # stop_job <job dir>: TERM to the whole group, KILL after 5 s; 143 if the command had not ended
   local pid n=0
   job_ended "$1" && return 0
@@ -437,32 +617,229 @@ stop_job() { # stop_job <job dir>: TERM to the whole group, KILL after 5 s; 143 
   while group_alive "$1" && [ "$n" -lt 25 ]; do sleep 0.2; n=$((n + 1)); done
   if group_alive "$1"; then signal_job "$1" KILL; sleep 0.5; fi
   if group_alive "$1"; then echo "[idleflow] job in $(native_path "$1") still has processes after KILL" >&2; return 1; fi
-  [ -f "$1/status" ] || { echo 143 > "$1/status.tmp" && mv "$1/status.tmp" "$1/status"; }
+  # stopped first, so whoever sees this status also sees that the stop wrote it
+  [ -f "$1/status" ] || { : > "$1/stopped"; write_status "$1" 143; }
   : > "$1/ended"
 }
-await_job() { # await_job <task-id> <job>: the command's output and exit code, or 75 while it runs
-  local d end n=0; d="$(job_dir "$1" "$2")"
-  [ -d "$d" ] || { echo "no job $2 for task $1" >&2; exit 1; }
+# The job's folder can move away while a waiter holds its path: finish moves the run, and new moves a
+# leftover run aside after a crash. Nothing can be read or written there any more, so a waiter says so
+# and ends. The job's own watcher, and a waiter that holds the stop, first stop at the deadline the
+# process group they remembered, so a hung command in an abandoned run still ends. Only the group is
+# signalled, and only while it is seen alive: the bare pid, and a number whose group is gone, may be
+# reused by another process.
+gone_job() { # gone_job <task-id> <job> <process group or empty> <deadline or empty> <watch|stop|empty>
+  local n=0
+  if [ -z "$5" ] || [ -z "$3" ] || [ -z "$4" ]; then
+    echo "[idleflow] job $2 of $1: its run folder is gone (finished or moved aside); this waiter ends without checking its processes" >&2
+    exit 1
+  fi
+  if [ "$5" = watch ]; then
+    while kill -0 -- "-$3" 2>/dev/null && [ "$(date +%s)" -lt "$4" ]; do sleep 0.2; done
+  fi
+  if ! kill -0 -- "-$3" 2>/dev/null; then
+    echo "[idleflow] job $2 of $1: its run folder is gone (finished or moved aside), and no process of it is left to stop" >&2
+    exit 1
+  fi
+  kill -TERM -- "-$3" 2>/dev/null || true
+  while kill -0 -- "-$3" 2>/dev/null && [ "$n" -lt 25 ]; do sleep 0.2; n=$((n + 1)); done
+  if kill -0 -- "-$3" 2>/dev/null; then kill -KILL -- "-$3" 2>/dev/null || true; sleep 0.5; fi
+  if kill -0 -- "-$3" 2>/dev/null; then
+    echo "[idleflow] job $2 of $1: its run folder is gone (finished or moved aside); its processes survived KILL and still run" >&2
+  else
+    echo "[idleflow] job $2 of $1: its run folder is gone (finished or moved aside); its processes were stopped at the limit" >&2
+  fi
+  exit 1
+}
+# A job started with a limit keeps its deadline (epoch seconds) in .../deadline. A command that never
+# ends (a hung test, a fault that loops) is stopped there, with its whole process group, so it cannot
+# hold a port, a lock or a shared database until someone notices. exec starts a watcher that waits up
+# to the deadline, so the stop happens even when no one waits; a foreground exec or wait may reach the
+# deadline at the same moment. One of them takes the stop (mkdir is atomic), the others wait for it to
+# finish, and every waiter, then or later, reports a stop at the limit the same way.
+await_job() { # await_job <task-id> <job> [watch [<group> <deadline>]]: the command's output and exit code, 75
+  # while it runs, 124 past its limit; with watch, it waits up to the job's deadline rather than
+  # EXEC_WAIT_SECONDS, and takes the group and deadline exec gave it over what the folder says
+  local d end deadline="${5:-}" n=0 group="${4:-}"; d="$(job_dir "$1" "$2")"
+  if [ ! -d "$d" ]; then
+    if [ "${3:-}" = watch ] && [ -n "$group" ] && [ -n "$deadline" ]; then gone_job "$1" "$2" "$group" "$deadline" watch; fi
+    echo "no job $2 for task $1" >&2; exit 1
+  fi
   while [ ! -f "$d/pid" ] && [ ! -f "$d/status" ] && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
+  [ -n "$group" ] || group="$(job_pid "$d")"
   end=$(( $(date +%s) + ${EXEC_WAIT_SECONDS:-100} ))
+  if [ -z "$deadline" ] && [ -f "$d/deadline" ]; then deadline="$(cat "$d/deadline")"; fi
+  if [ -n "$deadline" ] && { [ "$deadline" -lt "$end" ] || [ "${3:-}" = watch ]; }; then end="$deadline"; fi
   while [ ! -f "$d/status" ] && [ "$(date +%s)" -lt "$end" ]; do
+    [ -d "$d" ] || gone_job "$1" "$2" "$group" "$deadline" "${3:-}"
     if ! group_alive "$d"; then
-      sleep 0.2; [ -f "$d/status" ] || { echo 1 > "$d/status.tmp" && mv "$d/status.tmp" "$d/status"; echo "[idleflow] job $2 of $1 ended without an exit code" >&2; }
+      # a group another process is stopping is not one that ended without an exit code
+      sleep 0.2; [ -f "$d/status" ] || [ -d "$d/stopping" ] || { write_status "$d" 1; echo "[idleflow] job $2 of $1 ended without an exit code" >&2; }
       break
     fi
     sleep 0.2
   done
+  # the stop at the limit: taken by one process, waited for by the others; a holder that died before
+  # finishing (an interrupted exec or wait) leaves its lock to the next one, which stops the job itself
+  if { [ ! -f "$d/status" ] && [ -n "$deadline" ] && [ "$(date +%s)" -ge "$deadline" ]; } || [ -d "$d/stopping" ]; then
+    local holder="" left="" tries=0
+    while [ ! -f "$d/stop-done" ]; do
+      [ -d "$d" ] || gone_job "$1" "$2" "$group" "$deadline" ""
+      if mkdir "$d/stopping" 2>/dev/null; then
+        echo $$ > "$d/stopping/pid"
+        stop_job "$d" || left=1
+        [ -d "$d" ] || gone_job "$1" "$2" "$group" "$deadline" stop
+        # a command that ended on its own between the last check and the stop keeps its exit code, and
+        # is reported below like any job that ended
+        if [ -n "$left" ] || [ -f "$d/stopped" ]; then
+          [ -z "$left" ] || : > "$d/survived"
+          : > "$d/limit-stopped"; write_status "$d" 124
+        fi
+        : > "$d/stop-done"
+        break
+      fi
+      holder="$(cat "$d/stopping/pid" 2>/dev/null || true)"
+      if { [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; } || { [ -z "$holder" ] && [ "$tries" -ge 10 ]; }; then
+        rm -f "$d/stopping/pid"; rmdir "$d/stopping" 2>/dev/null || true; tries=0; continue
+      fi
+      sleep 0.2; tries=$((tries + 1))
+    done
+  fi
+  if [ -f "$d/limit-stopped" ]; then
+    tail -n 20 "$d/log"
+    # the state line comes last, as for every report
+    [ ! -f "$d/survived" ] || echo "[idleflow] processes job $2 of $1 started survived KILL and still run; nothing they hold is free yet" >&2
+    echo "[idleflow] job $2 of $1 passed its limit of $(cat "$d/limit") s and was stopped; its own cleanup (teardown, afterEach) did not run" >&2
+    exit 124
+  fi
   if [ -f "$d/status" ]; then
     cat "$d/log"
+    if [ -f "$d/started" ] && [ -f "$d/finished" ]; then echo "[idleflow] job $2 of $1 ran for $(( $(cat "$d/finished") - $(cat "$d/started") )) s" >&2; fi
     # the command is over; a process it left behind (a server it started) is said, not waited for
     job_ended "$d" || echo "[idleflow] job $2 of $1 ended, but processes it started still run; end them with: bash \"$0\" stop $1 $2" >&2
+    # a command may exit 75 or 124 itself, so the state is said in a line its exit code cannot copy,
+    # and a job that was stopped keeps saying so on every later wait
+    if [ -f "$d/stopped" ] && [ "$(cat "$d/status")" = 124 ] && [ -f "$d/limit" ]; then
+      echo "[idleflow] job $2 of $1 passed its limit of $(cat "$d/limit") s and was stopped" >&2
+    elif [ -f "$d/stopped" ]; then
+      echo "[idleflow] job $2 of $1 was stopped (exit code $(cat "$d/status"))" >&2
+    else
+      echo "[idleflow] job $2 of $1 ended with exit code $(cat "$d/status")" >&2
+    fi
     exit "$(cat "$d/status")"
   fi
-  tail -n 20 "$d/log"
   echo "[idleflow] job $2 of $1 is still running (log: $(native_path "$d/log")). Wait for it: bash \"$0\" wait $1 $2. End it: bash \"$0\" stop $1 $2. Do not start it again while it runs." >&2
   exit 75
 }
 
+# A checkout of the commit a task started from, so a failure can be shown to exist there before the
+# task changed anything: a claim that a failure is old is then checked, never argued. It is made on
+# first use with the repo's worktree_setup and is ready only once that succeeded (the ready file holds
+# the sha it is ready for). A checkout that is not ready, sits on another sha, or has a changed tracked
+# file is made again, so a proof never runs on a half-set-up or edited base. It is registered with no
+# owned globs, so the guard refuses every edit in it. `wt rm` and `wt add` remove it.
+base_worktree() { # base_worktree <task-id>: prints its path; exits as worktree_setup does (6, 7) when that fails
+  local tid="$1" base p d rc n=0 jd
+  base="$(task_base "$tid")" || return 1
+  p="$(wt_path "_base-$tid")"; d="$ACTIVE/tasks/_base-$tid"
+  mkdir -p "$d" "$(dirname "$p")"
+  # one creator at a time: a second first use waits instead of running in a half-made checkout; a
+  # lock whose holder has died (killed mid-setup) is taken over (lock_dir)
+  until lock_dir "$d/lock"; do
+    n=$((n + 1)); [ "$n" -lt 180 ] || { echo "exec --base: another exec --base of $tid is still making its base checkout; try again" >&2; return 1; }
+    sleep 0.5
+  done
+  if [ -d "$p" ] && { [ "$(cat "$d/ready" 2>/dev/null)" != "$base" ] || [ -n "$(git -C "$p" status --porcelain --untracked-files=no 2>/dev/null)" ]; }; then
+    # a base job still running there would lose its checkout mid-run
+    for jd in "$ACTIVE/tasks/$tid/jobs"/*/; do
+      [ -d "$jd" ] || continue
+      case "$(cat "${jd}checkout" 2>/dev/null)" in base*) job_ended "${jd%/}" || {
+        unlock_dir "$d/lock"; echo "exec --base: job $(basename "$jd") of $tid still runs in the base checkout; wait for it or stop it first" >&2; return 1; };;
+      esac
+    done
+    rm -f "$d/ready"; "${G[@]}" worktree remove --force "$p" 2>/dev/null || true
+  fi
+  if [ ! -d "$p" ]; then
+    rm -f "$d/ready"
+    "${G[@]}" worktree prune
+    if ! "${G[@]}" worktree add -q --detach "$p" "$base" >/dev/null 2>&1; then
+      unlock_dir "$d/lock"; echo "exec --base: could not check out $base for $tid" >&2; return 1
+    fi
+    idleflow_rt own "$ACTIVE/ownership.json" "_base-$tid" "$(native_path "$p")" '[]'
+    # the marker lets the guard find the ownership map from inside this checkout too
+    mkdir -p "$p/.idleflow-run"; echo "_base-$tid" > "$p/.idleflow-run/task-id"; native_path "$REPO" > "$p/.idleflow-run/repo"
+    rc=0; ( run_worktree_setup "_base-$tid" "$p" ) >&2 || rc=$?
+    if [ "$rc" -ne 0 ]; then
+      "${G[@]}" worktree remove --force "$p" 2>/dev/null || true
+      unlock_dir "$d/lock"; return "$rc"
+    fi
+    echo "$base" > "$d/ready"
+  fi
+  unlock_dir "$d/lock"
+  # never run in a checkout that could not be made again: it is a proof only when it is the base
+  if [ "$(cat "$d/ready" 2>/dev/null)" != "$base" ] || [ "$(git -C "$p" rev-parse HEAD 2>/dev/null)" != "$base" ] \
+     || [ -n "$(git -C "$p" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+    echo "exec --base: $(native_path "$p") is not a clean checkout of $base and could not be made again; remove it (git worktree remove --force)" >&2
+    return 1
+  fi
+  echo "$p"
+}
+
+# A task the diff gate split is never merged, but wt rm keeps its branch: its finished work is still
+# there. A sub-task whose plan section says from: <that task> starts with that task's changes to the
+# files the sub-task owns, applied to its own base as one commit, so the implementer finishes and
+# checks that work rather than writing it again.
+# The from: value as plan-check reads it: backticks dropped, and only its first word.
+split_from() { # split_from <task-id>
+  local v; v="$(plan_field "$1" from)"; v="${v//\`/}"; v="${v#"${v%%[![:space:]]*}"}"; printf '%s' "${v%%[[:space:]]*}"
+}
+# The files a split task changed, NUL-separated. Plumbing, so no diff setting of the user's (colour,
+# no prefix, an external diff) changes what is read.
+split_files() { # split_files <split task-id> <run id>
+  local fbase; fbase="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$1.base_sha" 2>/dev/null || true)"
+  "${G[@]}" diff-tree -r -z --no-renames --name-only "$fbase" "refs/heads/idleflow/$2/$1"
+}
+# Before anything is created: work that cannot be found would otherwise be built again unnoticed.
+split_ready() { # split_ready <task-id> <split task-id> <run id>
+  local fbase; fbase="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$2.base_sha" 2>/dev/null || true)"
+  if [ -z "$fbase" ] || [ "$fbase" = null ] || ! "${G[@]}" rev-parse -q --verify "$fbase^{commit}" >/dev/null \
+     || ! "${G[@]}" rev-parse -q --verify "refs/heads/idleflow/$3/$2^{commit}" >/dev/null; then
+    echo "wt add: $1 has from: $2, but $2's branch idleflow/$3/$2 or its base sha is gone; nothing to bring over, so give $1 from: none and run plan-check" >&2; return 1
+  fi
+  idleflow_rt get "$ACTIVE/ownership.json" "tasks.$1.owns" >/dev/null 2>&1 \
+    || { echo "wt add: $1 has from: $2 but owns nothing yet; run.sh own $1 first, so it brings over $2's work on the files it owns" >&2; return 1; }
+}
+# A change that no longer applies to the sub-task's base leaves the worktree at its base, and the
+# sub-task is built from the plan as any other. git's own words go to the task's bring.log.
+bring_split() { # bring_split <task-id> <split task-id> <worktree> <run id>
+  local fbase owns out f n=0 specs=() log subject
+  fbase="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$2.base_sha")"; owns="$(idleflow_rt get "$ACTIVE/ownership.json" "tasks.$1.owns")"
+  log="$ACTIVE/tasks/$1/bring.log"; : > "$log"
+  # the changed files the matcher does not print as outside the sub-task's globs; shared_files are
+  # left out, since every sibling would bring the same lines (plan-check gives each to one sub-task)
+  out="$(split_files "$2" "$4" | idleflow_rt outside "$owns")" \
+    || { echo "[idleflow] wt add: the glob matcher failed; $1 starts from its base alone" >&2; return 0; }
+  while IFS= read -r -d '' f; do
+    [ -n "$f" ] || continue
+    grep -qxF -- "$f" <<< "$out" || { specs+=(":(literal)$f"); n=$((n + 1)); }
+  done < <(split_files "$2" "$4")
+  [ "$n" -gt 0 ] || { echo "[idleflow] wt add: $1 has from: $2, but $2 changed none of the files $1 owns; $1 starts from its base alone" >&2; return 0; }
+  case "$(conventions_value commit_format)" in
+    conventional) subject="$(idleflow_rt clip 72 "chore: bring over $2's finished work on the files $1 owns")";;
+    plain) subject="$(idleflow_rt clip 72 "Bring over $2's finished work on the files $1 owns")";;
+    *) subject="$1: bring over $2's finished work on the files it owns";;
+  esac
+  if ! "${G[@]}" diff-tree -p --binary --full-index --no-renames "$fbase" "refs/heads/idleflow/$4/$2" -- "${specs[@]}" \
+       | git -C "$3" apply --3way --index --whitespace=nowarn 2>> "$log"; then
+    git -C "$3" reset -q --hard >> "$log" 2>&1 || true
+    echo "[idleflow] wt add: $2's work on the files $1 owns no longer applies to $1's base (git's words in $(native_path "$log")); $1 starts from its base alone and is built from the plan" >&2
+  # --no-verify: the repo's hooks would run in a worktree nothing is installed in yet
+  elif ! git -C "$3" ${IDENTITY[@]+"${IDENTITY[@]}"} commit -q --no-verify -m "$subject" -m "Task: $1" >> "$log" 2>&1; then
+    git -C "$3" reset -q --hard >> "$log" 2>&1 || true
+    echo "[idleflow] wt add: $2's work on the files $1 owns applied but could not be committed (git's words in $(native_path "$log")); $1 starts from its base alone" >&2
+  else
+    echo "[idleflow] wt add: $1 starts with $2's finished work on $n file(s) it owns, in commit $(git -C "$3" rev-parse --short HEAD); finish and check it, do not write it again" >&2
+  fi
+}
 # The repo's own preparation for a fresh worktree (link shared folders, copy fixtures).
 run_worktree_setup() { # run_worktree_setup <task-id> <worktree>
   local cmd log
@@ -524,7 +901,9 @@ ignore_file() {
 
 add_ignore() { # add_ignore <file> <pattern>
   local f="$1" pat="$2"
-  [ -f "$f" ] && tr -d '\r' < "$f" | grep -qxF -- "$pat" && return 0
+  # grep reads to the end (no -q): one that stopped at the first match would break the pipe under
+  # pipefail on a long file, and the line would be added twice
+  [ -f "$f" ] && tr -d '\r' < "$f" | grep -xF -- "$pat" >/dev/null && return 0
   mkdir -p "$(dirname "$f")"
   # a file without a final newline would otherwise glue our line onto its last entry
   [ ! -s "$f" ] || [ -z "$(tail -c1 "$f")" ] || echo >> "$f"
@@ -595,7 +974,7 @@ case "$cmd" in
     base="$("${G[@]}" symbolic-ref --short -q HEAD || echo HEAD)"
     base_sha="$("${G[@]}" rev-parse -q --verify HEAD 2>/dev/null || true)"
     cat > "$ACTIVE/run.json" <<JSON
-{"id":"$id","plugin_version":$(json_str "$(plugin_version)"),"by":$(json_str "$(git config user.name || echo unknown)"),"slug":"$safe","base":$(json_str "$base"),"base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"gate_trips":0,"review_findings":0}
+{"id":"$id","plugin_version":$(json_str "$(plugin_version)"),"by":$(json_str "$(git config user.name || echo unknown)"),"slug":"$safe","base":$(json_str "$base"),"base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"fixes":0,"gate_trips":0,"review_findings":0}
 JSON
     echo "{\"repo\":$(json_str "$(native_path "$REPO")"),\"shared\":[],\"tasks\":{}}" > "$ACTIVE/ownership.json"
     conventions_to_run
@@ -611,9 +990,17 @@ JSON
       add)
         id="$(active_id)"
         tid="${1:?task-id}"; check_task_id "$tid"; base="${2:-$(idleflow_rt get "$ACTIVE/run.json" base)}"
+        # a task the plan could not finish until an earlier group ran waits for its revision, so it never
+        # starts from a section with placeholders in it
+        blocked="$(plan_field "$tid" blocked_until)"
+        case "$(printf '%s' "$blocked" | tr '[:upper:]' '[:lower:]')" in ""|none) ;; *) echo "wt add: $tid is blocked until a revision ($blocked); have the planner revise its section first, which sets blocked_until: none" >&2; exit 8;; esac
         p="$(wt_path "$tid")"; br="idleflow/$id/$tid"
+        from="$(split_from "$tid")"
+        case "$from" in ""|none) from="";; *) split_ready "$tid" "$from" "$id" || exit 9;; esac
         "${G[@]}" rev-parse -q --verify "$base^{commit}" >/dev/null || { echo "base '$base' has no commits yet; commit first (run.sh snapshot)" >&2; exit 1; }
-        # a leftover from a crashed run must not make `add` fail
+        # a leftover from a crashed run must not make `add` fail, nor a base checkout of an earlier base stay
+        "${G[@]}" worktree remove --force "$(wt_path "_base-$tid")" 2>/dev/null || true
+        rm -f "$ACTIVE/tasks/_base-$tid/ready"
         "${G[@]}" worktree prune
         if [ -d "$p" ]; then
           "${G[@]}" worktree remove --force "$p" 2>/dev/null || true
@@ -621,19 +1008,22 @@ JSON
         fi
         mkdir -p "$(dirname "$p")"
         "${G[@]}" worktree add -B "$br" "$p" "$base" >/dev/null
+        "${G[@]}" config --local "idleflow.worktree.$("${G[@]}" -C "$p" rev-parse --show-toplevel).checkout" "$REPO"
         mkdir -p "$p/.idleflow-run" "$ACTIVE/tasks/$tid"
         echo "$tid" > "$p/.idleflow-run/task-id"
         native_path "$REPO" > "$p/.idleflow-run/repo"   # lets the guard hook find the ownership map from inside the worktree
         # the task's own base: groups merged earlier move the branch, so gate/review must diff from here, not from the run start
         idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.base_sha" "\"$("${G[@]}" rev-parse "$base")\""
         idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.worktree" "$(json_str "$(native_path "$p")")"
-        idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.port" "$(allocate_port "$tid")"
-        mkdir -p "$(task_tmp "$tid")"
+        port="$(allocate_port "$tid")" || exit 1
+        idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.port" "$port"
+        tmp="$(task_tmp "$tid")" || exit 1; mkdir -p "$tmp"
         # epoch seconds, so the retro's time log can subtract them without date parsing
         idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.t_start" "$(date +%s)"
         # the commit the first tasks branch from is the base a later gate is compared against
         gb="$(idleflow_rt get "$ACTIVE/run.json" gate_base 2>/dev/null || true)"
         [ -n "$gb" ] && [ "$gb" != null ] || idleflow_rt set "$ACTIVE/run.json" gate_base "\"$("${G[@]}" rev-parse "$base")\""
+        [ -z "$from" ] || bring_split "$tid" "$from" "$p" "$id"
         run_worktree_setup "$tid" "$p"
         native_path "$p"
         ;;
@@ -641,7 +1031,11 @@ JSON
         tid="${1:?task-id}"; check_task_id "$tid"; p="$(wt_path "$tid")"
         # the task's jobs go with its worktree
         for jd in "$ACTIVE/tasks/$tid/jobs"/*/; do [ -d "$jd" ] && stop_job "${jd%/}"; done
+        if [ -d "$p" ]; then
+          "${G[@]}" config --local --remove-section "idleflow.worktree.$("${G[@]}" -C "$p" rev-parse --show-toplevel)" 2>/dev/null || true
+        fi
         "${G[@]}" worktree remove --force "$p" 2>/dev/null || true
+        "${G[@]}" worktree remove --force "$(wt_path "_base-$tid")" 2>/dev/null || true
         "${G[@]}" worktree prune
         ;;
       list)
@@ -653,10 +1047,10 @@ JSON
   skip)
     key="${1:?worktree_setup|gate|gate_quick|preview}"; active_id >/dev/null
     case " $REPO_COMMANDS " in *" $key "*) ;; *) echo "skip: $key is not a repo command ($REPO_COMMANDS)" >&2; exit 1;; esac
-    list="$(idleflow_rt get "$ACTIVE/run.json" skipped 2>/dev/null || true)"
-    case "$list" in ""|null) list="[]";; esac
-    case "$list" in *"\"$key\""*) ;; "[]") list="[\"$key\"]";; *) list="${list%]},\"$key\"]";; esac
-    idleflow_rt set "$ACTIVE/run.json" skipped "$list"
+    skipped="$(idleflow_rt get "$ACTIVE/run.json" skipped 2>/dev/null || true)"
+    case "$skipped" in ""|null) skipped="[]";; esac
+    case "$skipped" in *"\"$key\""*) ;; "[]") skipped="[\"$key\"]";; *) skipped="${skipped%]},\"$key\"]";; esac
+    idleflow_rt set "$ACTIVE/run.json" skipped "$skipped"
     idleflow_rt set "$ACTIVE/run.json" "$key" '""'
     ;;
   own)
@@ -672,25 +1066,66 @@ JSON
     git -C "$p" diff -z --no-renames --name-only "$base" HEAD | idleflow_rt unowned "$ACTIVE/ownership.json" "$tid"
     ;;
   exec)
-    tid="${1:?task-id}"; check_task_id "$tid"; shift; [ "${1:-}" = -- ] && shift
-    [ "$#" -gt 0 ] || { echo "usage: run.sh exec <task-id> -- <command...>" >&2; exit 1; }
-    active_id >/dev/null
+    tid="${1:?task-id}"; check_task_id "$tid"; shift
+    limit=""; on_base=""
+    while :; do
+      case "${1:-}" in
+        --limit)
+          limit="${2:-}"; shift 2 || shift
+          [[ "$limit" =~ ^[1-9][0-9]{0,5}$ ]] || { echo "exec: --limit takes whole seconds, 1 or more" >&2; exit 1; };;
+        --base) on_base=1; shift;;
+        *) break;;
+      esac
+    done
+    [ "${1:-}" = -- ] && shift
+    [ "$#" -gt 0 ] || { echo "usage: run.sh exec <task-id> [--limit <seconds>] [--base] -- <command...>" >&2; exit 1; }
+    rid="$(active_id)"
     dir="$(wt_path "$tid")"; [ -d "$dir" ] || { echo "exec: no worktree for $tid (run.sh wt add $tid first)" >&2; exit 1; }
+    if [ -n "$on_base" ]; then dir="$(base_worktree "$tid")" || exit $?; fi
     jobs="$ACTIVE/tasks/$tid/jobs"; mkdir -p "$jobs"
     n=1; while ! mkdir "$jobs/$n" 2>/dev/null; do n=$((n + 1)); done
     jd="$jobs/$n"; printf -v q '%q ' "$@"; printf -v st '%q' "$jd/status"
+    # what ran and where, so a job cited as evidence can be checked: "base <sha>" or "task"
+    printf '%s\n' "$q" > "$jd/command"
+    if [ -n "$on_base" ]; then echo "base $(task_base "$tid")" > "$jd/checkout"; else echo task > "$jd/checkout"; fi
+    # the start is a whole second, so the deadline is one more: a job always gets its full limit
+    date +%s > "$jd/started"
+    if [ -n "$limit" ]; then echo "$limit" > "$jd/limit"; jdeadline=$(( $(cat "$jd/started") + limit + 1 )); echo "$jdeadline" > "$jd/deadline"; fi
     # the exit code is written to a temp name and moved, so a reader never sees half of it
-    printf -v pf '%q' "$jd/pid"
+    printf -v pf '%q' "$jd/pid"; printf -v fin '%q' "$jd/finished"
     in_task "$tid" "$dir" idleflow_rt detach "$dir" "$jd/log" "$jd/pid.runtime" \
-      "echo \$\$ > $pf.tmp && mv $pf.tmp $pf; $q; rc=\$?; echo \$rc > $st.tmp && mv $st.tmp $st" || { echo "exec: could not start the command" >&2; exit 1; }
+      "echo \$\$ > $pf.tmp && mv $pf.tmp $pf; $q; rc=\$?; date +%s > $fin; echo \$rc > $st.tmp && mv $st.tmp $st" || { echo "exec: could not start the command" >&2; exit 1; }
     # the number first, so an agent whose call is cut short still knows which job to wait for
     echo "[idleflow] job $n of $tid started" >&2
+    # The limit holds even when no one waits again: a watcher of its own waits up to the deadline,
+    # and the wait stops the job there as any wait would.
+    if [ -n "$limit" ]; then
+      # The watcher is told the run, the job's process group and its deadline, so it never needs the
+      # job's folder to learn them: a run moved aside (finish, or new after a crash) before the
+      # watcher starts would otherwise leave the job without its limit.
+      # (a pid that never appears is passed as -, so the deadline keeps its place, and the watcher
+      # reads the folder as before)
+      w=0; while [ ! -f "$jd/pid" ] && [ ! -f "$jd/status" ] && [ "$w" -lt 50 ]; do sleep 0.1; w=$((w + 1)); done
+      grp="$(job_pid "$jd")"
+      printf -v watch 'bash %q wait %q %q --watch %q %q %q' "$HERE/run.sh" "$tid" "$n" "$rid" "${grp:--}" "$jdeadline"
+      idleflow_rt detach "$REPO" /dev/null "$jd/watch.pid" "$watch" || echo "[idleflow] job $n of $tid: could not start the watcher of its limit; the next exec or wait of it enforces it" >&2
+    fi
     await_job "$tid" "$n"
     ;;
   wait|stop)
-    tid="${1:?task-id}"; check_task_id "$tid"; job="${2:?job number}"; active_id >/dev/null
+    tid="${1:?task-id}"; check_task_id "$tid"; job="${2:?job number}"
     [[ "$job" =~ ^[0-9]+$ ]] || { echo "$cmd: '$job' is not a job number" >&2; exit 1; }
-    if [ "$cmd" = wait ]; then await_job "$tid" "$job"; fi
+    # --watch <run id> <group> <deadline> is exec's own watcher of a limit: it waits up to the
+    # deadline, however long that is. Its run may be gone, or another may be active, when it starts:
+    # it then stops the group it was told about at the deadline, and never reads the folder of
+    # another run's job with the same number. Told all three, it needs no active run at all, so a
+    # run that moves away between its check and its wait cannot end it either.
+    if [ "$cmd" = wait ] && [ "${3:-}" = --watch ] && [[ "${5:-}" =~ ^[0-9]+$ ]] && [[ "${6:-}" =~ ^[0-9]+$ ]]; then
+      [ "$(idleflow_rt get "$ACTIVE/run.json" id 2>/dev/null || true)" = "${4:-}" ] || gone_job "$tid" "$job" "$5" "$6" watch
+      await_job "$tid" "$job" watch "$5" "$6"
+    fi
+    active_id >/dev/null
+    if [ "$cmd" = wait ]; then if [ "${3:-}" = --watch ]; then await_job "$tid" "$job" watch; else await_job "$tid" "$job"; fi; fi
     [ -f "$(job_dir "$tid" "$job")/pid" ] || { echo "no job $job for task $tid" >&2; exit 1; }
     stop_job "$(job_dir "$tid" "$job")" || exit 1
     echo "job $job of $tid: stopped"
@@ -706,6 +1141,180 @@ JSON
   inc)
     key="${1:?key}"; n="${2:-1}"; active_id >/dev/null
     idleflow_rt inc "$ACTIVE/run.json" "$key" "$n"
+    ;;
+  plan-field)
+    tid="${1:?task-id}"; check_task_id "$tid"; active_id >/dev/null
+    plan_field "$tid" "${2:?field name}"
+    ;;
+  plan-check)
+    # A task can only satisfy a criterion in files it may change, and the guard refuses the rest; so
+    # every file the plan names for a task must be in its globs, checked with the guard's matcher.
+    active_id >/dev/null
+    [ -f "$ACTIVE/plan.md" ] || { echo "plan-check: no plan.md in the active run" >&2; exit 1; }
+    tracked="$(mktemp)"; problems="$(mktemp)"
+    "${G[@]}" ls-files > "$tracked"
+    # One line per fact: <task>\town\t<glob> | <task>\tentry\t<path> | <task>\taccept\t<A-id>\t<text> |
+    # <task>\tcause\t<value> | <task>\tfrom\t<value>.
+    # Lists come as "- item" lines or inline ([a, b]); an acceptance item runs on over indented lines,
+    # and only its text before verify: names files.
+    facts="$(tr -d '\r' < "$ACTIVE/plan.md" | awk '
+      function clean(x) { gsub(/[`"'\'']/, "", x); sub(/^[[:space:]]+/, "", x); sub(/[[:space:]]+$/, "", x); return x }
+      function emit(k, x,   id, text) {
+        if (k == "owns") { sub(/[[:space:]]+#.*/, "", x); x = clean(x); if (x != "") print tid "\town\t" x }
+        else if (k == "entry_points") { x = clean(x); gsub(/\\/, "/", x); sub(/[:[:space:]].*/, "", x); if (x != "") print tid "\tentry\t" x }
+        else if (k == "acceptance") {
+          id = "(unnumbered)"; text = x
+          if (match(x, /^A[0-9]+:/)) { id = substr(x, 1, RLENGTH - 1); text = substr(x, RLENGTH + 1) }
+          sub(/(→|->)[[:space:]]*verify:.*/, "", text); print tid "\taccept\t" id "\t" text
+        }
+      }
+      function flush() { if (acc != "") emit("acceptance", acc); acc = "" }
+      /^(```|~~~)/ { flush(); fence = !fence; next }
+      fence { next }
+      /^## / { flush(); tid = ""; tasks = ($0 ~ /^## Tasks/); next }
+      /^### / { flush(); tid = ""; key = ""
+        if (match($0, /^### T[0-9]+:/)) tid = substr($0, 5, RLENGTH - 5)
+        else if (tasks) print "?\tbadhead\t" $0
+        next }
+      tid == "" { next }
+      /^[a-z_]+:/ {
+        flush(); key = $0; sub(/:.*/, "", key); rest = $0; sub(/^[a-z_]+:[[:space:]]*/, "", rest); sub(/[[:space:]]+#.*/, "", rest)
+        if (key == "cause") { gsub(/`/, "", rest); sub(/[[:space:]]+$/, "", rest); print tid "\tcause\t" rest }
+        # from: is read as wt add reads it: backticks dropped, its first word
+        if (key == "from") { gsub(/`/, "", rest); sub(/^[[:space:]]+/, "", rest); sub(/[[:space:]].*/, "", rest); print tid "\tfrom\t" rest }
+        if (rest ~ /^\[.*\]$/ && (key == "owns" || key == "entry_points")) {
+          rest = substr(rest, 2, length(rest) - 2); n = split(rest, items, ","); for (i = 1; i <= n; i++) emit(key, items[i])
+        }
+        next
+      }
+      /^[[:space:]]+- / { flush(); item = $0; sub(/^[[:space:]]+- /, "", item); if (key == "acceptance") acc = item; else emit(key, item); next }
+      /^[[:space:]]+[^[:space:]]/ { if (acc != "") { line = $0; sub(/^[[:space:]]+/, "", line); acc = acc " " line }; next }
+      { flush() }
+      END { flush() }')"
+    # a task heading the plan check cannot read is a task nothing checks, and the guard would refuse
+    printf '%s\n' "$facts" | awk -F'\t' '$2 == "badhead" { print "plan-check: \"" $3 "\" is not a task heading; write it ### T<n>: <title>" }' >> "$problems"
+    printf '%s\n' "$facts" | awk -F'\t' '$2 == "own" || $2 == "entry" || $2 == "accept"' | grep . >/dev/null || echo "plan-check: plan.md has no task with owns:, entry_points: or acceptance: under ## Tasks" >> "$problems"
+    facts="$(printf '%s\n' "$facts" | awk -F'\t' '$2 != "badhead"')"
+    shared="$(shared_files)"
+    # the guard folds case only on Windows, where file names do
+    fold() { if command -v cygpath >/dev/null 2>&1; then tr '[:upper:]' '[:lower:]'; else cat; fi; }
+    as_json() { awk 'NF' | while IFS= read -r g; do json_str "$g"; echo; done | paste -sd, -; }
+    for tid in $(printf '%s\n' "$facts" | cut -f1 | awk 'NF && !seen[$0]++'); do
+      owned="$(printf '%s\n' "$facts" | awk -F'\t' -v t="$tid" '$1 == t && $2 == "own" { print $3 }')"
+      globs="[$( { printf '%s\n' "$owned"; printf '%s\n' "$shared"; } | as_json)]"
+      # The files the task names: its entry points, and in its acceptance every word that is a tracked
+      # file or reads as a repo file path (a folder, then a name with an extension). A URL, a glob, an
+      # absolute or home path, a variable ($IDLEFLOW_TMP/x) or a host:port is not a repo file.
+      named="$(printf '%s\n' "$facts" | awk -F'\t' -v t="$tid" '
+        $1 == t && $2 == "entry" { print "entry point\t" $3 }
+        $1 == t && $2 == "accept" { n = split($4, w, /[[:space:]]+/); for (i = 1; i <= n; i++) {
+          x = w[i]; gsub(/^[`"'\''(\[<]+|[`"'\'')\]>.,;:]+$/, "", x); gsub(/\\/, "/", x); sub(/::.*/, "", x); sub(/^\.\//, "", x)
+          if (x == "" || x ~ /[*?]/ || x ~ /^[\/~$%]/) continue
+          if (index(x, ":") && (!index(x, "/") || index(x, ":") < index(x, "/"))) continue
+          print "acceptance " $3 "\t" x } }')"
+      # A bug's fix goes where the bad state is produced, so the task that changes that code must own it,
+      # and the reviewer can only hold a task to a cause written in one of the plan template's forms.
+      # awk reads all of facts itself: a reader that stops early must not leave the writer on a broken pipe
+      cause="$(printf '%s\n' "$facts" | awk -F'\t' -v t="$tid" '$1 == t && $2 == "cause" && !done { print $3; done = 1 }')"
+      case "$cause" in
+        ""|none) ;;
+        "source "?*:*)
+          # the file ends at the first colon, as an entry point's does: src/lib.rs:Side::choose_move, src/x.py:write — why
+          src="${cause#source }"; src="${src//\\//}"; src="${src#./}"
+          if [[ "$src" =~ ^([A-Za-z]:|/|~) ]]; then
+            echo "plan-check: $tid has cause: $cause; write the file relative to the repo root, as source <file>:<function>" >> "$problems"
+          else
+            named="$named"$'\n'"cause"$'\t'"${src%%:*}"
+          fi;;
+        "with T"*)
+          w="${cause#with }"
+          [[ "$w" =~ ^T[0-9]+$ ]] && [ "$w" != "$tid" ] && printf '%s\n' "$facts" | awk -F'\t' -v w="$w" '$1 == w { f = 1 } END { exit !f }' \
+            || echo "plan-check: $tid has cause: $cause; with names another task of this plan, as with T<n>" >> "$problems";;
+        "symptom — "?*|"symptom - "?*) ;;
+        *) echo "plan-check: $tid has cause: $cause; write none, source <file>:<function>, with T<n> or symptom — <why the source cannot be fixed>" >> "$problems";;
+      esac
+      while IFS=$'\t' read -r where path; do
+        [ -n "$path" ] || continue
+        case "$where" in
+          entry*|cause) ;;
+          *) grep -qxF -- "$path" "$tracked" || [[ "$path" == */* && "${path##*/}" == *[A-Za-z]*.*[A-Za-z]* ]] || continue
+             # a criterion may name a file git ignores (a build output) without owning it: no task changes it
+             "${G[@]}" check-ignore -q --no-index -- "$path" 2>/dev/null && ! grep -qxF -- "$path" "$tracked" && continue;;
+        esac
+        out="$(printf '%s\0' "$path" | idleflow_rt outside "$globs")" || { echo "plan-check: the glob matcher failed" >&2; rm -f "$tracked" "$problems"; exit 2; }
+        [ "$where" = cause ] && where="cause: source"
+        [ -z "$out" ] || echo "plan-check: $tid does not own $path, which its $where names; add it to $tid's owns: (or to shared_files when every task adds lines to it)" >> "$problems"
+      done <<< "$named"
+      # A file git ignores (.gitignore, .git/info/exclude) is in no worktree and in no merge, so a task
+      # cannot change it: its entry points and owns: are checked, a glob by its fixed folder. An
+      # acceptance criterion may still name one, such as a build output the task's commands write.
+      while IFS= read -r path; do
+        [ -n "$path" ] || continue
+        # a glob is checked by its fixed folder: one git ignores whole holds nothing a task can change
+        case "$path" in
+          *[*?]*)
+            probe="${path%%[*?]*}"; probe="${probe%/*}"
+            if [ "$probe" = "${path%%[*?]*}" ] || [ -z "$probe" ]; then continue; fi
+            probe="$probe/.idleflow-probe";;
+          *) probe="$path";;
+        esac
+        if ! grep -qxF -- "$path" "$tracked" && "${G[@]}" check-ignore -q --no-index -- "$probe" 2>/dev/null; then
+          echo "plan-check: $tid would change $path, which git ignores: no worktree has it and no merge carries a change to it; take it out of $tid and write the change under \"By hand after merge\"" >> "$problems"
+        fi
+      done < <({ printf '%s\n' "$owned"; printf '%s\n' "$facts" | awk -F'\t' -v t="$tid" '$1 == t && $2 == "entry" { print $3 }'; } | awk 'NF && !seen[$0]++')
+      # A protected file is owned when an owns: glob covers it. A folder is owned when a glob names
+      # something inside it, or has a wildcard before the folder's name ends (*, **/*.md, .claude/*).
+      owns_json="[$(printf '%s\n' "$owned" | as_json)]"
+      for p in prd.md "$(progress_rel)" "$(index_rel)" CLAUDE.md "$(lessons_rel)" .idleflow/ .claude/settings.json .claude/settings.local.json .claude/agents/ .claude/hooks/; do
+        hit=""
+        case "$p" in
+          */)
+            lp="$(printf '%s' "$p" | fold)"
+            while IFS= read -r g; do
+              [ -n "$g" ] || continue
+              g="$(printf '%s' "${g//\\//}" | fold)"; lit="${g%%[*?]*}"
+              case "$g" in "$lp"*|"${lp%/}") hit=1;; esac
+              if [ "$lit" != "$g" ]; then case "$lp" in "$lit"*) hit=1;; esac; fi
+            done <<< "$owned";;
+          *)
+            out="$(printf '%s\0' "$p" | idleflow_rt outside "$owns_json")" || { echo "plan-check: the glob matcher failed" >&2; rm -f "$tracked" "$problems"; exit 2; }
+            [ -n "$out" ] || hit=1;;
+        esac
+        [ -z "$hit" ] || echo "plan-check: $tid owns the protected $p; protected files belong to no task" >> "$problems"
+      done
+    done
+    # A split task's finished work reaches the run only through its sub-tasks (from: in their sections,
+    # brought over by wt add), so every file it changed must be owned by exactly one of them.
+    while IFS= read -r from; do
+      [ -n "$from" ] || continue
+      subs="$(printf '%s\n' "$facts" | awk -F'\t' -v f="$from" '$2 == "from" && $3 == f { printf "%s%s", (n++ ? ", " : ""), $1 }')"
+      status="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$from.status" 2>/dev/null || true)"
+      if ! [[ "$from" =~ ^T[0-9]+$ ]] || [ "$status" != split ]; then
+        echo "plan-check: $subs has from: $from; write the id of a task the diff gate split (status split), as from: T<n>, or from: none" >> "$problems"; continue
+      fi
+      fbase="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$from.base_sha" 2>/dev/null || true)"; fbr="idleflow/$(active_id)/$from"
+      if [ -z "$fbase" ] || [ "$fbase" = null ] || ! "${G[@]}" rev-parse -q --verify "$fbase^{commit}" >/dev/null \
+         || ! "${G[@]}" rev-parse -q --verify "refs/heads/$fbr^{commit}" >/dev/null; then
+        echo "plan-check: $subs has from: $from, but $from's branch $fbr or its base sha is gone, so there is no work to bring over; write from: none" >> "$problems"; continue
+      fi
+      # each changed file goes to exactly one sub-task: none loses its work, two bring the same lines twice
+      changed="$(mktemp)"; owners="$(mktemp)"; outside="$(mktemp)"
+      split_files "$from" "$(active_id)" | tr '\0' '\n' > "$changed"
+      for sub in $(printf '%s\n' "$facts" | awk -F'\t' -v f="$from" '$2 == "from" && $3 == f { print $1 }'); do
+        g="[$(printf '%s\n' "$facts" | awk -F'\t' -v t="$sub" '$1 == t && $2 == "own" { print $3 }' | as_json)]"
+        split_files "$from" "$(active_id)" | idleflow_rt outside "$g" > "$outside" || { echo "plan-check: the glob matcher failed" >&2; rm -f "$tracked" "$problems" "$changed" "$owners" "$outside"; exit 2; }
+        awk -v s="$sub" 'FILENAME == ARGV[1] { x[$0] = 1; next } $0 != "" && !($0 in x) { print $0 "\t" s }' "$outside" "$changed" >> "$owners"
+      done
+      none="$(awk -F'\t' 'FILENAME == ARGV[1] { o[$1] = 1; next } $0 != "" && !($0 in o)' "$owners" "$changed" | paste -sd' ' -)"
+      [ -z "$none" ] || echo "plan-check: $from changed $none, which none of its sub-tasks ($subs) owns; give each file to one sub-task's owns:, or that finished work is lost" >> "$problems"
+      awk -F'\t' -v f="$from" '{ n[$1]++; o[$1] = o[$1] (n[$1] > 1 ? " and " : "") $2 }
+        END { for (p in n) if (n[p] > 1) print "plan-check: " p ", which " f " changed, is owned by " o[p] "; give it to one of them, or both bring the same lines" }' "$owners" | LC_ALL=C sort >> "$problems"
+      rm -f "$changed" "$owners" "$outside"
+    done < <(printf '%s\n' "$facts" | awk -F'\t' '$2 == "from" && $3 != "" && $3 != "none" && !seen[$3]++ { print $3 }')
+    rm -f "$tracked"
+    if [ -s "$problems" ]; then awk '!seen[$0]++' "$problems"; rm -f "$problems"; exit 1; fi
+    rm -f "$problems"
+    echo "plan-check: every file each task names is in its owns: or shared_files, and no task owns a protected file"
     ;;
   extract)
     # What every agent working on one task reads of the plan: the sections every task is written
@@ -725,11 +1334,84 @@ JSON
     tid="${1:?task-id}"; check_task_id "$tid"; active_id >/dev/null
     copy_report "$tid"
     ;;
+  keep)
+    # A run file about to be replaced (the plan before a revision, a review before a re-review) keeps
+    # its version beside it, numbered in order, so every version stays readable and a revision can be
+    # undone exactly. --move frees the name for the new version (a review counts once its file exists).
+    move=""; [ "${1:-}" = "--move" ] && { move=1; shift; }
+    active_id >/dev/null
+    [ -n "${1:-}" ] || { echo "keep: name a run file, such as plan.md or review/T1-correct.md" >&2; exit 1; }
+    rel="$(repo_relative_path "$1")" || { echo "keep: '$1' is not a path inside the run" >&2; exit 1; }
+    src="$ACTIVE/$rel"
+    [ -f "$src" ] || { echo "keep: no $rel in the active run" >&2; exit 1; }
+    name="${src##*/}"
+    if [[ "$name" == ?*.* ]]; then stem="${src%.*}"; ext=".${src##*.}"; else stem="$src"; ext=""; fi
+    # one past the highest kept number, so the highest is always the newest even after a gap
+    n=1
+    for kept in "$stem".*"$ext"; do
+      k="${kept#"$stem".}"; k="${k%"$ext"}"
+      case "$k" in ''|*[!0-9]*) continue;; esac
+      [ "$((10#$k))" -ge "$n" ] && n=$((10#$k + 1))
+    done
+    if [ -n "$move" ]; then mv "$src" "$stem.$n$ext"; else cp -p "$src" "$stem.$n$ext"; fi
+    native_path "$stem.$n$ext"
+    ;;
+  reword)
+    # Commit messages a reviewer flagged are replaced without touching a file: from the oldest flagged
+    # commit on, every commit of the task is re-created on its own tree with its own author and message
+    # (the new one where flagged), so the code is exactly what was reviewed, any of the task's commits
+    # can be reworded, and all of them in one pass, so no flagged sha goes stale before its turn.
+    tid="${1:?task-id}"; check_task_id "$tid"; shift; active_id >/dev/null
+    if [ "$#" -lt 2 ] || [ $(( $# % 2 )) -ne 0 ]; then
+      echo "usage: run.sh reword <task-id> <sha> <message file> [<sha> <message file>...]" >&2; exit 1
+    fi
+    dir="$(wt_path "$tid")"; [ -d "$dir" ] || { echo "reword: no worktree for $tid" >&2; exit 1; }
+    base="$(task_base "$tid")" || exit 1
+    W=(git -C "$dir")
+    head="$("${W[@]}" rev-parse HEAD)"
+    [ -z "$("${W[@]}" rev-list --merges "$base..$head")" ] || { echo "reword: $tid's commits include a merge; they cannot be re-created as they are" >&2; exit 1; }
+    range=" $("${W[@]}" rev-list "$base..$head" | tr '\n' ' ')"
+    flagged=" "; messages=()
+    while [ "$#" -gt 0 ]; do
+      full="$("${W[@]}" rev-parse -q --verify "$1^{commit}")" || { echo "reword: $1 is not a commit" >&2; exit 1; }
+      case "$range" in *" $full "*) ;; *) echo "reword: $1 is not one of $tid's commits ($base..HEAD)" >&2; exit 1;; esac
+      case "$flagged" in *" $full "*) echo "reword: $1 is named twice" >&2; exit 1;; esac
+      if [ ! -f "$2" ] || ! grep -q '[^[:space:]]' "$2"; then echo "reword: $2 is missing or holds no message" >&2; exit 1; fi
+      flagged="$flagged$full "; messages+=("$full=$2"); shift 2
+    done
+    tmp="$(task_tmp "$tid")" || exit 1; tmp="$tmp/reword.msg"; mkdir -p "${tmp%/*}"
+    new="$base"; started=""
+    for c in $("${W[@]}" rev-list --reverse "$base..$head"); do
+      case "$flagged" in *" $c "*) started=1;; esac
+      if [ -z "$started" ]; then new="$c"; continue; fi
+      "${W[@]}" cat-file commit "$c" | sed '1,/^$/d' > "$tmp"
+      for f in "${messages[@]}"; do [ "${f%%=*}" = "$c" ] && cp "${f#*=}" "$tmp"; done
+      new="$(GIT_AUTHOR_NAME="$("${W[@]}" log -1 --format=%an "$c")" GIT_AUTHOR_EMAIL="$("${W[@]}" log -1 --format=%ae "$c")" \
+        GIT_AUTHOR_DATE="$("${W[@]}" log -1 --format=%ad --date=raw "$c")" \
+        "${W[@]}" ${IDENTITY[@]+"${IDENTITY[@]}"} commit-tree "$c^{tree}" -p "$new" -F "$tmp")" || { echo "reword: could not re-create $c; nothing changed" >&2; exit 1; }
+    done
+    rm -f "$tmp"
+    [ "$("${W[@]}" rev-parse "$new^{tree}")" = "$("${W[@]}" rev-parse "$head^{tree}")" ] || { echo "reword: the re-created tree differs; nothing changed" >&2; exit 1; }
+    "${W[@]}" update-ref -m "idleflow reword $tid" HEAD "$new" "$head"
+    echo "reworded ${#messages[@]} commit(s) of $tid; it is now at $("${W[@]}" rev-parse --short "$new")"
+    ;;
+  findings)
+    # The reviews as they stand, not the versions kept aside (<name>.<n>.md): a finding fixed in a
+    # later round is gone from the current file.
+    [ "$#" -gt 0 ] || { echo "usage: run.sh findings <task-id>..." >&2; exit 1; }
+    active_id >/dev/null
+    for tid in "$@"; do
+      [ "$tid" = merged ] || check_task_id "$tid"
+      for kind in correct conform design; do
+        name="$tid-$kind.md"; f="$ACTIVE/review/$name"
+        [ -f "$f" ] || continue
+        tr -d '\r' < "$f" | R="review/$name" T="$tid" awk '/^### [FD][0-9]+\. / { sub(/^### /, ""); print ENVIRON["T"] ": " $0 " (" ENVIRON["R"] ")" }'
+      done
+    done
+    ;;
   gate)
     tid="${1:?task-id}"; check_task_id "$tid"; active_id >/dev/null
-    base="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$tid.base_sha" 2>/dev/null || true)"
-    if [ -z "$base" ] || [ "$base" = "null" ]; then base="$(idleflow_rt get "$ACTIVE/run.json" base_sha)"; fi
-    [ -n "$base" ] && [ "$base" != "null" ] || { echo "gate $tid: no base sha recorded (was the worktree created with run.sh wt add?)" >&2; exit 1; }
+    base="$(task_base "$tid")" || exit 1
     out="$(bash "$HERE/diff-gate.sh" "$(wt_path "$tid")" "$base" ${2:+"$2"})" || { echo "gate $tid failed: $out" >&2; exit 1; }
     mkdir -p "$ACTIVE/tasks/$tid"
     echo "$out" > "$ACTIVE/tasks/$tid/gate.json"
@@ -809,8 +1491,117 @@ Task: $tid")
     # setup is over: the run now uses the conventions it just committed
     if [ -f "$ACTIVE/run.json" ] && ! run_has_tasks; then conventions_to_run; fi
     ;;
+  resume)
+    # A run that stopped before it finished done (needs-human, a time limit, a run a later `new` parked)
+    # goes on from its locked plan. What it merged is on the branch and stays merged; every other task
+    # starts afresh from the branch as it is now. Everything that can refuse is checked before anything
+    # moves, and a resume that stopped half way is run again the same way.
+    rid="${1:-}"
+    case "$rid" in ""|active|*/*|.*) echo "resume: '$rid' is not a run id" >&2; exit 1;; esac
+    if [ -f "$ACTIVE/run.json" ] && [ "$(idleflow_rt get "$ACTIVE/run.json" id 2>/dev/null)" = "$rid" ]; then src="$ACTIVE"; else src="$RUNS/$rid"; fi
+    if [ ! -f "$src/run.json" ] || [ ! -f "$src/plan.md" ]; then echo "resume: no stopped run $rid with a plan under .idleflow/runs/" >&2; exit 1; fi
+    st="$(idleflow_rt get "$src/run.json" status 2>/dev/null || true)"
+    [ "$st" != "done" ] || { echo "resume: run $rid finished done; start a new run" >&2; exit 1; }
+    # it goes on where it merged, with what it merged still there
+    rbase="$(idleflow_rt get "$src/run.json" base 2>/dev/null || true)"
+    cur="$("${G[@]}" symbolic-ref --short -q HEAD || true)"
+    [ "$cur" = "$rbase" ] || { echo "resume: run $rid merged into $rbase, but the checkout is on ${cur:-a detached HEAD}; switch to $rbase first" >&2; exit 1; }
+    tids="$(idleflow_rt entries "$src/run.json" tasks | cut -f1)"
+    for tid in $tids; do
+      br="idleflow/$rid/$tid"
+      t_merge="$(idleflow_rt get "$src/run.json" "tasks.$tid.t_merge" 2>/dev/null || true)"
+      case "$t_merge" in ""|null) ;; *)
+        if "${G[@]}" show-ref -q --verify "refs/heads/$br"; then
+          held=""; "${G[@]}" merge-base --is-ancestor "$br" HEAD && held=1
+        else
+          # the branch is gone, so the merge commit is looked for by the trailers `merge` writes
+          held="$("${G[@]}" log -1 --format=%H --all-match --grep="^Run: $rid\$" --grep="^Task: $tid\$" HEAD 2>/dev/null || true)"
+        fi
+        [ -n "$held" ] || { echo "resume: $tid merged in run $rid, but $rbase no longer holds that merge" >&2; exit 1; }
+        continue;; esac
+      # a time-limit stop leaves worktrees: work only they hold is never removed. That is a change to a
+      # tracked file, or a new file inside the task's globs; files worktree_setup made elsewhere are not
+      owned="$(idleflow_rt get "$src/ownership.json" "tasks.$tid.owns" 2>/dev/null || true)"
+      case "$owned" in "["*) ;; *) owned='["*"]';; esac
+      for p in "$(wt_path "$tid")" "$(wt_path "_base-$tid")"; do
+        [ -d "$p" ] || continue
+        # awk reads all its input, so a large leftover never ends the writer on a broken pipe (exit 141)
+        dirty="$(git -C "$p" status --porcelain --untracked-files=no 2>/dev/null | awk 'NR <= 3')"
+        if [ -z "$dirty" ]; then
+          new="$(git -C "$p" ls-files -o --exclude-standard -z 2>/dev/null | tr '\0' '\n' | grep -v '^\.idleflow-run/' || true)"
+          outside="$(printf '%s\n' "$new" | awk 'NF' | tr '\n' '\0' | idleflow_rt outside "$owned" 2>/dev/null || true)"
+          # the new files the globs cover: all of them less those `outside` printed
+          dirty="$(awk 'NR == FNR { if (NF) skip[$0] = 1; next } NF && !($0 in skip) && ++n <= 3' <(printf '%s\n' "$outside") <(printf '%s\n' "$new"))"
+        fi
+        if [ -n "$dirty" ]; then
+          echo "resume: $(native_path "$p") holds work of $tid that is not committed ($(printf '%s' "$dirty" | tr '\n' ' ')); commit or discard it first" >&2; exit 1
+        fi
+      done
+    done
+    # a run that is the active one may still be built by another session: its jobs and previews hold
+    # those worktrees, so a resume in place waits until none of them runs
+    if [ "$src" = "$ACTIVE" ]; then
+      for jd in "$ACTIVE"/tasks/*/jobs/*/; do
+        [ -d "$jd" ] || continue
+        jd="${jd%/}"; jn="${jd##*/}"; jt="${jd%/jobs/*}"; jt="${jt##*/}"
+        job_ended "$jd" || { echo "resume: run $rid may still be built by another session: job $jn of $jt still runs. Wait for it, or end it with: bash \"$0\" stop $jt $jn" >&2; exit 1; }
+      done
+      for pf in "$ACTIVE"/tasks/*/preview.pid; do
+        [ -f "$pf" ] || continue
+        pt="${pf%/preview.pid}"; pt="${pt##*/}"
+        if kill -0 -- "-$(cat "$pf")" 2>/dev/null || kill -0 "$(cat "$pf")" 2>/dev/null; then
+          echo "resume: run $rid may still be built by another session: the preview of $pt still serves. End it with: bash \"$0\" preview $pt stop" >&2; exit 1
+        fi
+      done
+    fi
+    if [ "$src" != "$ACTIVE" ]; then park_active; mv "$src" "$ACTIVE"; fi
+    # this idleflow carries the run on, so it is the version the run records
+    idleflow_rt set "$ACTIVE/run.json" plugin_version "$(json_str "$(plugin_version)")"
+    merged=""; again=""; split=""
+    for tid in $tids; do
+      t_merge="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$tid.t_merge" 2>/dev/null || true)"
+      case "$t_merge" in ""|null) ;; *) merged="$merged $tid"; continue;; esac
+      if [ "$(idleflow_rt get "$ACTIVE/run.json" "tasks.$tid.status" 2>/dev/null || true)" = split ]; then split="$split $tid"; continue; fi
+      for p in "$(wt_path "$tid")" "$(wt_path "_base-$tid")"; do
+        [ -d "$p" ] && { "${G[@]}" worktree remove --force "$p" 2>/dev/null || true; }
+      done
+      "${G[@]}" worktree prune
+      # commits the branch holds beyond the run's branch keep a name of their own, never one in use;
+      # a branch with none of its own is simply reset by the next `wt add`
+      br="idleflow/$rid/$tid"
+      if "${G[@]}" show-ref -q --verify "refs/heads/$br" && [ "$("${G[@]}" rev-list --count "HEAD..$br")" -gt 0 ]; then
+        kept="$br-before-resume"; n=1
+        while "${G[@]}" show-ref -q --verify "refs/heads/$kept"; do n=$((n + 1)); kept="$br-before-resume-$n"; done
+        "${G[@]}" branch -q -m "$br" "$kept"
+      fi
+      # its reviews, report and gate result were of the build that is gone
+      for rel in "review/$tid-correct.md" "review/$tid-conform.md" "review/$tid-design.md" "tasks/$tid/report.md" "tasks/$tid/gate.json"; do
+        [ ! -f "$ACTIVE/$rel" ] || bash "$0" keep --move "$rel" >/dev/null
+      done
+      idleflow_rt set "$ACTIVE/run.json" "tasks.$tid" '{}'
+      again="$again $tid"
+    done
+    # the stopped run's port claims go; the tasks built again take new ones
+    release_ports
+    # the repo commands and shared files as committed now, which the approvals check
+    conventions_to_run
+    # the base has moved, so the gate's baseline and the base's known failures are taken again
+    idleflow_rt set "$ACTIVE/run.json" gate_base null
+    idleflow_rt set "$ACTIVE/run.json" baseline_red null
+    [ ! -f "$ACTIVE/known-failures.md" ] || bash "$0" keep --move known-failures.md >/dev/null
+    [ "$st" = building ] || idleflow_rt set "$ACTIVE/run.json" resumed_from "$(json_str "${st:-unknown}")"
+    idleflow_rt set "$ACTIVE/run.json" finished null
+    idleflow_rt set "$ACTIVE/run.json" status '"building"'
+    echo "resumed $rid: merged:${merged:- none}; to build again:${again:- none}; split:${split:- none} (tasks the run never started are built as planned)"
+    ;;
   finish)
     status="${1:-done}"; id="$(active_id)"
+    # the tasks' temp folders and port claims go with the run, and so does a preview of main still
+    # serving, since its port is given back here
+    mp="$ACTIVE/tasks/main/preview.pid"
+    if [ -f "$mp" ]; then pid="$(cat "$mp")"; kill -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true; rm -f "$mp"; fi
+    release_ports
+    if rt="$(run_tmp)"; then rm -rf "$rt"; fi
     idleflow_rt finish "$ACTIVE/run.json" "$status" "$RUNS/log.jsonl"
     rm -rf "${RUNS:?}/$id"
     mv "$ACTIVE" "$RUNS/$id"
@@ -823,6 +1614,14 @@ Task: $tid")
     echo "${n:-0}"
     ;;
   path)
+    if [ "${1:-}" = "--relative" ]; then
+      # The repo-relative form, for text that is committed and read in other clones.
+      case "${2:-}" in
+        progress) progress_rel;; index) index_rel;; sessions) sessions_rel;; time-log) time_log_rel;;
+        *) echo "path --relative: ${2:-no name given}: use progress, index, sessions or time-log" >&2; exit 1;;
+      esac
+      exit 0
+    fi
     case "${1:?conventions|lessons|progress|index|sessions|time-log|runs}" in
       conventions) native_path "$CONVENTIONS";;
       lessons) native_path "$(lessons_path)";;
@@ -977,8 +1776,8 @@ Task: $tid")
       dir="$REPO/$(sessions_rel)"
       [ -d "$dir" ] || dir="$REPO/docs/sessions"
       people="$({ "${G[@]}" log --format='%ae' 2>/dev/null || true; } | sort -u | grep -c . || true)"
-      if ls "$dir"/*/ 2>/dev/null | grep -qE '^s_[0-9]{4}\.md$'; then say session_names per-person "notes in ${dir#"$REPO"/} are already in one folder per person"
-      elif ls "$dir" 2>/dev/null | grep -qE '^s_[0-9]{4}\.md$'; then
+      if ls "$dir"/*/ 2>/dev/null | grep -E '^s_[0-9]{4}\.md$' >/dev/null; then say session_names per-person "notes in ${dir#"$REPO"/} are already in one folder per person"
+      elif ls "$dir" 2>/dev/null | grep -E '^s_[0-9]{4}\.md$' >/dev/null; then
         if [ "${people:-1}" -gt 1 ]; then say session_names per-person "notes are numbered s_NNNN.md and $people people commit here; a folder per person keeps the numbering without collisions"
         else say session_names numbered "$(ls "$dir" | grep -cE '^s_[0-9]{4}\.md$') notes in ${dir#"$REPO"/} are numbered s_NNNN.md"; fi
       fi
@@ -1025,7 +1824,14 @@ Task: $tid")
         elif [ -f "$REPO/requirements.txt" ]; then env_cmd="$VENV_CMD -r requirements.txt"
         fi
       fi
-      [ -n "$env_cmd" ] && say worktree_setup "$env_cmd" "the main checkout has .venv/ and a task worktree starts without one; borrowing the main one runs the main checkout's code in subprocesses"
+      # node_modules the same way: linking the main checkout's is refused, so the worktree installs
+      # its own from the lockfile
+      node_cmd=""; [ ! -d "$REPO/node_modules" ] || { IFS=$'\t' read -r node_cmd _ < <(node_install "$REPO") || true; }
+      why=""
+      [ -z "$env_cmd" ] || why="the main checkout has .venv/ and a task worktree starts without one; borrowing the main one runs the main checkout's code in subprocesses"
+      [ -z "$node_cmd" ] || why="${why:+$why; }the main checkout has node_modules/ and a task worktree starts without one; linking the main one lets an install there rewrite it"
+      env_cmd="${env_cmd:+$env_cmd${node_cmd:+ && }}$node_cmd"
+      [ -n "$env_cmd" ] && say worktree_setup "$env_cmd" "$why"
     fi
     if unset_key preview; then
       for t in dev start preview; do
@@ -1042,11 +1848,25 @@ Task: $tid")
       for t in check ci test; do
         line="$(grep -E "\"$t\"[[:space:]]*:" "$REPO/package.json" 2>/dev/null | head -1 || true)"
         # npm init's placeholder test script fails on purpose and checks nothing
-        [ -n "$line" ] && ! echo "$line" | grep -q "no test specified" && cands+=("npm run $t")
+        [ -n "$line" ] && ! echo "$line" | grep "no test specified" >/dev/null && cands+=("npm run $t")
       done
       [ "${#cands[@]}" -gt 0 ] && say gate "${cands[0]}" "candidates found: $(printf '%s, ' "${cands[@]}" | sed 's/, $//')"
     fi
     exit 0
+    ;;
+  services)
+    # The services the repo's tests need (a database, a cache, a queue), checked before agents run tests,
+    # so a service that is down is a question for the human and never a test failure an agent reads.
+    active_id >/dev/null
+    cmd="$(idleflow_rt get "$ACTIVE/run.json" services 2>/dev/null || true)"
+    case "$cmd" in ""|null) echo "repo services: none"; exit 0;; esac
+    command_approved services "$cmd" || { echo "services is not approved on this clone; nothing ran. The command is: $cmd" >&2; exit 7; }
+    log="$ACTIVE/services.log"; rc=0
+    ( cd "$REPO" && without_agent_markers && MAIN="$REPO" bash -c "$cmd" ) > "$log" 2>&1 || rc=$?
+    if [ "$rc" = 0 ]; then echo "repo services: up"; exit 0; fi
+    tail -n 20 "$log"
+    echo "repo services: the check failed (exit $rc), so a test that needs them would fail for that reason and not the code's. Start them, then check again: bash \"$0\" services" >&2
+    exit 1
     ;;
   repo-gate)
     # The repo's own check, the definition of done: on the base the tasks branch from (so earlier
@@ -1084,7 +1904,7 @@ Task: $tid")
     started="$(date +%s)"
     set +e
     case "$target" in
-      base|main) (cd "$dir" && without_agent_markers && MAIN="$REPO" bash -c "$cmd") > "$log" 2>&1;;
+      base|main) (cd "$dir" && without_agent_markers && clear_bytecode . && MAIN="$REPO" bash -c "$cmd") > "$log" 2>&1;;
       *) in_task "$target" "$dir" bash -c "$cmd" > "$log" 2>&1;;
     esac
     rc=$?
@@ -1105,27 +1925,44 @@ Task: $tid")
   preview)
     # Serves the app from a task worktree for the design reviewer's screenshots, under the same
     # approval rule as the gate; the address must be on this machine.
-    tid="${1:?task-id}"; check_task_id "$tid"; act="${2:?start|stop}"; active_id >/dev/null
+    # `preview_in: main` is for a repo whose app runs only from the main checkout (a dev stack whose
+    # containers mount it): a task cannot be previewed before its merge, so `main` is served instead,
+    # after the merge, and a task preview is refused rather than showing the main checkout as the task.
+    tid="${1:?task-id or main}"; act="${2:?start|stop}"; active_id >/dev/null
+    [ "$tid" = main ] || check_task_id "$tid"
+    where="$(conventions_value preview_in)"; case "$where" in ""|unset) where=worktree;; esac
+    if [ "$act" = start ]; then
+      if [ "$where" = main ] && [ "$tid" != main ]; then echo "preview: this repo serves its app only from the main checkout (preview_in: main); preview main after the merge" >&2; exit 1; fi
+      if [ "$where" != main ] && [ "$tid" = main ]; then echo "preview main: this repo previews each task's worktree (preview_in: $where)" >&2; exit 1; fi
+    fi
     pidf="$ACTIVE/tasks/$tid/preview.pid"
     if [ "$act" = stop ]; then
       # the server runs in its own session, so its whole process group goes (dev servers start children)
       if [ -f "$pidf" ]; then pid="$(cat "$pidf")"; kill -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true; fi
-      rm -f "$pidf"; echo "preview $tid: stopped"; exit 0
+      rm -f "$pidf" "$ACTIVE/tasks/$tid/preview.url"; [ "$tid" != main ] || release_ports main; echo "preview $tid: stopped"; exit 0
+    fi
+    # a start while the last one still serves (its group: a dev server's leader may have exited while
+    # a child serves) reports that server again, so it never claims a second port beside it
+    if [ -f "$pidf" ] && { kill -0 -- "-$(cat "$pidf")" 2>/dev/null || kill -0 "$(cat "$pidf")" 2>/dev/null; }; then
+      echo "preview $tid: serving at $(cat "$ACTIVE/tasks/$tid/preview.url" 2>/dev/null || echo "an earlier address") (already running; log: $(native_path "$ACTIVE/tasks/$tid/preview.log"); stop with: run.sh preview $tid stop)"; exit 0
     fi
     cmd="$(idleflow_rt get "$ACTIVE/run.json" preview 2>/dev/null || true)"
     case "$cmd" in ""|null) echo "preview: none"; exit 0;; esac
     command_approved preview "$cmd" || { echo "preview is not approved on this clone; nothing ran. The command is: $cmd" >&2; exit 7; }
-    url="$(conventions_value preview_url)"; port="$(task_port "$tid")"
+    url="$(conventions_value preview_url)"
+    # main is no task, so its port is claimed under the owner name `main`, live until stop or finish
+    if [ "$tid" = main ]; then port="$(allocate_port main)" || exit 1; else port="$(task_port "$tid")"; fi
     url="${url//\$\{IDLEFLOW_PORT\}/$port}"
     [[ "$url" =~ ^https?://(localhost|127\.0\.0\.1|\[::1\])(:[0-9]+)?(/[^[:space:]]*)?$ ]] \
       || { echo "preview_url must be a localhost address (got '$url')" >&2; exit 1; }
-    dir="$(wt_path "$tid")"; [ -d "$dir" ] || { echo "preview: no worktree for $tid" >&2; exit 1; }
+    if [ "$tid" = main ]; then dir="$REPO"; else dir="$(wt_path "$tid")"; [ -d "$dir" ] || { echo "preview: no worktree for $tid" >&2; exit 1; }; fi
     mkdir -p "$ACTIVE/tasks/$tid"
     echo "preview ($tid): $cmd" >&2
-    mkdir -p "$(task_tmp "$tid")"
-    ( without_agent_markers
-      MAIN="$REPO" IDLEFLOW_TASK="$tid" IDLEFLOW_PORT="$port" IDLEFLOW_TMP="$(task_tmp "$tid")" TMPDIR="$(task_tmp "$tid")" \
+    ptmp="$(task_tmp "$tid")" || exit 1; mkdir -p "$ptmp"
+    ( without_agent_markers; clear_bytecode "$dir"
+      MAIN="$REPO" IDLEFLOW_TASK="$tid" IDLEFLOW_PORT="$port" IDLEFLOW_TMP="$ptmp" TMPDIR="$ptmp" \
         idleflow_rt detach "$dir" "$ACTIVE/tasks/$tid/preview.log" "$pidf" "$cmd" )
+    printf '%s\n' "$url" > "$ACTIVE/tasks/$tid/preview.url"
     echo "preview $tid: serving at $url (log: $(native_path "$ACTIVE/tasks/$tid/preview.log"); stop with: run.sh preview $tid stop)"
     ;;
   commands)
@@ -1390,7 +2227,7 @@ Task: $tid")
     fi
     ;;
   conf)
-    for v in DIFF_LIMIT DIFF_SLACK MAX_IMPLEMENTERS SIZE_M_IMPLEMENTERS DEBATE_ROUNDS MAX_RETRIES SIZE_S_MAX SIZE_M_MAX SIZE_S_OVERRUN LARGE_REPO_LOC STEP_DEBATE STEP_STACK STEP_LIBRARIES STEP_TOOLING STEP_DOC_KEEPER STEP_MUTATION STEP_DESIGN SLOW_GATE_SECONDS PORT_BASE; do
+    for v in DIFF_LIMIT DIFF_SLACK MAX_IMPLEMENTERS SIZE_M_IMPLEMENTERS DEBATE_ROUNDS MAX_RETRIES SIZE_S_MAX SIZE_M_MAX SIZE_S_OVERRUN LARGE_REPO_LOC STEP_DEBATE STEP_STACK STEP_LIBRARIES STEP_TOOLING STEP_DOC_KEEPER STEP_MUTATION STEP_DESIGN STEP_DESIGN_OPTIONS SLOW_GATE_SECONDS PORT_BASE; do
       echo "$v=${!v:-}"
     done
     echo "RUNTIME=$(idleflow_rt_name)"
@@ -1398,5 +2235,6 @@ Task: $tid")
     echo "REPORT_CUSTOMIZATIONS=$(report_preference)"
     ;;
   *)
-    sed -n '2,44p' "$0"; exit 1;;
+    # the usage is the header comment down to the end of its command list
+    awk 'NR == 1 { next } /^#   run\.sh / { listed = 1 } listed && /^#$/ { exit } { print }' "$0"; exit 1;;
 esac
