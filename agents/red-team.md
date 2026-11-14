@@ -17,6 +17,7 @@ Inputs: `issue.md` (what was asked, and its acceptance), `plan.md`, `context.md`
 4. **Tests that can't fail.** Acceptance criteria that would pass against the current code, or against a stub. If the test wouldn't catch the bug the issue describes, say so.
 5. **Ownership map holes.** A file two tasks both need; a shared type that changes in group 2 but is used in group 1.
 6. **Scope creep in disguise.** A "small refactor while we're there" that doubles the diff.
+7. **Cause or symptom, for a bug.** When context.md §2 names a `source:`: does a task with `cause: source` change it, or does the plan only make the code that trips over the bad state more forgiving? Does each `symptom` reason hold, or could the source be fixed after all? Which `sibling:` cases, other paths to the same bad state, stay broken after it?
 
 ## Format for each finding
 
