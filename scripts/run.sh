@@ -1297,12 +1297,13 @@ Task: $tid")
       case "$owned" in "["*) ;; *) owned='["*"]';; esac
       for p in "$(wt_path "$tid")" "$(wt_path "_base-$tid")"; do
         [ -d "$p" ] || continue
-        dirty="$(git -C "$p" status --porcelain --untracked-files=no 2>/dev/null | head -n 3)"
+        # awk reads all its input, so a large leftover never ends the writer on a broken pipe (exit 141)
+        dirty="$(git -C "$p" status --porcelain --untracked-files=no 2>/dev/null | awk 'NR <= 3')"
         if [ -z "$dirty" ]; then
           new="$(git -C "$p" ls-files -o --exclude-standard -z 2>/dev/null | tr '\0' '\n' | grep -v '^\.idleflow-run/' || true)"
           outside="$(printf '%s\n' "$new" | awk 'NF' | tr '\n' '\0' | idleflow_rt outside "$owned" 2>/dev/null || true)"
           # the new files the globs cover: all of them less those `outside` printed
-          dirty="$(awk 'NR == FNR { if (NF) skip[$0] = 1; next } NF && !($0 in skip)' <(printf '%s\n' "$outside") <(printf '%s\n' "$new") | head -n 3)"
+          dirty="$(awk 'NR == FNR { if (NF) skip[$0] = 1; next } NF && !($0 in skip) && ++n <= 3' <(printf '%s\n' "$outside") <(printf '%s\n' "$new"))"
         fi
         if [ -n "$dirty" ]; then
           echo "resume: $(native_path "$p") holds work of $tid that is not committed ($(printf '%s' "$dirty" | tr '\n' ' ')); commit or discard it first" >&2; exit 1
