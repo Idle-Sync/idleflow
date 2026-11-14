@@ -493,7 +493,7 @@ release_ports() {
   mine="$(printf '%s\t%s' "$REPO" "$(active_id)")"
   for f in "$reg"/*; do
     case "$f" in *.lock|*.new.*) continue;; esac
-    [ -f "$f" ] && [ "$(cut -f1,2 "$f")" = "$mine" ] || continue
+    if [ ! -f "$f" ] || [ "$(cut -f1,2 "$f")" != "$mine" ]; then continue; fi
     mkdir "$f.lock" 2>/dev/null || continue
     if [ "$(cut -f1,2 "$f")" = "$mine" ]; then rm -f "$f"; fi
     rmdir "$f.lock" 2>/dev/null || true
