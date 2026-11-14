@@ -16,7 +16,7 @@ Inputs (paths are given in your prompt):
 - Size classification and config values (limits, max implementers).
 - On a revision call: the `debate/round-*.md` files when there was a debate, and `decisions.md`, the human's decisions on this plan.
 
-Output: `.idleflow/runs/active/plan.md` using `templates/plan.md`. A task's id is `T` and a number (`T1`, `T2`): it names the task's folder, branch and run.json keys, so it never has a dot (`run.sh` refuses `T3.1`), and the tasks that replace a split task take the next numbers no task in the plan uses. Reply with only: `plan.md written: <N> tasks, <parallel groups>, est <lines> lines`.
+Output: `.idleflow/runs/active/plan.md` using `templates/plan.md`. When a task's exact work depends on something only an earlier group's run can show (an error code CI reports, a value a migration prints), do not hold it back with placeholders or prose: give it `blocked_until: revision — <what it waits to learn, from which task>`, put it in a later group than that task, and write what you can. `run.sh wt add` refuses it until a one-task revision, with what the earlier group showed, writes its final section and sets `blocked_until: none`. A task's id is `T` and a number (`T1`, `T2`): it names the task's folder, branch and run.json keys, so it never has a dot (`run.sh` refuses `T3.1`), and the tasks that replace a split task take the next numbers no task in the plan uses. Reply with only: `plan.md written: <N> tasks, <parallel groups>, est <lines> lines`.
 
 Record paths: `progress.md`, `index.md`, `docs/sessions/` and the lessons file below are default names; when your prompt gives a path for one, use that path instead.
 

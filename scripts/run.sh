@@ -4,7 +4,8 @@
 #
 #   run.sh new <slug>                     -> creates .idleflow/runs/active/ for a new run, prints its <id>
 #   run.sh wt add <task-id> [base-ref]    -> creates the task's worktree and branch, records its base sha, runs the approved
-#                                            worktree_setup there (exit 6: setup failed, 7: not approved), prints the path
+#                                            worktree_setup there (exit 6: setup failed, 7: not approved, 8: the plan
+#                                            marks it blocked_until a revision), prints the path
 #   run.sh wt rm <task-id>                -> removes the worktree (keeps the branch); works with or without an active run
 #   run.sh wt list                        -> lists idleflow worktrees
 #   run.sh own <task-id> '<globs json>'   -> registers file ownership for the guard hook
@@ -23,6 +24,7 @@
 #   run.sh get <key>                      -> prints a value from run.json (dotted keys ok)
 #   run.sh set <key> <json>               -> sets a value in run.json (dotted keys ok)
 #   run.sh inc <key> [n]                  -> adds n (default 1) to a counter in run.json
+#   run.sh plan-field <task-id> <key>     -> one field of the task's plan section (blocked_until, model, ...), empty when missing
 #   run.sh extract <task-id>              -> the task's plan extract: the plan's Stack & style constraints and Interfaces
 #                                            sections, then the task's own ### <task-id>: section
 #   run.sh report <task-id>               -> copies the task's .idleflow-run/result.md into the run dir as report.md, prints its path
@@ -104,6 +106,16 @@ json_str() { printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')";
 
 plugin_version() { idleflow_rt get "$HERE/../.claude-plugin/plugin.json" version 2>/dev/null || echo unknown; }
 
+# a field of the task's own plan section ("<key>: <value>", a trailing # comment left out), empty
+# when the section or the field is missing; a fenced block in the section is text, not fields
+plan_field() { # plan_field <task-id> <key>
+  [ -f "$ACTIVE/plan.md" ] || return 0
+  tr -d '\r' < "$ACTIVE/plan.md" | H="### $1:" K="$2:" awk '
+    /^(```|~~~)/ { fence = !fence; next }
+    fence { next }
+    /^##/ { task = (index($0, ENVIRON["H"]) == 1); next }
+    task && index($0, ENVIRON["K"]) == 1 { v = substr($0, length(ENVIRON["K"]) + 1); sub(/[[:space:]]+#.*/, "", v); gsub(/^[[:space:]]+|[[:space:]]+$/, "", v); print v; exit }'
+}
 # the title in the plan's "### <task-id>: <title>" heading, empty when there is none
 plan_title() { # plan_title <task-id>
   [ -f "$ACTIVE/plan.md" ] || return 0
@@ -737,6 +749,10 @@ JSON
       add)
         id="$(active_id)"
         tid="${1:?task-id}"; check_task_id "$tid"; base="${2:-$(idleflow_rt get "$ACTIVE/run.json" base)}"
+        # a task the plan could not finish until an earlier group ran waits for its revision, so it never
+        # starts from a section with placeholders in it
+        blocked="$(plan_field "$tid" blocked_until)"
+        case "$blocked" in ""|none) ;; *) echo "wt add: $tid is blocked until a revision ($blocked); have the planner revise its section first, which sets blocked_until: none" >&2; exit 8;; esac
         p="$(wt_path "$tid")"; br="idleflow/$id/$tid"
         "${G[@]}" rev-parse -q --verify "$base^{commit}" >/dev/null || { echo "base '$base' has no commits yet; commit first (run.sh snapshot)" >&2; exit 1; }
         # a leftover from a crashed run must not make `add` fail, nor a base checkout of an earlier base stay
@@ -857,6 +873,10 @@ JSON
   inc)
     key="${1:?key}"; n="${2:-1}"; active_id >/dev/null
     idleflow_rt inc "$ACTIVE/run.json" "$key" "$n"
+    ;;
+  plan-field)
+    tid="${1:?task-id}"; check_task_id "$tid"; active_id >/dev/null
+    plan_field "$tid" "${2:?field name}"
     ;;
   extract)
     # What every agent working on one task reads of the plan: the sections every task is written

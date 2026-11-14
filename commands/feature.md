@@ -98,6 +98,7 @@ Tell the human: `Plan locked: <N> tasks in <G> groups, est <L> lines. Building.`
 
 Steps 5 to 8 run once per group, in plan order: a group's tasks are built, gated, reviewed and merged before the next group's worktrees exist. A later group builds on the earlier groups' code: `wt add` branches from the run's branch as it is when the task starts, so it holds every merge so far, and records that commit as the task's base. Within a group, all tasks run in parallel, at most the implementer cap (a larger group is a planner error: split it into waves):
 
+0. **Blocked tasks first.** For every task in the group whose `blocked_until:` (`bash "$RUN" plan-field <task-id> blocked_until`) is not `none`, find the evidence it waits for in what the earlier groups left: their reports, review files, and the CI or verification output that names it. When it is not there yet (a CI job not run), ask the human for it with AskUserQuestion; with no human present, stop with `needs-human` and say what the task waits for. Then spawn `idleflow:planner` for a one-task revision with the issue path, the task id, the field's text and that evidence; it writes the task's final section with `blocked_until: none`. Re-read that section. `wt add` exits 8 for a task still blocked: never edit the field yourself.
 1. For every task in the group:
    ```
    WT=$(bash "$RUN" wt add <task-id>)
