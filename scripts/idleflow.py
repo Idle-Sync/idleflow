@@ -19,6 +19,7 @@ Subcommands:
   clip   <n> <text>                       the text cut to at most n characters (not bytes), "..." marking a cut
   unowned <file> <task-id>                NUL-separated paths on stdin; prints those the task may not change
   outside <globs-json>                    NUL-separated paths on stdin; prints those no glob covers
+  port-free <port>                        exit 0 when nothing on this machine listens on the TCP port, else 1
 """
 import json
 import os
@@ -884,6 +885,34 @@ def cmd_killguard():
     sys.exit(0)
 
 
+def cmd_port_free(port):
+    # Free means a server could take it now: a wildcard bind succeeds on IPv4 and, where the machine
+    # has it, IPv6 (a specific bind elsewhere makes it fail), and nothing answers on localhost.
+    import errno
+    import socket
+    port = int(port)
+    for family, host in ((socket.AF_INET, "0.0.0.0"), (getattr(socket, "AF_INET6", None), "::")):
+        if family is None:
+            continue
+        try:
+            s = socket.socket(family, socket.SOCK_STREAM)
+        except OSError:
+            continue
+        try:
+            s.bind((host, port))
+        except OSError as e:
+            if family != socket.AF_INET and e.errno in (errno.EADDRNOTAVAIL, errno.EAFNOSUPPORT):
+                continue
+            sys.exit(1)
+        finally:
+            s.close()
+    try:
+        socket.create_connection(("127.0.0.1", port), timeout=0.5).close()
+    except OSError:
+        sys.exit(0)
+    sys.exit(1)
+
+
 def cmd_clip(n, text):
     n = int(n)
     print(text if len(text) <= n else text[: n - 3] + "...")
@@ -904,7 +933,7 @@ def main(argv):
     table = {
         "get": cmd_get, "set": cmd_set, "inc": cmd_inc, "finish": cmd_finish,
         "own": cmd_own, "gate": cmd_gate, "guard": cmd_guard, "killguard": cmd_killguard, "detach": cmd_detach, "entries": cmd_entries,
-        "unowned": cmd_unowned, "outside": cmd_outside, "clip": cmd_clip,
+        "unowned": cmd_unowned, "outside": cmd_outside, "clip": cmd_clip, "port-free": cmd_port_free,
     }
     if cmd not in table:
         sys.stderr.write("idleflow.py: unknown subcommand %r\n" % cmd)
