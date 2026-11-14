@@ -17,8 +17,8 @@
 #                                            its output and exits with its code, or exits 75 while it still runs after
 #                                            EXEC_WAIT_SECONDS. With --limit, a job still running <s> seconds after it started
 #                                            is stopped by the next exec or wait of it, which exits 124. The last stderr line
-#                                            says which: `ended with exit code <c>`, `is still running` or `passed its
-#                                            limit`, since a command can exit 75 or 124 itself. With --base, it runs
+#                                            says which: `ended with exit code <c>`, `is still running`, `passed its limit`
+#                                            or `was stopped`, since a command can exit 75 or 124 itself. With --base, it runs
 #                                            in a checkout of the task's base commit instead, to show a failure is already there
 #                                            Python bytecode of the checkout's own code is cleared first, so the source runs as it is
 #   run.sh wait <task-id> <job>           -> waits for a job again, the same way
@@ -629,8 +629,15 @@ await_job() { # await_job <task-id> <job>: the command's output and exit code, 7
     if [ -f "$d/started" ] && [ -f "$d/finished" ]; then echo "[idleflow] job $2 of $1 ran for $(( $(cat "$d/finished") - $(cat "$d/started") )) s" >&2; fi
     # the command is over; a process it left behind (a server it started) is said, not waited for
     job_ended "$d" || echo "[idleflow] job $2 of $1 ended, but processes it started still run; end them with: bash \"$0\" stop $1 $2" >&2
-    # a command may exit 75 or 124 itself, so the state is said in a line its exit code cannot copy
-    echo "[idleflow] job $2 of $1 ended with exit code $(cat "$d/status")" >&2
+    # a command may exit 75 or 124 itself, so the state is said in a line its exit code cannot copy,
+    # and a job that was stopped keeps saying so on every later wait
+    if [ -f "$d/stopped" ] && [ "$(cat "$d/status")" = 124 ] && [ -f "$d/limit" ]; then
+      echo "[idleflow] job $2 of $1 passed its limit of $(cat "$d/limit") s and was stopped" >&2
+    elif [ -f "$d/stopped" ]; then
+      echo "[idleflow] job $2 of $1 was stopped (exit code $(cat "$d/status"))" >&2
+    else
+      echo "[idleflow] job $2 of $1 ended with exit code $(cat "$d/status")" >&2
+    fi
     exit "$(cat "$d/status")"
   fi
   if [ ! -f "$d/status" ] && [ -n "$deadline" ] && [ "$(date +%s)" -ge "$deadline" ]; then
@@ -638,10 +645,10 @@ await_job() { # await_job <task-id> <job>: the command's output and exit code, 7
     stop_job "$d" || left=1
     # a command that ended on its own between the last check and the stop keeps its exit code
     if [ -n "$left" ] || [ -f "$d/stopped" ]; then
-      echo 124 > "$d/status.tmp" && mv "$d/status.tmp" "$d/status"
+      echo 124 > "$d/status.tmp" && mv "$d/status.tmp" "$d/status"; : > "$d/stopped"
       tail -n 20 "$d/log"
-      echo "[idleflow] job $2 of $1 passed its limit of $(cat "$d/limit") s and was stopped; its own cleanup (teardown, afterEach) did not run" >&2
       [ -z "$left" ] || echo "[idleflow] processes job $2 of $1 started survived KILL and still run; nothing they hold is free yet" >&2
+      echo "[idleflow] job $2 of $1 passed its limit of $(cat "$d/limit") s and was stopped; its own cleanup (teardown, afterEach) did not run" >&2
       exit 124
     fi
   fi

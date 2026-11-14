@@ -614,6 +614,7 @@ bash "$RUN" exec TA --limit 2 -- sh -c 'sleep 60 & echo "$!" > child.pid; wait' 
 job="$(sed -n 's/.*job \([0-9]*\) of TA is still running.*/\1/p' "$scratch/job.err")"
 for _ in 1 2 3 4 5; do bash "$RUN" wait TA "$job" >/dev/null 2> "$scratch/job.err"; rc=$?; [ "$rc" = 75 ] || break; done
 check "a job past its --limit is stopped with what it started and exits 124" '[ "$rc" = 124 ] && grep -q "passed its limit of 2 s" "$scratch/job.err" && ! kill -0 "$(cat "$wa/child.pid")" 2>/dev/null && [ "$(cat .idleflow/runs/active/tasks/TA/jobs/$job/status)" = 124 ]'
+check "a job the limit stopped says so on every later wait, not as an exit code of its own" 'bash "$RUN" wait TA "$job" >/dev/null 2> "$scratch/again.err"; [ $? = 124 ] && [ "$(tail -n 1 "$scratch/again.err")" = "[idleflow] job $job of TA passed its limit of 2 s and was stopped" ]'
 check "a job within its --limit passes its exit code" 'bash "$RUN" exec TA --limit 30 -- sh -c "exit 3" 2>/dev/null; [ $? = 3 ]'
 # The whole limit is proved by the deadline the job keeps, not by timing a command against it: the
 # start is recorded in whole seconds, so the deadline must be one second past start + limit. A timed
@@ -629,7 +630,7 @@ job="$(sed -n 's/.*job \([0-9]*\) of TA started.*/\1/p' "$scratch/job.err")"; jd
 echo $(( $(date +%s) + 100 )) > "$jd/deadline"; bash "$RUN" wait TA "$job" >/dev/null 2>&1; rc_ahead=$?
 echo $(( $(date +%s) - 1 )) > "$jd/deadline"; bash "$RUN" wait TA "$job" >/dev/null 2> "$scratch/job.err"; rc_past=$?
 check "a job is stopped at the deadline it records, not before" '[ "$rc_ahead" = 75 ] && [ "$rc_past" = 124 ] && grep -q "passed its limit of 600 s" "$scratch/job.err"'
-check "a command that exits 75 itself is told apart from a job still running" 'out75="$(bash "$RUN" exec TA -- sh -c "exit 75" 2>&1)"; [ $? = 75 ] && echo "$out75" | grep -q "^\[idleflow\] job [0-9]* of TA ended with exit code 75$" && ! echo "$out75" | grep -q "is still running"'
+check "a command that exits 75 itself is told apart from a job still running" 'out75="$(bash "$RUN" exec TA -- sh -c "exit 75" 2>&1)"; [ $? = 75 ] && echo "$out75" | tail -n 1 | grep -q "^\[idleflow\] job [0-9]* of TA ended with exit code 75$" && ! echo "$out75" | grep -q "is still running"'
 check "exec refuses a --limit that is not whole seconds" '! bash "$RUN" exec TA --limit 0 -- true 2>/dev/null && ! bash "$RUN" exec TA --limit 1.5 -- true 2>/dev/null && ! bash "$RUN" exec TA --limit -- true 2>/dev/null'
 bash "$RUN" exec TA -- sh -c 'sleep 30 >/dev/null 2>&1 &' >/dev/null 2> "$scratch/job.err"; rc=$?
 job="$(sed -n 's/.*job \([0-9]*\) of TA started.*/\1/p' "$scratch/job.err")"
