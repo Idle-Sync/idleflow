@@ -16,7 +16,9 @@
 #                                            (IDLEFLOW_PORT) and its own temp folder (IDLEFLOW_TMP, TMPDIR), as a job; prints
 #                                            its output and exits with its code, or exits 75 while it still runs after
 #                                            EXEC_WAIT_SECONDS. With --limit, a job still running <s> seconds after it started
-#                                            is stopped by the next exec or wait of it, which exits 124. With --base, it runs
+#                                            is stopped by the next exec or wait of it, which exits 124. The last stderr line
+#                                            says which: `ended with exit code <c>`, `is still running` or `passed its
+#                                            limit`, since a command can exit 75 or 124 itself. With --base, it runs
 #                                            in a checkout of the task's base commit instead, to show a failure is already there
 #                                            Python bytecode of the checkout's own code is cleared first, so the source runs as it is
 #   run.sh wait <task-id> <job>           -> waits for a job again, the same way
@@ -627,6 +629,8 @@ await_job() { # await_job <task-id> <job>: the command's output and exit code, 7
     if [ -f "$d/started" ] && [ -f "$d/finished" ]; then echo "[idleflow] job $2 of $1 ran for $(( $(cat "$d/finished") - $(cat "$d/started") )) s" >&2; fi
     # the command is over; a process it left behind (a server it started) is said, not waited for
     job_ended "$d" || echo "[idleflow] job $2 of $1 ended, but processes it started still run; end them with: bash \"$0\" stop $1 $2" >&2
+    # a command may exit 75 or 124 itself, so the state is said in a line its exit code cannot copy
+    echo "[idleflow] job $2 of $1 ended with exit code $(cat "$d/status")" >&2
     exit "$(cat "$d/status")"
   fi
   if [ ! -f "$d/status" ] && [ -n "$deadline" ] && [ "$(date +%s)" -ge "$deadline" ]; then

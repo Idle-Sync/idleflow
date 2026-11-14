@@ -629,6 +629,7 @@ job="$(sed -n 's/.*job \([0-9]*\) of TA started.*/\1/p' "$scratch/job.err")"; jd
 echo $(( $(date +%s) + 100 )) > "$jd/deadline"; bash "$RUN" wait TA "$job" >/dev/null 2>&1; rc_ahead=$?
 echo $(( $(date +%s) - 1 )) > "$jd/deadline"; bash "$RUN" wait TA "$job" >/dev/null 2> "$scratch/job.err"; rc_past=$?
 check "a job is stopped at the deadline it records, not before" '[ "$rc_ahead" = 75 ] && [ "$rc_past" = 124 ] && grep -q "passed its limit of 600 s" "$scratch/job.err"'
+check "a command that exits 75 itself is told apart from a job still running" 'out75="$(bash "$RUN" exec TA -- sh -c "exit 75" 2>&1)"; [ $? = 75 ] && echo "$out75" | grep -q "^\[idleflow\] job [0-9]* of TA ended with exit code 75$" && ! echo "$out75" | grep -q "is still running"'
 check "exec refuses a --limit that is not whole seconds" '! bash "$RUN" exec TA --limit 0 -- true 2>/dev/null && ! bash "$RUN" exec TA --limit 1.5 -- true 2>/dev/null && ! bash "$RUN" exec TA --limit -- true 2>/dev/null'
 bash "$RUN" exec TA -- sh -c 'sleep 30 >/dev/null 2>&1 &' >/dev/null 2> "$scratch/job.err"; rc=$?
 job="$(sed -n 's/.*job \([0-9]*\) of TA started.*/\1/p' "$scratch/job.err")"
