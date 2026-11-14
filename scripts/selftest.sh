@@ -693,6 +693,25 @@ check "wt rm forgets the task worktree" '! git config --local --get-regexp "^idl
 git worktree remove --force "$d-stray"; git worktree remove --force "$hw"; git branch -q -D human-work "idleflow/no-such-run/TX"
 rmdir "${hw}__wt" 2>/dev/null || true
 
+echo "--- the services the tests need"
+git add -u && commit -q -m "tidy before services"
+cp .idleflow/conventions.md "$d-svc.bak"
+printf 'services: test -f "$MAIN/.service-up" && echo db-up\n' >> .idleflow/conventions.md
+git add .idleflow/conventions.md && commit -q -m "services"
+bash "$RUN" new services-check >/dev/null 2>&1
+check "an unapproved services check never runs (exit 7)" 'bash "$RUN" services >/dev/null 2>&1; [ $? = 7 ] && [ ! -e .idleflow/runs/active/services.log ]'
+bash "$RUN" approve services >/dev/null
+out="$(bash "$RUN" services 2>&1)"; rc=$?
+check "a service that is down stops with exit 1 and says how to check again" '[ "$rc" = 1 ] && echo "$out" | grep -q "repo services: the check failed (exit 1)" && echo "$out" | grep -q "services$"'
+touch .service-up
+check "services that are up pass, and the check runs from the main checkout" '[ "$(bash "$RUN" services 2>/dev/null)" = "repo services: up" ] && grep -qx db-up .idleflow/runs/active/services.log'
+rm -f .service-up; bash "$RUN" finish done >/dev/null; git config --local --unset idleflow.approved-services
+cp "$d-svc.bak" .idleflow/conventions.md && rm -f "$d-svc.bak"; git add .idleflow/conventions.md && commit -q -m "no services"
+bash "$RUN" new services-none >/dev/null 2>&1
+check "a repo without a services check passes with none" '[ "$(bash "$RUN" services)" = "repo services: none" ]'
+bash "$RUN" finish done >/dev/null
+check "the run checks services before the baseline, each build and each review" 'grep -q "^\*\*The services the tests need.\*\* When" "$HERE/../commands/feature.md" && grep -q "^services: unset$" "$HERE/../templates/conventions.md"'
+
 echo "--- the repo's gate"
 git add -u && commit -q -m "tidy before the gate"
 cp .idleflow/conventions.md "$d-conv.bak"

@@ -3,6 +3,8 @@
 # Everything is plain git + files so a run can be inspected or resumed by hand.
 #
 #   run.sh new <slug>                     -> creates .idleflow/runs/active/ for a new run, prints its <id>
+#   run.sh services                       -> runs the approved `services:` check (the database, cache or queue the
+#                                            repo's tests need); exit 1 and its last lines when one is down, 7 unapproved
 #   run.sh resume <run-id>                -> makes a stopped run active again from its locked plan: its merged tasks
 #                                            stay merged, every other task starts afresh from the branch as it is now
 #   run.sh wt add <task-id> [base-ref]    -> creates the task's worktree and branch, records its base sha, runs the approved
@@ -403,7 +405,7 @@ wt_path() {
 
 # Repo commands come from whoever pushed the repo: they run only as committed at HEAD, and only once
 # this person approved that exact text (a hash in local git config; any change asks again).
-REPO_COMMANDS="worktree_setup gate gate_quick preview"
+REPO_COMMANDS="worktree_setup gate gate_quick preview services"
 repo_command() { # the committed value of a command key, empty when unset
   local v
   v="$({ "${G[@]}" show "HEAD:.idleflow/conventions.md" 2>/dev/null || true; } | sed -n "s/^$1: *//p" | head -1 | tr -d '\r' | sed 's/ *$//')"
@@ -1593,6 +1595,20 @@ Task: $tid")
       [ "${#cands[@]}" -gt 0 ] && say gate "${cands[0]}" "candidates found: $(printf '%s, ' "${cands[@]}" | sed 's/, $//')"
     fi
     exit 0
+    ;;
+  services)
+    # The services the repo's tests need (a database, a cache, a queue), checked before agents run tests,
+    # so a service that is down is a question for the human and never a test failure an agent reads.
+    active_id >/dev/null
+    cmd="$(idleflow_rt get "$ACTIVE/run.json" services 2>/dev/null || true)"
+    case "$cmd" in ""|null) echo "repo services: none"; exit 0;; esac
+    command_approved services "$cmd" || { echo "services is not approved on this clone; nothing ran. The command is: $cmd" >&2; exit 7; }
+    log="$ACTIVE/services.log"; rc=0
+    ( cd "$REPO" && without_agent_markers && MAIN="$REPO" bash -c "$cmd" ) > "$log" 2>&1 || rc=$?
+    if [ "$rc" = 0 ]; then echo "repo services: up"; exit 0; fi
+    tail -n 20 "$log"
+    echo "repo services: the check failed (exit $rc), so a test that needs them would fail for that reason and not the code's. Start them, then check again: bash \"$0\" services" >&2
+    exit 1
     ;;
   repo-gate)
     # The repo's own check, the definition of done: on the base the tasks branch from (so earlier
