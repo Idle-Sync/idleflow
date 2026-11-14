@@ -1000,7 +1000,8 @@ JSON
     [ -f "$ACTIVE/plan.md" ] || { echo "plan-check: no plan.md in the active run" >&2; exit 1; }
     tracked="$(mktemp)"; problems="$(mktemp)"
     "${G[@]}" ls-files > "$tracked"
-    # One line per fact: <task>\town\t<glob> | <task>\tentry\t<path> | <task>\taccept\t<A-id>\t<text>.
+    # One line per fact: <task>\town\t<glob> | <task>\tentry\t<path> | <task>\taccept\t<A-id>\t<text> |
+    # <task>\tcause\t<value>.
     # Lists come as "- item" lines or inline ([a, b]); an acceptance item runs on over indented lines,
     # and only its text before verify: names files.
     facts="$(tr -d '\r' < "$ACTIVE/plan.md" | awk '
@@ -1025,6 +1026,7 @@ JSON
       tid == "" { next }
       /^[a-z_]+:/ {
         flush(); key = $0; sub(/:.*/, "", key); rest = $0; sub(/^[a-z_]+:[[:space:]]*/, "", rest); sub(/[[:space:]]+#.*/, "", rest)
+        if (key == "cause") { gsub(/`/, "", rest); sub(/[[:space:]]+$/, "", rest); print tid "\tcause\t" rest }
         if (rest ~ /^\[.*\]$/ && (key == "owns" || key == "entry_points")) {
           rest = substr(rest, 2, length(rest) - 2); n = split(rest, items, ","); for (i = 1; i <= n; i++) emit(key, items[i])
         }
@@ -1055,15 +1057,37 @@ JSON
           if (x == "" || x ~ /[*?]/ || x ~ /^[\/~$%]/) continue
           if (index(x, ":") && (!index(x, "/") || index(x, ":") < index(x, "/"))) continue
           print "acceptance " $3 "\t" x } }')"
+      # A bug's fix goes where the bad state is produced, so the task that changes that code must own it,
+      # and the reviewer can only hold a task to a cause written in one of the plan template's forms.
+      # awk reads all of facts itself: a reader that stops early must not leave the writer on a broken pipe
+      cause="$(printf '%s\n' "$facts" | awk -F'\t' -v t="$tid" '$1 == t && $2 == "cause" && !done { print $3; done = 1 }')"
+      case "$cause" in
+        ""|none) ;;
+        "source "?*:*)
+          # the file ends at the first colon, as an entry point's does: src/lib.rs:Side::choose_move, src/x.py:write — why
+          src="${cause#source }"; src="${src//\\//}"; src="${src#./}"
+          if [[ "$src" =~ ^([A-Za-z]:|/|~) ]]; then
+            echo "plan-check: $tid has cause: $cause; write the file relative to the repo root, as source <file>:<function>" >> "$problems"
+          else
+            named="$named"$'\n'"cause"$'\t'"${src%%:*}"
+          fi;;
+        "with T"*)
+          w="${cause#with }"
+          [[ "$w" =~ ^T[0-9]+$ ]] && [ "$w" != "$tid" ] && printf '%s\n' "$facts" | awk -F'\t' -v w="$w" '$1 == w { f = 1 } END { exit !f }' \
+            || echo "plan-check: $tid has cause: $cause; with names another task of this plan, as with T<n>" >> "$problems";;
+        "symptom — "?*|"symptom - "?*) ;;
+        *) echo "plan-check: $tid has cause: $cause; write none, source <file>:<function>, with T<n> or symptom — <why the source cannot be fixed>" >> "$problems";;
+      esac
       while IFS=$'\t' read -r where path; do
         [ -n "$path" ] || continue
         case "$where" in
-          entry*) ;;
+          entry*|cause) ;;
           *) grep -qxF -- "$path" "$tracked" || [[ "$path" == */* && "${path##*/}" == *[A-Za-z]*.*[A-Za-z]* ]] || continue
              # a criterion may name a file git ignores (a build output) without owning it: no task changes it
              "${G[@]}" check-ignore -q --no-index -- "$path" 2>/dev/null && ! grep -qxF -- "$path" "$tracked" && continue;;
         esac
         out="$(printf '%s\0' "$path" | idleflow_rt outside "$globs")" || { echo "plan-check: the glob matcher failed" >&2; rm -f "$tracked" "$problems"; exit 2; }
+        [ "$where" = cause ] && where="cause: source"
         [ -z "$out" ] || echo "plan-check: $tid does not own $path, which its $where names; add it to $tid's owns: (or to shared_files when every task adds lines to it)" >> "$problems"
       done <<< "$named"
       # A file git ignores (.gitignore, .git/info/exclude) is in no worktree and in no merge, so a task
