@@ -48,6 +48,9 @@ notes: <anything the implementer must know that context.md doesn't say; max 5 li
 ## Verification after merge
 <The one command that runs the suite / smoke test. Required.>
 
+## By hand after merge
+<Changes to files git ignores (a local design-system copy, a config kept out of git): no task can make them, since no worktree has the file and no merge carries it. One line each: `- <path> — <the change>`, or `none`. The run's final message repeats them.>
+
 ## Open questions for the human
 <Only things the plan cannot resolve. Empty is fine. One line each, numbered, with what the plan assumes until answered:>
 - Q1: <question> (default: <the answer the plan is written for>)
