@@ -500,6 +500,35 @@ stop_job() { # stop_job <job dir>: TERM to the whole group, KILL after 5 s; 143 
   [ -f "$1/status" ] || { : > "$1/stopped"; write_status "$1" 143; }
   : > "$1/ended"
 }
+# The job's folder can move away while a waiter holds its path: finish moves the run, and new moves a
+# leftover run aside after a crash. Nothing can be read or written there any more, so a waiter says so
+# and ends. The job's own watcher, and a waiter that holds the stop, first stop at the deadline the
+# process group they remembered, so a hung command in an abandoned run still ends. Only the group is
+# signalled, and only while it is seen alive: the bare pid, and a number whose group is gone, may be
+# reused by another process.
+gone_job() { # gone_job <task-id> <job> <process group or empty> <deadline or empty> <watch|stop|empty>
+  local n=0
+  if [ -z "$5" ] || [ -z "$3" ] || [ -z "$4" ]; then
+    echo "[idleflow] job $2 of $1: its run folder is gone (finished or moved aside); this waiter ends without checking its processes" >&2
+    exit 1
+  fi
+  if [ "$5" = watch ]; then
+    while kill -0 -- "-$3" 2>/dev/null && [ "$(date +%s)" -lt "$4" ]; do sleep 0.2; done
+  fi
+  if ! kill -0 -- "-$3" 2>/dev/null; then
+    echo "[idleflow] job $2 of $1: its run folder is gone (finished or moved aside), and no process of it is left to stop" >&2
+    exit 1
+  fi
+  kill -TERM -- "-$3" 2>/dev/null || true
+  while kill -0 -- "-$3" 2>/dev/null && [ "$n" -lt 25 ]; do sleep 0.2; n=$((n + 1)); done
+  if kill -0 -- "-$3" 2>/dev/null; then kill -KILL -- "-$3" 2>/dev/null || true; sleep 0.5; fi
+  if kill -0 -- "-$3" 2>/dev/null; then
+    echo "[idleflow] job $2 of $1: its run folder is gone (finished or moved aside); its processes survived KILL and still run" >&2
+  else
+    echo "[idleflow] job $2 of $1: its run folder is gone (finished or moved aside); its processes were stopped at the limit" >&2
+  fi
+  exit 1
+}
 # A job started with a limit keeps its deadline (epoch seconds) in .../deadline. A command that never
 # ends (a hung test, a fault that loops) is stopped there, with its whole process group, so it cannot
 # hold a port, a lock or a shared database until someone notices. exec starts a watcher that waits up
@@ -508,13 +537,15 @@ stop_job() { # stop_job <job dir>: TERM to the whole group, KILL after 5 s; 143 
 # finish, and every waiter, then or later, reports a stop at the limit the same way.
 await_job() { # await_job <task-id> <job> [watch]: the command's output and exit code, 75 while it runs, 124 past
   # its limit; with watch, it waits up to the job's deadline rather than EXEC_WAIT_SECONDS
-  local d end deadline="" n=0; d="$(job_dir "$1" "$2")"
+  local d end deadline="" n=0 group; d="$(job_dir "$1" "$2")"
   [ -d "$d" ] || { echo "no job $2 for task $1" >&2; exit 1; }
   while [ ! -f "$d/pid" ] && [ ! -f "$d/status" ] && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
+  group="$(job_pid "$d")"
   end=$(( $(date +%s) + ${EXEC_WAIT_SECONDS:-100} ))
   [ -f "$d/deadline" ] && deadline="$(cat "$d/deadline")"
   if [ -n "$deadline" ] && { [ "$deadline" -lt "$end" ] || [ "${3:-}" = watch ]; }; then end="$deadline"; fi
   while [ ! -f "$d/status" ] && [ "$(date +%s)" -lt "$end" ]; do
+    [ -d "$d" ] || gone_job "$1" "$2" "$group" "$deadline" "${3:-}"
     if ! group_alive "$d"; then
       # a group another process is stopping is not one that ended without an exit code
       sleep 0.2; [ -f "$d/status" ] || [ -d "$d/stopping" ] || { write_status "$d" 1; echo "[idleflow] job $2 of $1 ended without an exit code" >&2; }
@@ -527,9 +558,11 @@ await_job() { # await_job <task-id> <job> [watch]: the command's output and exit
   if { [ ! -f "$d/status" ] && [ -n "$deadline" ] && [ "$(date +%s)" -ge "$deadline" ]; } || [ -d "$d/stopping" ]; then
     local holder="" left="" tries=0
     while [ ! -f "$d/stop-done" ]; do
+      [ -d "$d" ] || gone_job "$1" "$2" "$group" "$deadline" ""
       if mkdir "$d/stopping" 2>/dev/null; then
         echo $$ > "$d/stopping/pid"
         stop_job "$d" || left=1
+        [ -d "$d" ] || gone_job "$1" "$2" "$group" "$deadline" stop
         # a command that ended on its own between the last check and the stop keeps its exit code, and
         # is reported below like any job that ended
         if [ -n "$left" ] || [ -f "$d/stopped" ]; then
