@@ -816,14 +816,21 @@ split_ready() { # split_ready <task-id> <split task-id> <run id>
 # The files that still apply to the sub-task's base are brought over; a file that changed there since
 # the split is left out and named, and the sub-task builds it from the plan. git's own words go to the
 # task's bring.log, and run.json's tasks.<id>.brought records what came over, for the reviewers and
-# the retro: {"from": <split task>, "commit": <sha or null>, "files": <n>, "left_out": [<paths>]}.
+# the retro: {"from": <split task>, "commit": <sha or null>, "files": <n>, "left_out": [<paths>]},
+# with "error": <what failed> when the files could not even be listed.
 bring_split() { # bring_split <task-id> <split task-id> <worktree> <run id>
-  local fbase owns out f n=0 specs=() ok=() skipped=() log subject sha=null lj spec body fref="refs/heads/idleflow/$4/$2" wt="$3"
+  local fbase owns out f n=0 specs=() ok=() skipped=() order=() log subject sha=null lj spec body err="" fref="refs/heads/idleflow/$4/$2" wt="$3"
   fbase="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$2.base_sha")"; owns="$(idleflow_rt get "$ACTIVE/ownership.json" "tasks.$1.owns")"
   log="$ACTIVE/tasks/$1/bring.log"; : > "$log"
   # (both read bring_split's locals: fbase, fref, wt, log)
   bring_patch() { "${G[@]}" diff-tree -p --binary --full-index --no-renames "$fbase" "$fref" -- "$@"; }
   bring_apply() { git -C "$wt" apply --3way --index --whitespace=nowarn 2>> "$log"; }
+  # one file alone: a literal pathspec also covers what lies under a name that is a folder on one
+  # side and a file on the other, so what lies under it is excluded
+  bring_one() { bring_patch "$1" ":(exclude,literal)${1#:(literal)}/" | bring_apply; }
+  # the files that applied, again: their own patches in the order they applied, as one input, so
+  # nothing outside them comes in and a folder's deletions still come before a file of its name
+  bring_ok() { local o; for o in "${ok[@]}"; do bring_patch "$o" ":(exclude,literal)${o#:(literal)}/"; done | bring_apply; }
   # the changed files the matcher does not print as outside the sub-task's globs; shared_files are
   # left out, since every sibling would bring the same lines (plan-check gives each to one sub-task)
   if out="$(split_files "$2" "$4" | idleflow_rt outside "$owns")"; then
@@ -832,20 +839,30 @@ bring_split() { # bring_split <task-id> <split task-id> <worktree> <run id>
       grep -qxF -- "$f" <<< "$out" || { specs+=(":(literal)$f"); n=$((n + 1)); }
     done < <(split_files "$2" "$4")
   else
+    err="glob matcher failed"
     echo "[idleflow] wt add: the glob matcher failed; $1 starts from its base alone" >&2
   fi
   if [ "$n" -gt 0 ]; then
     if bring_patch "${specs[@]}" | bring_apply; then
       ok=("${specs[@]}")
     else
-      # one file at a time; a file that fails leaves its conflict behind, so the worktree goes back to
-      # its base and the files that applied are applied again; if that fails too, nothing comes over
+      # one file at a time, deletions first, so a folder that became a file is gone before the file
+      # is written; a file that fails leaves its conflict behind, so the worktree goes back to its
+      # base and the files that applied are applied again; if that fails too, nothing comes over
       git -C "$wt" reset -q --hard >> "$log" 2>&1 || true
+      order=()
+      while IFS= read -r -d '' f; do
+        for spec in "${specs[@]}"; do [ "$spec" = ":(literal)$f" ] && order+=("$spec"); done
+      done < <("${G[@]}" diff-tree -r -z --no-renames --name-only --diff-filter=D "$fbase" "$fref")
       for spec in "${specs[@]}"; do
-        if bring_patch "$spec" | bring_apply; then ok+=("$spec"); continue; fi
+        for f in ${order[@]+"${order[@]}"}; do [ "$f" = "$spec" ] && continue 2; done
+        order+=("$spec")
+      done
+      for spec in "${order[@]}"; do
+        if bring_one "$spec"; then ok+=("$spec"); continue; fi
         skipped+=("$spec")
         git -C "$wt" reset -q --hard >> "$log" 2>&1 || true
-        if [ "${#ok[@]}" -gt 0 ] && ! { bring_patch "${ok[@]}" | bring_apply; }; then
+        if [ "${#ok[@]}" -gt 0 ] && ! bring_ok; then
           git -C "$wt" reset -q --hard >> "$log" 2>&1 || true
           ok=(); skipped=("${specs[@]}"); break
         fi
@@ -875,9 +892,10 @@ bring_split() { # bring_split <task-id> <split task-id> <worktree> <run id>
     fi
   fi
   lj="[$(for spec in ${skipped[@]+"${skipped[@]}"}; do json_str "${spec#:(literal)}"; echo; done | paste -sd, -)]"
-  idleflow_rt set "$ACTIVE/run.json" "tasks.$1.brought" "{\"from\":$(json_str "$2"),\"commit\":$sha,\"files\":${#ok[@]},\"left_out\":$lj}"
+  idleflow_rt set "$ACTIVE/run.json" "tasks.$1.brought" "{\"from\":$(json_str "$2"),\"commit\":$sha,\"files\":${#ok[@]},\"left_out\":$lj${err:+,\"error\":$(json_str "$err")}}"
   if [ "$sha" = null ]; then
-    if [ "$n" -eq 0 ]; then echo "[idleflow] wt add: $1 has from: $2, but $2 changed none of the files $1 owns; $1 starts from its base alone" >&2; fi
+    # after a matcher failure nothing is known about the files, so no reason is given but that one
+    if [ "$n" -eq 0 ] && [ -z "$err" ]; then echo "[idleflow] wt add: $1 has from: $2, but $2 changed none of the files $1 owns; $1 starts from its base alone" >&2; fi
     if [ "${#skipped[@]}" -gt 0 ]; then echo "[idleflow] wt add: $2's work on the files $1 owns no longer applies to $1's base (git's words in $(native_path "$log")); $1 starts from its base alone and is built from the plan" >&2; fi
   else
     echo "[idleflow] wt add: $1 starts with $2's finished work on ${#ok[@]} file(s) it owns, in commit $(git -C "$wt" rev-parse --short HEAD); finish and check it, do not write it again" >&2
