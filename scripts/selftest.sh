@@ -1170,14 +1170,16 @@ yaml_unsafe() { # the frontmatter lines of the given files whose unquoted value 
     awk -v f="${f##*/}" -v q="'" -v ind='[]{}*&!|>%@`,?:' '
       NR == 1 && $0 != "---" { exit }
       NR > 1 && $0 == "---" { exit }
+      NR > 1 && /^[A-Za-z_-]+:\t/ { print f ": " $0; next }
       NR > 1 && /^[A-Za-z_-]+: / {
         v = $0; sub(/^[A-Za-z_-]+: /, "", v); c = substr(v, 1, 1)
-        if (c == "\"" || c == q) next
-        if (v ~ /: / || v ~ / #/ || (c != "" && index(ind, c))) print f ": " $0
+        # a quoted value closes with its own quote and has nothing after it
+        if (c == "\"" || c == q) { if (length(v) < 2 || substr(v, length(v)) != c) print f ": " $0; next }
+        if (v ~ /: / || v ~ /:\t/ || v ~ /:$/ || v ~ / #/ || v ~ /^#/ || v ~ /^- / || (c != "" && index(ind, c))) print f ": " $0
       }' "$f"
   done
 }
-check "every command and agent frontmatter is valid YAML" '[ -z "$(yaml_unsafe "$HERE"/../commands/*.md "$HERE"/../agents/*.md)" ]'
+check "every command, agent and issue form frontmatter is valid YAML" '[ -z "$(yaml_unsafe "$HERE"/../commands/*.md "$HERE"/../agents/*.md "$HERE"/../.github/ISSUE_TEMPLATE/*.md)" ] && [ -n "$(printf "%s\n" "---" "description: Usage: x" "a: \"open" "b: ends:" "c: #lost" "---" > "$scratch/yaml-bad.md"; yaml_unsafe "$scratch/yaml-bad.md" | wc -l | grep -x " *4")" ]'
 check "the designer and design reviewer exist" '[ -f "$HERE/../agents/designer.md" ] && [ -f "$HERE/../agents/review-design.md" ] && grep -q "\"ui\"" "$HERE/../agents/classifier.md" && grep -q "^### 2c. Design" "$HERE/../commands/feature.md"'
 check "requirements no screen shows reach the plan" 'grep -q "^- \`design.md\` at the output path: the screens for this run, \"Not on a screen\"" "$HERE/../agents/designer.md" && grep -q "Each line under \"Not on a screen\" becomes acceptance of the task that builds its surface" "$HERE/../agents/planner.md" && grep -q "listed under \"Not on a screen\"" "$HERE/../procedures/design.md"'
 check "the design handbook carries the contrast rule" 'grep -q "4.5:1" "$HERE/../procedures/design.md" && grep -q "0.2126 R + 0.7152 G + 0.0722 B" "$HERE/../procedures/design-data.md"'
