@@ -45,8 +45,10 @@ commit() { git -c user.name=t -c user.email=t@t commit -q "$@"; }
 
 echo "runtime: $(idleflow_rt_name)"
 d="$(mktemp -d)"; d="$(cd "$d" && pwd)"
-cleanup() { cd / ; rm -rf "$d" "${d}__wt" "$d.link" "${d}__wt.link" "$d-mig" "$d-human" "${d}-human__wt" "$d-stray" "$d-pin" 2>/dev/null || true; }
+cleanup() { cd / ; rm -rf "$d" "$d-tmp" "${d}__wt" "$d.link" "${d}__wt.link" "$d-mig" "$d-human" "${d}-human__wt" "$d-stray" "$d-pin" 2>/dev/null || true; }
 trap cleanup EXIT
+# the suite's own root for task temp folders and port claims, so a suite running beside it never meets it
+export IDLEFLOW_TMP_ROOT="$d-tmp"; mkdir -p "$IDLEFLOW_TMP_ROOT"; utmp="$IDLEFLOW_TMP_ROOT/idleflow-$(id -u)"
 
 echo "--- new on a repo with no commits (what /idleflow:init does)"
 cd "$d" && git init -q && git config user.name "Human" && git config user.email "human@example.com"
@@ -189,7 +191,7 @@ bash "$RUN" wt rm "Té"
 touch "${d}__wt/keep-me"
 check "wt add refuses an id that is a path"       '! bash "$RUN" wt add .. 2>/dev/null && ! bash "$RUN" wt add ../x 2>/dev/null && [ -e "${d}__wt/keep-me" ] && [ ! -e "${d}__wt/x" ]'
 check "every task-id subcommand refuses a path"   '( for c in "wt rm" own unowned report gate merge exec preview repo-gate; do out="$(bash "$RUN" $c ../T1 x y 2>&1)"; case "$out" in "not a task id: "*) ;; *) exit 1;; esac; done )'
-check "an id git or Windows cannot use is refused" '! bash "$RUN" wt add "a~1" 2>/dev/null && ! bash "$RUN" wt add "x.lock" 2>/dev/null && ! bash "$RUN" wt add _gate-base 2>/dev/null && ! bash "$RUN" wt add CON 2>/dev/null'
+check "an id git, Windows or run.json keys cannot use is refused" '! bash "$RUN" wt add "a~1" 2>/dev/null && ! bash "$RUN" wt add "x.lock" 2>/dev/null && ! bash "$RUN" wt add T1.a 2>/dev/null && [ -z "$(bash "$RUN" get tasks.T1.a 2>/dev/null)" ] && ! bash "$RUN" wt add _gate-base 2>/dev/null && ! bash "$RUN" wt add CON 2>/dev/null'
 rm -f "${d}__wt/keep-me"
 
 echo "--- kill guard"
@@ -250,6 +252,10 @@ printf '      - uses: a/b@v4\n' > "$pin/b/late.yaml"
 printf '      - {uses: a/b@v4}\n      - uses: a/b@v4 # uses: a/b@%s\n' "$(printf '%040d' 0 | tr 0 a)" > "$pin/c/sly.yml"
 check "every CI action is pinned to a commit, and Dependabot bumps them" 'out="$(unpinned_actions "$HERE/../.github/workflows")" && [ -z "$out" ] && grep -q "package-ecosystem: github-actions" "$HERE/../.github/dependabot.yml"'
 check "the pin check reads .yaml, flow and commented forms, and needs a workflow" '[ -z "$(unpinned_actions "$pin/a")" ] && [ -n "$(unpinned_actions "$pin/b")" ] && [ "$(unpinned_actions "$pin/c" | grep -c .)" = 2 ] && { unpinned_actions "$pin/none"; [ $? = 2 ]; }'
+check "every unverified check is written where the reports read it" 'for a in implementer implementer-hard; do grep -q "blocked_on: <none | file + reason | environment: <the cause> — <the quoted output line>>" "$HERE/../agents/$a.md" || exit 1; done && grep -q "appends \`- repo gate on main — environment:" "$HERE/../commands/feature.md" && grep -q "write \`review/merged-design.md\` with an \`unverified:\` line" "$HERE/../commands/feature.md" && grep -q "of \`review/merged-correct.md\` and \`review/merged-design.md\`" "$HERE/../commands/feature.md" && grep -q "an \`environment:\` entry as the check to run once its cause is fixed" "$HERE/../agents/retro.md"'
+check "every plan is checked by plan-check, and the planner knows what it checks" 'grep -q "after this and every later planner call that writes plan.md (a revision, a split): \`bash \"\$RUN\" plan-check\`" "$HERE/../commands/feature.md" && grep -q "which \`run.sh plan-check\` checks" "$HERE/../agents/planner.md"'
+check "a fix round names what it could not fix apart from the build's deviations" 'for a in implementer implementer-hard; do grep -q "^unfixed: <none | Fix mode only" "$HERE/../agents/$a.md" && grep -q "name it under \`unfixed\`, never under \`deviations\`" "$HERE/../agents/$a.md" || exit 1; done && grep -q "report names a finding under \`unfixed:\`" "$HERE/../commands/feature.md" && ! grep -q "fix round.s report named a deviation" "$HERE/../commands/feature.md" && grep -q "\`blocked_on:\` and \`unfixed:\` that is not" "$HERE/../commands/endsession.md"'
+check "a task the plan cannot finish yet is marked, revised before its group, and named in the template" 'grep -q "^blocked_until: none " "$HERE/../templates/plan.md" && grep -q "give it \`blocked_until: revision" "$HERE/../agents/planner.md" && grep -q "^0\. \*\*Blocked tasks first\.\*\*" "$HERE/../commands/feature.md"'
 check "the agents that judge the plan get the issue" '( for a in planner red-team cost-critic; do grep -q "issue.md" "$HERE/../agents/$a.md" || exit 1; done ) && grep -q "Spawn \`idleflow:planner\` with: the issue path" "$HERE/../commands/feature.md" && grep -q "each with the issue, plan.md and context.md paths" "$HERE/../commands/feature.md"'
 check "agents that run suites wait on long checks as jobs" '( for a in implementer implementer-hard review-correct; do grep -q "run.sh>\" wait <task-id> <n>" "$HERE/../agents/$a.md" && grep -q "Never start it again while it runs" "$HERE/../agents/$a.md" || exit 1; done )'
 
@@ -316,11 +322,11 @@ printf 'verdict: approve\nremedy: none\nfindings:\n### F1. A weak assertion   se
 printf '### F9. Fixed since   severity: blocking\n' > .idleflow/runs/active/review/T1-correct.1.md
 printf '### F1. Not this task   kind: convention\n' > .idleflow/runs/active/review/T10-conform.md
 printf '### F1. Nor this one   kind: convention\n' > .idleflow/runs/active/review/T1-ui-conform.md
-printf '### D1. A dotted task id   severity: minor\n' > .idleflow/runs/active/review/T1.2-design.md
+printf '### D1. A hyphenated task id   severity: minor\n' > .idleflow/runs/active/review/T1-2-design.md
 f="$(bash "$RUN" findings T1)"
 check "findings lists the current reviews' findings only" '[ "$(echo "$f" | wc -l | tr -d " ")" = 2 ] && echo "$f" | grep -qx "T1: F2. A leak on the error path   severity: major (review/T1-correct.md)" && ! echo "$f" | grep -q "F9\|Not this task\|Nor this one"'
-check "findings reads a dotted task id's current review" '[ "$(bash "$RUN" findings T1.2)" = "T1.2: D1. A dotted task id   severity: minor (review/T1.2-design.md)" ]'
-rm .idleflow/runs/active/review/T1-correct.md .idleflow/runs/active/review/T1-correct.1.md .idleflow/runs/active/review/T10-conform.md .idleflow/runs/active/review/T1-ui-conform.md .idleflow/runs/active/review/T1.2-design.md
+check "findings reads a hyphenated task id's current review" '[ "$(bash "$RUN" findings T1-2)" = "T1-2: D1. A hyphenated task id   severity: minor (review/T1-2-design.md)" ]'
+rm .idleflow/runs/active/review/T1-correct.md .idleflow/runs/active/review/T1-correct.1.md .idleflow/runs/active/review/T10-conform.md .idleflow/runs/active/review/T1-ui-conform.md .idleflow/runs/active/review/T1-2-design.md
 
 echo "--- merge, then a second group gates against its own base"
 check "merge refuses an unapproved task" 'bash "$RUN" merge T1 >/dev/null 2>&1; [ $? -eq 4 ]'
@@ -532,11 +538,30 @@ check "each task gets its own port"            "[ '$pa' = 4400 ] && [ '$pb' = 44
 bash "$RUN" wt add TA >/dev/null 2>&1
 check "a re-added task keeps its port"         '[ "$(bash "$RUN" get tasks.TA.port)" = 4400 ]'
 out="$(bash "$RUN" exec TA -- sh -c 'echo "$IDLEFLOW_TASK $IDLEFLOW_PORT"; echo "$TMPDIR"; pwd')"
-check "exec runs in the worktree with the task's port and temp folder" '[ "$(echo "$out" | sed -n 1p)" = "TA 4400" ] && echo "$out" | sed -n 2p | grep -q "/tasks/TA/tmp$" && [ "$(echo "$out" | sed -n 3p)" = "$(cd "$wa" && pwd)" ]'
+check "exec runs in the worktree with the task's port and temp folder" '[ "$(echo "$out" | sed -n 1p)" = "TA 4400" ] && echo "$out" | sed -n 2p | grep -q "^$utmp/[0-9a-f]\{10\}/TA$" && [ "$(echo "$out" | sed -n 3p)" = "$(cd "$wa" && pwd)" ]'
 check "exec runs the command without the agent's markers" '[ "$(CLAUDECODE=1 CLAUDE_CODE=1 AI_AGENT=claude CLAUDE_CODE_ENTRYPOINT=cli bash "$RUN" exec TA -- sh -c "echo \${CLAUDECODE-none} \${CLAUDE_CODE-none} \${AI_AGENT-none} \${CLAUDE_CODE_ENTRYPOINT-none}")" = "none none none none" ]'
 check "exec passes the command's exit code"    'bash "$RUN" exec TA -- sh -c "exit 3"; [ $? = 3 ]'
 inside="$(cd "$wa" && bash "$RUN" exec TA -- sh -c 'echo "$IDLEFLOW_PORT"')"
 check "exec works from inside the task worktree" "[ '$inside' = 4400 ]"
+# Ports are claimed across the machine: another repo's live run holds 4402, something else listens
+# on 4403, a claim left by a run that has ended holds 4404, and another run is deciding about 4405.
+o="$d-tmp/other"; mkdir -p "$o/.idleflow/runs/active" "$utmp/ports/4405.lock"
+printf '{"id":"r1","tasks":{"T9":{"port":4402}}}\n' > "$o/.idleflow/runs/active/run.json"
+printf '%s\tr1\tT9\n' "$o" > "$utmp/ports/4402"
+printf '%s\tgone\tT1\n' "$o" > "$utmp/ports/4404"
+listen_args=(node -e 'const s=require("net").createServer().listen(4403,"127.0.0.1",()=>console.log("up"));setTimeout(()=>s.close(),20000)')
+command -v node >/dev/null 2>&1 || listen_args=(python3 -c 'import socket,time;s=socket.socket();s.bind(("127.0.0.1",4403));s.listen();print("up",flush=True);time.sleep(20)')
+"${listen_args[@]}" > "$d-tmp/listen.out" 2>&1 & lpid=$!
+for _ in 1 2 3 4 5 6 7 8 9 10; do grep -q up "$d-tmp/listen.out" 2>/dev/null && break; sleep 0.3; done
+bash "$RUN" wt add TC >/dev/null 2>&1; bash "$RUN" wt add TD >/dev/null 2>&1
+kill "$lpid" 2>/dev/null; wait "$lpid" 2>/dev/null; rmdir "$utmp/ports/4405.lock"
+check "a port another live run claims, something listens on, or another run is deciding about is skipped" '[ "$(bash "$RUN" get tasks.TC.port)" = 4404 ] && [ "$(bash "$RUN" get tasks.TD.port)" = 4406 ]'
+check "a stale claim is taken over, with this run as its owner" '[ "$(cut -f2,3 "$utmp/ports/4404")" = "$(bash "$RUN" get id)	TC" ] && [ ! -e "$utmp/ports/4403" ] && [ ! -e "$utmp/ports/4405" ]'
+check "the claim of a live run elsewhere stays its own" '[ "$(cut -f2,3 "$utmp/ports/4402")" = "r1	T9" ]'
+check "a task's temp folder is short and outside the repo" 't="$(bash "$RUN" exec TA -- sh -c "echo \$TMPDIR")"; [ "${#t}" -eq $(( ${#utmp} + 14 )) ] && [ -d "$t" ] && case "$t" in "$d"/*) false;; *) true;; esac'
+mkdir -p "$d-tmp/r2" "$d-tmp/elsewhere"; ln -s "$d-tmp/elsewhere" "$d-tmp/r2/idleflow-$(id -u)"
+check "a user folder under the temp root that is a symlink is refused" '! IDLEFLOW_TMP_ROOT="$d-tmp/r2" bash "$RUN" exec TA -- true 2>/dev/null && [ -z "$(ls -A "$d-tmp/elsewhere")" ]'
+check "the user folder is private" '[ "$(ls -ld "$utmp" | cut -c1-10)" = drwx------ ]'
 # Python reuses bytecode while a source keeps its size and whole-second mtime (pinned here to a stamp);
 # -I ignores PYTHON* variables, as tox's environments do, so only clearing the bytecode helps
 py_ok=no; _idleflow_py_ok python3 && py_ok=yes
@@ -624,7 +649,11 @@ bash "$RUN" wt rm TB
 check "wt rm removes the task's base checkout too" '[ -n "$base_tb" ] && [ ! -d "$base_tb" ]'
 check "wt rm stops the task's jobs" '[ "$(cat .idleflow/runs/active/tasks/TB/jobs/$job/status)" = 143 ] && ! kill -0 "$(cat .idleflow/runs/active/tasks/TB/jobs/$job/pid)" 2>/dev/null'
 rm -f .idleflow/idleflow.conf "$wa/child.pid"; [ ! -f "$scratch/conf.bak" ] || mv "$scratch/conf.bak" .idleflow/idleflow.conf
-bash "$RUN" wt rm TA; bash "$RUN" wt rm TB; bash "$RUN" finish done >/dev/null
+run_tmp_dir="$(bash "$RUN" exec TA -- sh -c 'echo "$TMPDIR"')"; run_tmp_dir="${run_tmp_dir%/TA}"
+iso_id="$(bash "$RUN" get id)"
+bash "$RUN" wt rm TA; bash "$RUN" wt rm TB; bash "$RUN" wt rm TC; bash "$RUN" wt rm TD; bash "$RUN" finish done >/dev/null
+check "finish removes the run's temp folders" '[ -n "$run_tmp_dir" ] && [ ! -e "$run_tmp_dir" ]'
+check "finish gives back the run's port claims and no other" '! grep -qs "	$iso_id	" "$utmp"/ports/* && [ "$(cut -f2,3 "$utmp/ports/4402")" = "r1	T9" ]'
 
 echo "--- a run started in a linked checkout"
 hw="$d-human"; git worktree add -q -b human-work "$hw" 2>/dev/null
@@ -717,7 +746,7 @@ sed -i.bak 's#^preview: .*#preview: pwd > "$IDLEFLOW_TMP/where"; sleep 30#' .idl
 git add .idleflow/conventions.md && commit -q -m "preview from main"; bash "$RUN" approve preview >/dev/null
 bash "$RUN" wt rm T2; bash "$RUN" finish done >/dev/null; bash "$RUN" new previewmain >/dev/null 2>&1
 out="$(bash "$RUN" preview main start 2>/dev/null)"; pid="$(cat .idleflow/runs/active/tasks/main/preview.pid 2>/dev/null)"; sleep 1
-check "under preview_in: main the main checkout is served" 'echo "$out" | grep -q "^preview main: serving at http://localhost:4173" && kill -0 "$pid" 2>/dev/null && [ "$(cat .idleflow/runs/active/tasks/main/tmp/where 2>/dev/null)" = "$(pwd -P)" ]'
+check "under preview_in: main the main checkout is served" 'echo "$out" | grep -q "^preview main: serving at http://localhost:4173" && kill -0 "$pid" 2>/dev/null && [ "$(cat "$utmp"/*/main/where 2>/dev/null)" = "$(pwd -P)" ]'
 bash "$RUN" preview main stop >/dev/null; sleep 1
 check "preview main stop ends it" '! kill -0 "$pid" 2>/dev/null'
 check "main and merged are not task ids" '! bash "$RUN" wt add main 2>/dev/null && ! bash "$RUN" wt add merged 2>/dev/null'
@@ -736,6 +765,33 @@ check "extract refuses a task the plan does not have" '! bash "$RUN" extract T3 
 printf '%s\r\n' '## Interfaces' 'sig' '## Tasks' '### T1: first' '```md' '## not a section' '### T2: not a task' '```' 'after the fence' '### T2: second' > .idleflow/runs/active/plan.md
 bash "$RUN" extract T1 > "$scratch/extract.txt"
 check "extract reads a CRLF plan and keeps code fences in the task" '[ "$(cat "$scratch/extract.txt")" = "$(printf "%s\n" "## Interfaces" sig "### T1: first" "\`\`\`md" "## not a section" "### T2: not a task" "\`\`\`" "after the fence")" ]'
+printf '%s\n' '## Tasks' '### T1: first' 'blocked_until: none   # nothing to wait for' '### T2: waits' 'depends_on: [T1]' 'blocked_until: revision — the error code CI prints for T1' '```' 'blocked_until: none' '```' '### T3: plain' 'owns: [c]' > .idleflow/runs/active/plan.md
+check "plan-field reads a task's own field, not another's or a fenced one" '[ "$(bash "$RUN" plan-field T1 blocked_until)" = none ] && [ "$(bash "$RUN" plan-field T2 blocked_until)" = "revision — the error code CI prints for T1" ] && [ -z "$(bash "$RUN" plan-field T3 blocked_until)" ]'
+out="$(bash "$RUN" wt add T2 2>&1)"; rc=$?
+check "wt add refuses a task blocked until a revision, and creates nothing" '[ "$rc" = 8 ] && echo "$out" | grep -q "T2 is blocked until a revision (revision — the error code CI prints for T1)" && [ ! -d "$(dirname "$d")/$(basename "$d")__wt/T2" ] && ! git rev-parse -q --verify "refs/heads/idleflow/$(bash "$RUN" get id)/T2" >/dev/null && [ -z "$(bash "$RUN" get tasks.T2 2>/dev/null)" ]'
+# a plan longer than a pipe holds, with the field near its top: the reader must still exit 0
+{ printf '%s\n' '## Tasks' '### T1: first' 'blocked_until: revision — the code CI prints for #47   # waits on T0'; for _ in $(seq 1 3000); do printf 'notes: %s\n' "a line of text that makes the plan long enough to fill a pipe"; done; } > .idleflow/runs/active/plan.md
+check "plan-field reads a long plan and keeps a # in the field's text" 'v="$(bash "$RUN" plan-field T1 blocked_until)" && [ "$v" = "revision — the code CI prints for #47" ]'
+printf '%s\n' '## Tasks' '### T1: one' 'group: 1' 'owns:' '  - src/a/**   # its code' 'entry_points:' '  - src/a/x.py: run' '  - `src/b/y.py`: other' 'acceptance:' \
+  '  - A1: `src/a/x.py` prints ok → verify: pytest tests/test_z.py::test_ok' '  - A2: .gitignore ignores build/, as https://example.com/a/b.html says; Order.currency stays' \
+  '### T2: two' 'owns:' '  - .claude/**' '  - docs/**' 'acceptance:' '  - A1: `docs/guide.md` explains it' '```' '### T3: in a fence' 'owns:' '  - zzz' 'entry_points:' '  - q/r.py: f' '```' > .idleflow/runs/active/plan.md
+bash "$RUN" plan-check > "$scratch/pc.txt" 2>&1; rc=$?
+check "plan-check names each file a task names but does not own" '[ "$rc" = 1 ] && grep -qx "plan-check: T1 does not own src/b/y.py, which its entry point names; add it to T1.s owns: (or to shared_files when every task adds lines to it)" "$scratch/pc.txt" && grep -q "^plan-check: T1 does not own .gitignore, which its acceptance A2 names" "$scratch/pc.txt" && [ "$(grep -c "does not own" "$scratch/pc.txt")" = 2 ]'
+check "plan-check names every protected file a wide glob owns" 'for p in .claude/settings.json .claude/settings.local.json .claude/agents/ .claude/hooks/; do grep -qx "plan-check: T2 owns the protected $p; protected files belong to no task" "$scratch/pc.txt" || exit 1; done && [ "$(grep -c "protected" "$scratch/pc.txt")" = 4 ] && ! grep -q "T3\|zzz" "$scratch/pc.txt"'
+printf '%s\n' '## Tasks' '### T1: one' 'owns:' '  - src/a/**' '  - .gitignore' 'entry_points:' '  - src/a/x.py: run' 'acceptance:' '  - A1: `src/a/x.py` and .gitignore → verify: true' > .idleflow/runs/active/plan.md
+check "plan-check passes a plan whose tasks own what they name" '[ "$(bash "$RUN" plan-check)" = "plan-check: every file each task names is in its owns: or shared_files, and no task owns a protected file" ]'
+printf '%s\n' '## Tasks' \
+  '### T1: inline lists and odd entry points' 'owns: [src/a/**, "tests/**"]' 'entry_points: [src/a/x.py: run]' 'entry_points:' '  - src/a/x.py:run' '  - src/a/y.py (new file)' '  - src/a/z.py::Klass' 'acceptance:' \
+  '  - A1: writes $IDLEFLOW_TMP/report.json, /tmp/x.log and ~/.cache/a.json; serves localhost:4173/index.html' '  - A2: the report also' '    lands in docs/report.md → verify: true' '  - prints src\b\c.py' \
+  '### T2: protected files, one at a time' 'owns:' '  - .claude/agents/reviewer.md' '  - .idleflow/conventions.md' '  - .claude/*/x.md' '  - .claude/skills/x/**' \
+  '### T3: no named files' 'owns: [.claude/**, src/**]' 'acceptance:' '  - A1: → verify: true' > .idleflow/runs/active/plan.md
+bash "$RUN" plan-check > "$scratch/pc.txt" 2>&1; rc=$?
+check "plan-check reads inline lists, entry points with symbols and items that run on" '[ "$rc" = 1 ] && [ "$(grep -c "^plan-check: T1 " "$scratch/pc.txt")" = 2 ] && grep -q "^plan-check: T1 does not own docs/report.md, which its acceptance A2 names" "$scratch/pc.txt" && grep -q "^plan-check: T1 does not own src/b/c.py, which its acceptance (unnumbered) names" "$scratch/pc.txt"'
+check "plan-check flags a protected file named inside its folder, and every task's wide glob" 'for l in "T2 owns the protected .claude/agents/" "T2 owns the protected .idleflow/" "T2 owns the protected .claude/hooks/" "T3 owns the protected .claude/settings.json" "T3 owns the protected .claude/agents/"; do grep -q "^plan-check: $l;" "$scratch/pc.txt" || exit 1; done && ! grep -q "T2 owns the protected .claude/settings" "$scratch/pc.txt"'
+printf '%s\n' '## Tasks' '### T1 — one' 'owns: [.claude/**]' > .idleflow/runs/active/plan.md
+check "plan-check refuses a task heading it cannot read, and a plan with no task" 'out="$(bash "$RUN" plan-check 2>&1)"; [ $? = 1 ] && echo "$out" | grep -q "### T1 — one\" is not a task heading" && echo "$out" | grep -q "has no task"'
+printf '%s\n' '## Tasks' '### T1: one' 'owns: [.CLAUDE/Agents/**, src/**]' 'entry_points: [src/a.py]' > .idleflow/runs/active/plan.md
+check "plan-check folds case only where the guard does" 'command -v cygpath >/dev/null 2>&1 || bash "$RUN" plan-check >/dev/null'
 bash "$RUN" finish "done" >/dev/null
 
 echo "--- conventional commits"
@@ -1022,7 +1078,11 @@ check "attribution is one rule every commit writer gets" '( for a in implementer
 check "the doc-keeper edits sentences, never whole files" '! grep -q "^tools:.*Write" "$HERE/../agents/doc-keeper.md" && grep -q "belongs to humans" "$HERE/../agents/doc-keeper.md" && grep -q "as it is on disk now" "$HERE/../templates/CLAUDE.md"'
 check "agents run task commands through run.sh exec" '( for a in implementer implementer-hard review-correct; do grep -q "exec <task-id> -- <command>" "$HERE/../agents/$a.md" || exit 1; done ) && grep -q "IDLEFLOW_PORT" "$HERE/../agents/planner.md" && [ "$(grep -c "exec <task-id> -- <command>\|exec <id> -- <command>" "$HERE/../commands/feature.md")" = 2 ]'
 check "the index limit counts only hand-written text" 'grep -q "outside generated blocks) stays under 80 lines" "$HERE/../agents/retro.md" && grep -q "the text outside its generated blocks stays under 80 lines" "$HERE/../commands/setup.md" && ! grep -q "Under 80 lines\.\|), under 80 lines," "$HERE/../agents/retro.md" "$HERE/../commands/setup.md"'
+check "the planner writes prd.md only while it is the template" 'grep -q "Your prompt says whether \`prd.md\` is \`written\` or still the \`template\` R2 copied; \`greenfield\` is about code and never decides it" "$HERE/../agents/planner.md" && grep -q "When it is \`written\`, humans own it" "$HERE/../agents/planner.md" && ! grep -q "On a \*\*greenfield\*\* run you also \*write\* \`prd.md\`" "$HERE/../agents/planner.md" && grep -q "the paths of \`prd.md\` (with \`template\` when it is missing or its first line is still the template.s \`# <Project name> — product requirements\`, else \`written\`" "$HERE/../commands/feature.md" && grep -q "shows a change (the planner filled the template or applied a yes), run \`bash \"\$RUN\" snapshot\` first, before any worktree exists" "$HERE/../commands/feature.md" && head -n 1 "$HERE/../templates/prd.md" | grep -qx "# <Project name> — product requirements" && ! grep -q "planner fills \`prd.md\` on a greenfield run" "$HERE/../procedures/repo-setup.md"'
+check "reviews record the checks they ran and the deviations they weighed" 'grep -q "^checks_run: <none (<why>) | one line each" "$HERE/../agents/review-correct.md" && grep -q "^deviations_weighed: <none | one line each" "$HERE/../agents/review-correct.md" && grep -q "record the judgement under \`deviations_weighed:\`" "$HERE/../agents/review-correct.md" && grep -q "^checks_run: <none (<why>) | one line each" "$HERE/../agents/review-design.md" && grep -q "\`deviations_weighed:\` is its judgement" "$HERE/../agents/retro.md"'
+check "each issue form's title hint is the form ISSUES.md gives its kind" '( for k in bug workflow idea pushback; do form="$(grep -o "^| \`$k\` | \`$k: <[^\`]*>\` |\$" "$HERE/../ISSUES.md" | sed "s/^| \`$k\` | \`//; s/\` |\$//")"; [ -n "$form" ] && grep -qF "Title: \"$form\"" "$HERE/../.github/ISSUE_TEMPLATE/$k.md" || exit 1; done ) && ! grep -qE "^\| \`(idea|pushback)\` \| \`[a-z]+: <what is wrong" "$HERE/../ISSUES.md"'
 check "the designer and design reviewer exist" '[ -f "$HERE/../agents/designer.md" ] && [ -f "$HERE/../agents/review-design.md" ] && grep -q "\"ui\"" "$HERE/../agents/classifier.md" && grep -q "^### 2c. Design" "$HERE/../commands/feature.md"'
+check "requirements no screen shows reach the plan" 'grep -q "^- \`design.md\` at the output path: the screens for this run, \"Not on a screen\"" "$HERE/../agents/designer.md" && grep -q "Each line under \"Not on a screen\" becomes acceptance of the task that builds its surface" "$HERE/../agents/planner.md" && grep -q "listed under \"Not on a screen\"" "$HERE/../procedures/design.md"'
 check "the design handbook carries the contrast rule" 'grep -q "4.5:1" "$HERE/../procedures/design.md" && grep -q "0.2126 R + 0.7152 G + 0.0722 B" "$HERE/../procedures/design-data.md"'
 check "STEP_DESIGN is a setting" 'grep -q STEP_DESIGN "$HERE/conf.sh" && grep -q "^STEP_DESIGN=auto" "$HERE/../config/idleflow.conf"'
 check "every command reads the talking rules" '[ -z "$(cd "$HERE/../commands" && grep -L "procedures/talking.md" *.md | grep -vx fix.md)" ]'

@@ -30,6 +30,7 @@ verdict: approve | reject
 remedy: none | edit | rebuild
 screenshots: <taken at 390 and 1440 | not taken (reason)>
 unverified: <none | one line each: - <screen and state, or check> — tool: <what was missing> | environment: <the cause> — <evidence>>
+checks_run: <none (<why>) | one line each: - <the command, measurement or screenshot: screen, state and width> — <its outcome: exit <n>, the measured value, or what the image shows>>
 
 ### D<n>. <title>   severity: blocking | major | minor
 where: <file:line, or screen and width>

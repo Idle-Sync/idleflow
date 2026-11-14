@@ -33,7 +33,8 @@ For work a person sees (the classifier reports `ui: true`, or `STEP_DESIGN=on`),
   checklists by screen type). It writes or extends the repo's lasting design system (`docs/design-system.md`,
   or `.idleflow/design-system.md` without docs): a direction, tokens with measured contrast for light and dark,
   components. For this run it writes `design.md`: a spec per screen with layout, hierarchy, every state,
-  motion and accessibility. Token work becomes the plan's first task.
+  motion and accessibility, plus the issue's requirements that no screen shows (an API payload, CLI output),
+  which the plan gives to the tasks that build those surfaces. Token work becomes the plan's first task.
 - **Libraries** it would use (an animation library such as GSAP, a component set such as shadcn/ui) go to the
   library step for research and the human's yes; it never installs anything.
 - **`idleflow:review-design`** reviews every `ui` task against the spec and tokens, checks accessibility and the
@@ -257,6 +258,6 @@ Older Claude Code: `claude plugin marketplace add Idle-Sync/idleflow` then `clau
 
 - Token counts per phase aren't captured; `/cost` after a run is the stopgap. OTEL export is planned.
 - `${CLAUDE_PLUGIN_ROOT}` in command files assumes plugin install; Option B in setup.md rewrites it.
-- In ownership globs `*` and `?` are the only wildcards and both cross `/`; every other character is literal, so `src/pages/[slug].astro` names that file. `src/**` is the usual shape. The guard hook and both reviewers (through `run.sh unowned`) use the same matcher. Diff-gate excludes use git pathspec globs and are all `**/`-prefixed so they match at any depth.
+- In ownership globs `*` and `?` are the only wildcards and both cross `/`; every other character is literal, so `src/pages/[slug].astro` names that file. `src/**` is the usual shape. The guard hook, both reviewers (through `run.sh unowned`) and the plan check (`run.sh plan-check`) use the same matcher. Diff-gate excludes use git pathspec globs and are all `**/`-prefixed so they match at any depth.
 - `model: fable` in agent frontmatter depends on account access; setup.md step 3 checks and falls back.
 - The orchestrator is a prompt, not code. It will occasionally drift. The "Rules you never break" block at the bottom of `commands/feature.md` is the first thing to tighten when it does.

@@ -39,7 +39,7 @@ Read `.idleflow/conventions.md` before your first edit; its rules apply to every
 
 ## Fix mode
 
-When your prompt ends with `Fix mode: <report | edit>` and the paths of review files, your task is built and was reviewed, and a reviewer asked for a small change instead of a rebuild. Read those files; their findings are the whole job, except a finding whose `fix:` reads `reword commit …`: the orchestrator rewords that commit itself, so leave it and do not list it. Under `report`, the diff is right and only `.idleflow-run/result.md` is wrong: rewrite it whole so every field matches the diff (step 6), and change nothing else. Under `edit`, make the change each finding's `fix:` names, in files you own and nothing more, commit it as step 5 says, rerun the tests and `verify:` commands the change touches, then rewrite `.idleflow-run/result.md` whole. A finding you cannot fix that way (it needs a file you do not own, or a different approach) gets no change: name it under `deviations`, and the orchestrator takes the retry path. Reply as step 6 says.
+When your prompt ends with `Fix mode: <report | edit>` and the paths of review files, your task is built and was reviewed, and a reviewer asked for a small change instead of a rebuild. Read those files; their findings are the whole job, except a finding whose `fix:` reads `reword commit …`: the orchestrator rewords that commit itself, so leave it and do not list it. Under `report`, the diff is right and only `.idleflow-run/result.md` is wrong: rewrite it whole so every field matches the diff (step 6), and change nothing else. Under `edit`, make the change each finding's `fix:` names, in files you own and nothing more, commit it as step 5 says, rerun the tests and `verify:` commands the change touches, then rewrite `.idleflow-run/result.md` whole. A finding you cannot fix that way (it needs a file you do not own, or a different approach) gets no change: name it under `unfixed`, never under `deviations`, which keeps what the build reported, and the orchestrator takes the retry path. Reply as step 6 says.
 
 ## Interface tasks
 
@@ -72,7 +72,8 @@ gate: <none | exit <code>, run after the last change, and its last lines>
 mutations: <not required | one line per fault: file:function — fault — caught by <test> | survived: <added test / reason> | not run — <file> is not owned by this task>
 base_failures: <none | one line each: <test or check> — fails | flaky <k> of <n> — "<the failure line>" — base job <n>[, <n>...], task job <n>>
 deviations: <none | list>
-blocked_on: <none | file + reason>
+blocked_on: <none | file + reason | environment: <the cause> — <the quoted output line>>
+unfixed: <none | Fix mode only, one line each: <finding id> — <why it needs a file you do not own or a different approach>>
 notes_for_reviewer: <anything non-obvious, max 5 lines>
 ```
 
