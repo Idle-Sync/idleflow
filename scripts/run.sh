@@ -432,7 +432,7 @@ owned_by_me() { # owned_by_me <path>
   # Git Bash gives a folder an elevated session made to the Administrators group (gid 544); it is
   # this user's only when this session is in that group
   command -v cygpath >/dev/null 2>&1 || return 1
-  [ "$(stat -c %u "$1" 2>/dev/null)" = 544 ] && id -G | tr ' ' '\n' | grep -qx 544
+  [ "$(stat -c %u "$1" 2>/dev/null)" = 544 ] && id -G | tr ' ' '\n' | grep -x 544 >/dev/null
 }
 user_tmp() {
   local u; u="$(tmp_root)/idleflow-$(id -u)"
@@ -514,7 +514,7 @@ allocate_port() { # allocate_port <task-id>
   used="$(idleflow_rt entries "$ACTIVE/run.json" tasks 2>/dev/null | sed -n 's/.*"port":\([0-9]*\).*/\1/p')"
   while [ "$n" -lt 1000 ]; do
     p=$(( ${PORT_BASE:-4400} + n )); n=$((n + 1))
-    printf '%s\n' "$used" | grep -qx "$p" && continue
+    printf '%s\n' "$used" | grep -x -- "$p" >/dev/null && continue
     if claim_port "$reg" "$p" "$1" "$id" yes; then echo "$p"; return 0; fi
   done
   echo "allocate_port: no free port from ${PORT_BASE:-4400} to $(( ${PORT_BASE:-4400} + 999 ))" >&2; return 1
@@ -1036,7 +1036,7 @@ JSON
       END { flush() }')"
     # a task heading the plan check cannot read is a task nothing checks, and the guard would refuse
     printf '%s\n' "$facts" | awk -F'\t' '$2 == "badhead" { print "plan-check: \"" $3 "\" is not a task heading; write it ### T<n>: <title>" }' >> "$problems"
-    printf '%s\n' "$facts" | awk -F'\t' '$2 == "own" || $2 == "entry" || $2 == "accept"' | grep -q . || echo "plan-check: plan.md has no task with owns:, entry_points: or acceptance: under ## Tasks" >> "$problems"
+    printf '%s\n' "$facts" | awk -F'\t' '$2 == "own" || $2 == "entry" || $2 == "accept"' | grep . >/dev/null || echo "plan-check: plan.md has no task with owns:, entry_points: or acceptance: under ## Tasks" >> "$problems"
     facts="$(printf '%s\n' "$facts" | awk -F'\t' '$2 != "badhead"')"
     shared="$(shared_files)"
     # the guard folds case only on Windows, where file names do
@@ -1569,8 +1569,8 @@ Task: $tid")
       dir="$REPO/$(sessions_rel)"
       [ -d "$dir" ] || dir="$REPO/docs/sessions"
       people="$({ "${G[@]}" log --format='%ae' 2>/dev/null || true; } | sort -u | grep -c . || true)"
-      if ls "$dir"/*/ 2>/dev/null | grep -qE '^s_[0-9]{4}\.md$'; then say session_names per-person "notes in ${dir#"$REPO"/} are already in one folder per person"
-      elif ls "$dir" 2>/dev/null | grep -qE '^s_[0-9]{4}\.md$'; then
+      if ls "$dir"/*/ 2>/dev/null | grep -E '^s_[0-9]{4}\.md$' >/dev/null; then say session_names per-person "notes in ${dir#"$REPO"/} are already in one folder per person"
+      elif ls "$dir" 2>/dev/null | grep -E '^s_[0-9]{4}\.md$' >/dev/null; then
         if [ "${people:-1}" -gt 1 ]; then say session_names per-person "notes are numbered s_NNNN.md and $people people commit here; a folder per person keeps the numbering without collisions"
         else say session_names numbered "$(ls "$dir" | grep -cE '^s_[0-9]{4}\.md$') notes in ${dir#"$REPO"/} are numbered s_NNNN.md"; fi
       fi
@@ -1641,7 +1641,7 @@ Task: $tid")
       for t in check ci test; do
         line="$(grep -E "\"$t\"[[:space:]]*:" "$REPO/package.json" 2>/dev/null | head -1 || true)"
         # npm init's placeholder test script fails on purpose and checks nothing
-        [ -n "$line" ] && ! echo "$line" | grep -q "no test specified" && cands+=("npm run $t")
+        [ -n "$line" ] && ! echo "$line" | grep "no test specified" >/dev/null && cands+=("npm run $t")
       done
       [ "${#cands[@]}" -gt 0 ] && say gate "${cands[0]}" "candidates found: $(printf '%s, ' "${cands[@]}" | sed 's/, $//')"
     fi
