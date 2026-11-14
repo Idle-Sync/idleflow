@@ -33,6 +33,10 @@ fails=0
 export IDLEFLOW_NO_UPDATE_CHECK=1   # no network in the selftest
 ok()   { echo "  ok    $1"; }
 fail() { echo "  FAIL  $1"; fails=$((fails+1)); }
+# has <grep args>: grep that reads all of its input. Under pipefail, a reader that stops at the first
+# match (grep -q) kills a writer still writing with SIGPIPE, and the pipeline fails though the line
+# was there; so a check never pipes into grep -q.
+has() { grep "$@" >/dev/null; }
 check() { if eval "$2"; then ok "$1"; else fail "$1"; evidence "$2"; fi; }
 # A failed check prints the value of every variable its test reads, so a failure that captured a
 # command's output (doctor, gate, a log) shows what that command said. Nothing is run again.
@@ -83,9 +87,9 @@ printf '# proj\n' > README.md; mkdir -p .idleflow docs/research; printf 'mode: b
 printf 'docs/\n' > .gitignore
 printf 'unrelated\n' > unrelated.txt; git add unrelated.txt
 s="$(bash "$RUN" snapshot)"
-check "snapshot commits on unborn branch" 'echo "$s" | grep -q "committed" && git log --oneline | grep -q "project conventions"'
+check "snapshot commits on unborn branch" 'echo "$s" | has "committed" && git log --oneline | has "project conventions"'
 check "snapshot skips gitignored docs/"   '! git ls-files --error-unmatch docs/research/x.md >/dev/null 2>&1'
-check "snapshot leaves other staged work" 'git diff --cached --name-only | grep -qx "unrelated.txt"'
+check "snapshot leaves other staged work" 'git diff --cached --name-only | has -x "unrelated.txt"'
 check "snapshot keeps the human identity" '[ "$(git log -1 --format=%an)" = "Human" ]'
 check "snapshot is a no-op when clean"    '[ "$(bash "$RUN" snapshot)" = "snapshot: nothing to commit" ]'
 git reset -q unrelated.txt; rm -f unrelated.txt; printf '.idleflow/runs/\n' > .gitignore; git add .gitignore; commit -m gitignore
@@ -106,7 +110,7 @@ check "new records who started the run"  '[ "$(bash "$RUN" get by)" = "Human" ]'
 check "new records the plugin version"  '[ "$(bash "$RUN" get plugin_version)" = "$(idleflow_rt get "$HERE/../.claude-plugin/plugin.json" version)" ]'
 check "same version, no warning"       '[ -z "$(bash "$RUN" get id 2>&1 >/dev/null)" ]'
 v="$(bash "$RUN" get plugin_version)"; bash "$RUN" set plugin_version '"0.0.0"' 2>/dev/null
-check "other version warns on stderr"  'bash "$RUN" get id 2>&1 >/dev/null | grep -q "started on idleflow 0.0.0"'
+check "other version warns on stderr"  'bash "$RUN" get id 2>&1 >/dev/null | has "started on idleflow 0.0.0"'
 bash "$RUN" set plugin_version "\"$v\"" 2>/dev/null
 bash "$RUN" set size '"M"'
 check "get/set size"                   '[ "$(bash "$RUN" get size)" = "M" ]'
@@ -134,14 +138,14 @@ check "run.json has no CRLF"           '! grep -q $'"'"'\r'"'"' .idleflow/runs/a
 echo "--- worktree / ownership"
 wt="$(bash "$RUN" wt add T1)"
 check "wt add prints path"             '[ -n "$wt" ] && [ -d "$wt" ]'
-check "wt on task branch"              'git -C "$wt" rev-parse --abbrev-ref HEAD | grep -q "^idleflow/$id/T1$"'
+check "wt on task branch"              'git -C "$wt" rev-parse --abbrev-ref HEAD | has "^idleflow/$id/T1$"'
 check "wt marker written"              '[ "$(cat "$wt/.idleflow-run/task-id")" = "T1" ]'
 check "wt add stamps the task's start"     '[[ "$(bash "$RUN" get tasks.T1.t_start)" =~ ^[0-9]{10}$ ]]'
 check "task base_sha recorded"         '[ "$(bash "$RUN" get tasks.T1.base_sha)" = "$(git rev-parse HEAD)" ]'
 wt_again="$(bash "$RUN" wt add T1)"
 check "wt add again after a crash"     '[ "$wt_again" = "$wt" ] && [ -d "$wt" ]'
 bash "$RUN" own T1 '["src/**","tests/**"]'
-check "ownership recorded"             'idleflow_rt get .idleflow/runs/active/ownership.json tasks.T1.owns | grep -q "src/\*\*"'
+check "ownership recorded"             'idleflow_rt get .idleflow/runs/active/ownership.json tasks.T1.owns | has "src/\*\*"'
 
 echo "--- guard"
 wtn="$(native "$wt")"; dn="$(native "$d")"
@@ -179,7 +183,7 @@ git -C "$wt" reset -q --hard HEAD~1 && rm -f "$wt/setup-output.txt"
 bash "$RUN" own T1 '["src/**","tests/**","docs/café.md","src/café.py"]'
 mkdir -p "$wt/docs" && echo x > "$wt/docs/café.md" && echo y > "$wt/src/café.py" && ( cd "$wt" && git add docs/café.md src/café.py && commit -m "T1: café" )
 check "unowned reads non-ASCII paths as the guard does" '[ -z "$(bash "$RUN" unowned T1)" ]'
-check "the gate names non-ASCII files as they are"      'bash "$RUN" gate T1 | grep -q "\"src/café.py\""'
+check "the gate names non-ASCII files as they are"      'bash "$RUN" gate T1 | has "\"src/café.py\""'
 ( cd "$wt" && git reset -q --hard HEAD~1 )
 hk="$(git rev-parse --git-common-dir)/hooks"; mkdir -p "$hk"; printf '#!/bin/sh\necho "${GIT_CONFIG_PARAMETERS:-}" >> "%s"\n' "$scratch/hook.env" > "$hk/pre-commit"; chmod +x "$hk/pre-commit"; : > "$scratch/hook.env"
 echo hooked > hooked.txt; git add hooked.txt; bash "$RUN" snapshot >/dev/null 2>&1; commit -m hooked >/dev/null 2>&1 || true
@@ -190,12 +194,12 @@ rm -f "$hk/pre-commit"; ( cd "$wt" && git reset -q --hard HEAD~1 )
 odd="$(printf 'src/a"b\\c\td.py')"
 printf 'x\ny\n' > "$wt/$odd"; ( cd "$wt" && git add -- "$odd" && commit -m "T1: odd name" )
 check "unowned reads any file name as it is"      '[ -z "$(bash "$RUN" unowned T1)" ]'
-check "the gate names any file as it is"          'bash "$RUN" gate T1 | grep -qF "\"src/a\\\"b\\\\c\\td.py\",2"'
+check "the gate names any file as it is"          'bash "$RUN" gate T1 | has -F "\"src/a\\\"b\\\\c\\td.py\",2"'
 bs="$(printf 'src\\x.py')"; echo z > "$wt/$bs"; ( cd "$wt" && git add -- "$bs" && commit -m "T1: backslash" )
 check "a backslash in a name is not a folder"     '[ "$(bash "$RUN" unowned T1)" = "$bs" ]'
 ( cd "$wt" && git reset -q --hard HEAD~1 )
 printf '3\t1\t\0old/x.py\0new/x.py\0' > "$scratch/ns-rename"
-check "the gate reads a rename record as the new path" 'idleflow_rt gate 10 5 "$scratch/ns-rename" "$scratch/ns-rename" | grep -qF "\"files\":1," && idleflow_rt gate 10 5 "$scratch/ns-rename" "$scratch/ns-rename" | grep -qF "[[\"new/x.py\",4]]"'
+check "the gate reads a rename record as the new path" 'idleflow_rt gate 10 5 "$scratch/ns-rename" "$scratch/ns-rename" | has -F "\"files\":1," && idleflow_rt gate 10 5 "$scratch/ns-rename" "$scratch/ns-rename" | has -F "[[\"new/x.py\",4]]"'
 ( cd "$wt" && git reset -q --hard HEAD~1 )
 check "unowned fails on an unknown task"        '! bash "$RUN" unowned T9 >/dev/null 2>&1'
 bash "$RUN" own T1 '["src/**","tests/**"]'
@@ -249,7 +253,7 @@ check "outside any idleflow run the kill guard allows a long command" '[ "$(kill
 check "a cd out of the run leaves the guard on for the run's session" '[ "$(kill_rc "pkill -f vite" /nowhere "$(native "$d")")" = 2 ]'
 kg_start=$(date +%s); kg_rc=$(kill_rc "$(printf "%099999d" 0 | tr 0 "(")"); kg_secs=$(( $(date +%s) - kg_start ))
 check "the kill guard gives up on a run of 99999 '(' within its time" "[ $kg_rc = 2 ] && [ $kg_secs -lt 8 ]"
-check "the kill guard is a Bash hook" 'grep -q "kill-guard.sh" "$HERE/../hooks/hooks.json" && idleflow_rt get "$HERE/../hooks/hooks.json" hooks.PreToolUse | grep -q "\"matcher\":\"Bash\""'
+check "the kill guard is a Bash hook" 'grep -q "kill-guard.sh" "$HERE/../hooks/hooks.json" && idleflow_rt get "$HERE/../hooks/hooks.json" hooks.PreToolUse | has "\"matcher\":\"Bash\""'
 check "every agent that runs commands has the process rule" '( for a in "$HERE"/../agents/*.md; do case "$a" in */classifier.md) continue;; esac; grep -q "Never end processes by name or pattern" "$a" || exit 1; done )'
 check "debate round 2 runs red first, then cost answers it" 'grep -q "a second miss stops the run), \`idleflow:cost-critic\` → \`debate/round-2-cost.md\`, with the round-1 inputs, \`round-1-red.md\` and \`round-2-red.md\`" "$HERE/../commands/feature.md" && grep -q "round-1 and round-2 files (round 2 runs after the red team" "$HERE/../agents/cost-critic.md" && grep -q "round 2 runs before the cost critic" "$HERE/../agents/red-team.md" && ! grep -q "Round 2, both in parallel" "$HERE/../commands/feature.md" && grep -q "cuts their round-2 file objected to" "$HERE/../agents/cost-critic.md" && ! grep -q "drop any the cost critic answered" "$HERE/../agents/red-team.md" && grep -q "drop any finding made moot by a cut you did not object to" "$HERE/../agents/red-team.md"'
 check "tests that use changed code reach the plan's ownership" 'grep -q "grep the whole test tree" "$HERE/../agents/explorer.md" && grep -q "Other tests using what changes" "$HERE/../templates/context.md" && grep -q "each test, fake or fixture context.md §4 lists as using a symbol the task alters goes in that task" "$HERE/../agents/planner.md"'
@@ -289,7 +293,7 @@ check "keep --move frees the name for the next review" '[ ! -e .idleflow/runs/ac
 check "keep refuses a path outside the run or a missing file" '! bash "$RUN" keep ../run.json 2>/dev/null && ! bash "$RUN" keep /etc/hosts 2>/dev/null && ! bash "$RUN" keep review/none.md 2>/dev/null'
 rm .idleflow/runs/active/plan.1.md
 check "keep numbers past the highest kept version, not into a gap" '[ "$(basename "$(bash "$RUN" keep plan.md)")" = plan.3.md ]'
-check "keep with no file says what it needs" '! bash "$RUN" keep 2>&1 >/dev/null | grep -q unbound && ! bash "$RUN" keep 2>/dev/null'
+check "keep with no file says what it needs" '! bash "$RUN" keep 2>&1 >/dev/null | has unbound && ! bash "$RUN" keep 2>/dev/null'
 rm .idleflow/runs/active/plan.md .idleflow/runs/active/plan.2.md .idleflow/runs/active/plan.3.md .idleflow/runs/active/review/T1-correct.1.md
 check "usage lists every command in the header" '[ "$(bash "$RUN" 2>/dev/null | grep -c "^#   run.sh ")" = "$(grep -c "^#   run.sh " "$RUN")" ]'
 
@@ -304,26 +308,26 @@ check "gate keeps a newer run copy"    'grep -q "edited: yes" "$r"'
 printf 'task: T1\nstatus: partial\n' > "$wt/.idleflow-run/result.md"; touch -t 203001010000 "$wt/.idleflow-run/result.md"
 bash "$RUN" gate T1 >/dev/null
 check "gate refreshes after a rewrite" 'grep -q "status: partial" "$r" && ! grep -q "edited: yes" "$r"'
-check "gate verdict ok"                'echo "$g" | grep -q "\"verdict\":\"ok\""'
-check "gate counts code lines (3)"     'echo "$g" | grep -q "\"total\":3,"'
-check "gate excludes .md (50+1)"       'echo "$g" | grep -q "\"excluded_total\":51"'
+check "gate verdict ok"                'echo "$g" | has "\"verdict\":\"ok\""'
+check "gate counts code lines (3)"     'echo "$g" | has "\"total\":3,"'
+check "gate excludes .md (50+1)"       'echo "$g" | has "\"excluded_total\":51"'
 check "gate.json written"              '[ -f .idleflow/runs/active/tasks/T1/gate.json ]'
 # what is not committed never merges, so the gate does not count it and does not stage it
 ( cd "$wt" && seq 1 500 > src/generated.py && echo w >> src/code.py )
 g="$(bash "$RUN" gate T1)"
-check "gate counts only the task's commits" 'echo "$g" | grep -q "\"total\":3," && echo "$g" | grep -q "\"uncommitted\":2," && echo "$g" | grep -q "src/generated.py"'
+check "gate counts only the task's commits" 'echo "$g" | has "\"total\":3," && echo "$g" | has "\"uncommitted\":2," && echo "$g" | has "src/generated.py"'
 check "gate leaves the task's index alone"  'git -C "$wt" diff --cached --quiet && [ -z "$(git -C "$wt" ls-files src/generated.py)" ]'
 ( cd "$wt" && seq 1 40 > src/big.py && git add src/big.py && commit -m "T1: big" )
-check "gate limit override -> audit"   'bash "$RUN" gate T1 10 | grep -q "\"verdict\":\"audit\""'
+check "gate limit override -> audit"   'bash "$RUN" gate T1 10 | has "\"verdict\":\"audit\""'
 ( cd "$wt" && mkdir -p .idleflow && printf 'DIFF_LIMIT=100000\n' > .idleflow/idleflow.conf )
 g2="$(bash "$HERE/diff-gate.sh" "$wt" "$(git rev-parse HEAD)" 2>/dev/null)"
-check "gate ignores settings the task wrote"  'echo "$g2" | grep -q "\"limit\":1500"'
+check "gate ignores settings the task wrote"  'echo "$g2" | has "\"limit\":1500"'
 rm -rf "$wt/.idleflow"
-check "gate verdict split past slack"  'bash "$HERE/diff-gate.sh" "$wt" "$(git rev-parse HEAD)" 10 5 | grep -q "\"verdict\":\"split\""'
-check "gate with no exclude list"      'IDLEFLOW_CONF=/nonexistent bash "$HERE/diff-gate.sh" "$wt" "$(git rev-parse HEAD)" | grep -q "\"excluded_total\":0"'
+check "gate verdict split past slack"  'bash "$HERE/diff-gate.sh" "$wt" "$(git rev-parse HEAD)" 10 5 | has "\"verdict\":\"split\""'
+check "gate with no exclude list"      'IDLEFLOW_CONF=/nonexistent bash "$HERE/diff-gate.sh" "$wt" "$(git rev-parse HEAD)" | has "\"excluded_total\":0"'
 check "gate rejects a bad base"        '! bash "$HERE/diff-gate.sh" "$wt" deadbeef >/dev/null 2>&1'
 bash "$RUN" set tasks.T1.base_sha null
-check "gate falls back to run base on null" 'bash "$RUN" gate T1 | grep -q "\"verdict\":\"ok\""'
+check "gate falls back to run base on null" 'bash "$RUN" gate T1 | has "\"verdict\":\"ok\""'
 bash "$RUN" set tasks.T1.base_sha '"deadbeef"'
 check "run.sh gate fails loudly on a bad base" '! bash "$RUN" gate T1 2>"$scratch/gate.err" && grep -q "bad base" "$scratch/gate.err"'
 bash "$RUN" set tasks.T1.base_sha "\"$(git rev-parse HEAD)\""
@@ -343,7 +347,7 @@ printf '### F1. Not this task   kind: convention\n' > .idleflow/runs/active/revi
 printf '### F1. Nor this one   kind: convention\n' > .idleflow/runs/active/review/T1-ui-conform.md
 printf '### D1. A hyphenated task id   severity: minor\n' > .idleflow/runs/active/review/T1-2-design.md
 f="$(bash "$RUN" findings T1)"
-check "findings lists the current reviews' findings only" '[ "$(echo "$f" | wc -l | tr -d " ")" = 2 ] && echo "$f" | grep -qx "T1: F2. A leak on the error path   severity: major (review/T1-correct.md)" && ! echo "$f" | grep -q "F9\|Not this task\|Nor this one"'
+check "findings lists the current reviews' findings only" '[ "$(echo "$f" | wc -l | tr -d " ")" = 2 ] && echo "$f" | has -x "T1: F2. A leak on the error path   severity: major (review/T1-correct.md)" && ! echo "$f" | has "F9\|Not this task\|Nor this one"'
 check "findings reads a hyphenated task id's current review" '[ "$(bash "$RUN" findings T1-2)" = "T1-2: D1. A hyphenated task id   severity: minor (review/T1-2-design.md)" ]'
 rm .idleflow/runs/active/review/T1-correct.md .idleflow/runs/active/review/T1-correct.1.md .idleflow/runs/active/review/T10-conform.md .idleflow/runs/active/review/T1-ui-conform.md .idleflow/runs/active/review/T1-2-design.md
 
@@ -356,7 +360,7 @@ check "merge stamps the task's merge"     '[[ "$(bash "$RUN" get tasks.T1.t_merg
 check "merge reports merged"           '[ "$m" = "merged T1" ]'
 check "merged file on main"            '[ -f src/code.py ]'
 check "merge takes commits, never uncommitted work" '[ ! -e src/generated.py ] && [ "$(cat src/code.py)" = "$(printf "x\ny\nz")" ] && grep -q "not merged: .*src/generated.py" "$scratch/merge.err"'
-check "merge leaves untracked caches out" '[ ! -e .pytest_cache ] && ! git ls-files | grep -q pytest_cache'
+check "merge leaves untracked caches out" '[ ! -e .pytest_cache ] && ! git ls-files | has pytest_cache'
 check "merge keeps the human identity" '[ "$(git log -1 --format=%an)" = "Human" ]'
 bash "$RUN" wt add TL > "$scratch/wl" 2>/dev/null
 check "a task added after a merge branches from it"  '[ "$(bash "$RUN" get tasks.TL.base_sha)" = "$(git rev-parse HEAD)" ] && [ -f "$(cat "$scratch/wl")/src/code.py" ]'
@@ -369,24 +373,24 @@ printf 'docs/\n' >> .git/info/exclude; mkdir -p docs; echo n > docs/new.md
 check "snapshot skips a docs/ ignored only in info/exclude" 'bash "$RUN" snapshot >/dev/null 2>&1; ! git ls-files --error-unmatch docs/new.md >/dev/null 2>&1'
 rm -f docs/new.md; grep -vxF 'docs/' .git/info/exclude > "$scratch/exclude"; cp "$scratch/exclude" .git/info/exclude
 echo "docs/" >> .gitignore; git add .gitignore; commit -m "ignore docs"; mkdir -p docs; echo n > docs/new.md
-check "snapshot skips an ignored docs/ and says so" 'bash "$RUN" snapshot 2>&1 >/dev/null | grep -q "docs is ignored" && ! git ls-files --error-unmatch docs/new.md >/dev/null 2>&1'
+check "snapshot skips an ignored docs/ and says so" 'bash "$RUN" snapshot 2>&1 >/dev/null | has "docs is ignored" && ! git ls-files --error-unmatch docs/new.md >/dev/null 2>&1'
 rm -f docs/new.md; sed -i '/^docs\/$/d' .gitignore; git add .gitignore; commit -m "unignore docs"
 wt2="$(bash "$RUN" wt add T2 HEAD)"
 bash "$RUN" own T2 '["src/**"]'
 bash "$RUN" set tasks.T2.status '"approved"'
 ( cd "$wt2" && printf '1\n2\n3\n4\n5\n' > src/second.py && git add src/second.py && commit -m "T2: second" )
 g2="$(bash "$RUN" gate T2)"
-check "T2 gate sees only T2 lines (5)" 'echo "$g2" | grep -q "\"total\":5,"'
+check "T2 gate sees only T2 lines (5)" 'echo "$g2" | has "\"total\":5,"'
 check "merge conflict exits 3"         '( cd "$wt2" && printf "changed\n" > src/code.py && git add src/code.py && commit -m "T2: change" ); printf "other\n" > src/code.py; git add -A; commit -m main-change; bash "$RUN" merge T2 >/dev/null 2>&1; [ $? -eq 3 ]'
 check "conflict left no MERGE_HEAD"    '[ ! -f .git/MERGE_HEAD ]'
 
 echo "--- finish, then worktrees can still be removed"
 f="$(bash "$RUN" finish done)"
-check "finish message"                 'echo "$f" | grep -q "finished: done"'
+check "finish message"                 'echo "$f" | has "finished: done"'
 check "active renamed to id"           '[ ! -e .idleflow/runs/active ] && [ -f ".idleflow/runs/$id/run.json" ]'
 check "log.jsonl appended, compact"    'grep -q "\"id\":\"$id\"" .idleflow/runs/log.jsonl'
 check "status in run.json"             '[ "$(idleflow_rt get ".idleflow/runs/$id/run.json" status)" = "done" ]'
-check "wt list works without a run"    'bash "$RUN" wt list | grep -q "idleflow/$id/T2"'
+check "wt list works without a run"    'bash "$RUN" wt list | has "idleflow/$id/T2"'
 bash "$RUN" wt rm T1; bash "$RUN" wt rm T2
 check "wt rm works without a run"      '[ ! -d "$wt" ] && [ ! -d "$wt2" ]'
 
@@ -418,8 +422,8 @@ git merge --abort 2>/dev/null || true
 echo "--- loc / conf"
 check "loc counts code lines only"     '[ "$(bash "$RUN" loc)" = "$(cat src/big.py src/code.py .gitignore $(git ls-files .gitattributes) | wc -l | tr -d " ")" ]'
 c="$(bash "$RUN" conf)"
-check "conf prints runtime"            'echo "$c" | grep -q "^RUNTIME="'
-check "conf prints plugin version"     'echo "$c" | grep -q "^PLUGIN_VERSION=[0-9]"'
+check "conf prints runtime"            'echo "$c" | has "^RUNTIME="'
+check "conf prints plugin version"     'echo "$c" | has "^PLUGIN_VERSION=[0-9]"'
 
 echo "--- path / migrate from the .claude/ layout"
 check "lessons live in .idleflow by default" '[ "$(bash "$RUN" path lessons)" = "$(native "$(git rev-parse --show-toplevel)")/.idleflow/lessons.md" ]'
@@ -431,7 +435,7 @@ printf '{}' > .claude/settings.json && printf 'Read `.claude/lessons.md` first.\
 printf '{"id":"x"}\n' > .claude/runs/log.jsonl && printf '.claude-run/\n' >> .git/info/exclude
 git add -A && commit -m old
 doc="$(bash "$RUN" doctor)"
-check "doctor flags the old layout"       'echo "$doc" | grep -q "^fail layout: .*\.claude/lessons\.md.*fix: run.sh migrate"'
+check "doctor flags the old layout"       'echo "$doc" | has "^fail layout: .*\.claude/lessons\.md.*fix: run.sh migrate"'
 mkdir -p .claude/runs/active
 check "migrate refuses an active old run" '! bash "$RUN" migrate 2>/dev/null && [ -f .claude/lessons.md ]'
 rmdir .claude/runs/active
@@ -440,10 +444,10 @@ check "migrate moves conventions and lessons" '[ -f .idleflow/conventions.md ] &
 check "migrate keeps past runs"           '[ -f .idleflow/runs/log.jsonl ] && [ -d .idleflow/runs/20260101-x ] && [ ! -e .claude/runs ]'
 check "migrate leaves Claude Code files"  '[ -f .claude/settings.json ]'
 check "migrate rewrites old paths"        'grep -qF ".idleflow/runs/log.jsonl" docs/notes/x.md && grep -qF ".idleflow/lessons.md" CLAUDE.md && grep -qx ".idleflow/runs/" .gitignore && grep -qx ".idleflow-run/" .git/info/exclude'
-check "migrate commits once, cleanly"     'echo "$out" | grep -q "committed" && [ "$(git log -1 --format=%s)" = "chore: move idleflow files to .idleflow/" ] && [ -z "$(git status --porcelain)" ]'
+check "migrate commits once, cleanly"     'echo "$out" | has "committed" && [ "$(git log -1 --format=%s)" = "chore: move idleflow files to .idleflow/" ] && [ -z "$(git status --porcelain)" ]'
 doc="$(bash "$RUN" doctor)"
-check "doctor passes the new layout"      'echo "$doc" | grep -q "^ok layout" && echo "$doc" | grep -q "^ok shared: .idleflow/lessons.md is committed"'
-check "doctor names unanswered settings"  'echo "$doc" | grep -q "^warn conventions: not answered yet: ignore_in docs"'
+check "doctor passes the new layout"      'echo "$doc" | has "^ok layout" && echo "$doc" | has "^ok shared: .idleflow/lessons.md is committed"'
+check "doctor names unanswered settings"  'echo "$doc" | has "^warn conventions: not answered yet: ignore_in docs"'
 check "update-check is silent offline"    '[ -z "$(bash "$RUN" update-check)" ]'
 check "migrate again is a no-op"          '[ "$(bash "$RUN" migrate)" = "migrate: nothing to move" ]'
 
@@ -463,9 +467,9 @@ check "a named folder comes from idleflow.person" '[ "$(bash "$RUN" session-name
 git config --local --unset idleflow.person
 rm -rf docs
 sed -i.bak 's#^progress_file: .*#progress_file: ../outside.md#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
-check "a path outside the repo falls back"  'p="$(bash "$RUN" path progress 2>/dev/null)"; [ "$p" = "$top/progress.md" ] && bash "$RUN" path progress 2>&1 >/dev/null | grep -q "not a relative path"'
+check "a path outside the repo falls back"  'p="$(bash "$RUN" path progress 2>/dev/null)"; [ "$p" = "$top/progress.md" ] && bash "$RUN" path progress 2>&1 >/dev/null | has "not a relative path"'
 sed -i.bak 's#^progress_file: .*#progress_file: /abs/progress.md#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
-check "an absolute path falls back"  'p="$(bash "$RUN" path progress 2>/dev/null)"; [ "$p" = "$top/progress.md" ] && bash "$RUN" path progress 2>&1 >/dev/null | grep -q "not a relative path"'
+check "an absolute path falls back"  'p="$(bash "$RUN" path progress 2>/dev/null)"; [ "$p" = "$top/progress.md" ] && bash "$RUN" path progress 2>&1 >/dev/null | has "not a relative path"'
 for bad in .git/hooks/post-commit docs/.GIT/x.md -progress.md; do
   sed -i.bak "s#^progress_file: .*#progress_file: $bad#" .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
   check "a path under .git or starting with - falls back ($bad)" '[ "$(bash "$RUN" path progress 2>/dev/null)" = "$top/progress.md" ]'
@@ -482,10 +486,10 @@ printf 'worktrees_in: inside\nworktree_setup: ln -s "$MAIN/shared-big" shared-bi
 git add .idleflow/conventions.md && commit -q -m "setup command"
 bash "$RUN" new unapproved >/dev/null 2>&1
 out="$(bash "$RUN" wt add T5 2>&1)"; rc=$?
-check "an unapproved setup command never runs (exit 7)" '[ "$rc" = 7 ] && echo "$out" | grep -q "not approved" && [ ! -e .idleflow/worktrees/T5/.setup-ran ]'
-check "commands lists it as unapproved" 'bash "$RUN" commands | grep -q "^unapproved worktree_setup: ln -s"'
+check "an unapproved setup command never runs (exit 7)" '[ "$rc" = 7 ] && echo "$out" | has "not approved" && [ ! -e .idleflow/worktrees/T5/.setup-ran ]'
+check "commands lists it as unapproved" 'bash "$RUN" commands | has "^unapproved worktree_setup: ln -s"'
 doc="$(bash "$RUN" doctor 2>/dev/null)"
-check "doctor warns about an unapproved command" 'echo "$doc" | grep -q "^warn commands: not approved by you yet.*fix: read the command, then run.sh approve worktree_setup$"'
+check "doctor warns about an unapproved command" 'echo "$doc" | has "^warn commands: not approved by you yet.*fix: read the command, then run.sh approve worktree_setup$"'
 bash "$RUN" wt rm T5; bash "$RUN" finish done >/dev/null
 bash "$RUN" approve worktree_setup >/dev/null
 check "approval is local, never committed" '[ -n "$(git config --local idleflow.approved-worktree-setup)" ] && [ -z "$(git status --porcelain .idleflow)" ]'
@@ -501,7 +505,7 @@ check "guard: an owned file in an inside worktree is allowed" '[ "$(guard_rc "$w
 check "guard: an unowned file in an inside worktree is blocked" '[ "$(guard_rc "$wi/other.py" "$wi")" = "2" ]'
 check "guard: the main checkout stays blocked while building" '[ "$(guard_rc "$PWD/src/keep.py" "$PWD")" = "2" ] && [ "$(guard_rc "$PWD/.idleflow/conventions.md" "$PWD")" = "2" ]'
 st="$(git status --porcelain --untracked-files=all)"
-check "inside worktrees do not dirty the main checkout" '! echo "$st" | grep -q "\.idleflow/worktrees"'
+check "inside worktrees do not dirty the main checkout" '! echo "$st" | has "\.idleflow/worktrees"'
 bash "$RUN" set tasks.T9.status '"approved"'; bash "$RUN" wt rm T9; bash "$RUN" finish done >/dev/null
 sed -i.bak 's#^worktree_setup: .*#worktree_setup: echo boom; exit 3#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
 git add .idleflow/conventions.md && commit -q -m "failing setup"
@@ -510,21 +514,21 @@ out="$(bash "$RUN" wt add T8 2>&1)"; rc=$?
 check "a changed command needs approval again" '[ "$rc" = 7 ]'
 bash "$RUN" approve worktree_setup >/dev/null; bash "$RUN" wt rm T8
 out="$(bash "$RUN" wt add T8 2>&1)"; rc=$?
-check "a failing setup stops wt add (exit 6)" '[ "$rc" = 6 ] && echo "$out" | grep -q "worktree setup failed for T8" && echo "$out" | grep -q boom'
+check "a failing setup stops wt add (exit 6)" '[ "$rc" = 6 ] && echo "$out" | has "worktree setup failed for T8" && echo "$out" | has boom'
 out="$(bash "$RUN" exec T8 --base -- echo ran 2>&1)"; rc=$?; out2="$(bash "$RUN" exec T8 --base -- echo ran 2>&1)"; rc2=$?
-check "a base checkout whose setup fails exits 6 each time and runs nothing" '[ "$rc" = 6 ] && [ "$rc2" = 6 ] && ! printf "%s\n%s\n" "$out" "$out2" | grep -qx ran && [ ! -d .idleflow/worktrees/_base-T8 ]'
+check "a base checkout whose setup fails exits 6 each time and runs nothing" '[ "$rc" = 6 ] && [ "$rc2" = 6 ] && ! printf "%s\n%s\n" "$out" "$out2" | has -x ran && [ ! -d .idleflow/worktrees/_base-T8 ]'
 bash "$RUN" wt rm T8; bash "$RUN" finish done >/dev/null
 sed -i.bak 's#^worktree_setup: .*#worktree_setup: echo changed >> src/keep.py#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
 git add .idleflow/conventions.md && commit -q -m "editing setup"; bash "$RUN" approve worktree_setup >/dev/null
 bash "$RUN" new editing >/dev/null 2>&1
 out="$(bash "$RUN" wt add T7 2>&1)"; rc=$?
-check "a setup that edits tracked files is refused and undone" '[ "$rc" = 6 ] && echo "$out" | grep -q "changed tracked files" && [ "$(cat .idleflow/worktrees/T7/src/keep.py)" = x ]'
+check "a setup that edits tracked files is refused and undone" '[ "$rc" = 6 ] && echo "$out" | has "changed tracked files" && [ "$(cat .idleflow/worktrees/T7/src/keep.py)" = x ]'
 sed -i.bak 's#^worktree_setup: .*#worktree_setup: mkdir -p "$MAIN/node_modules" \&\& ln -s "$MAIN/node_modules" node_modules#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
 git add .idleflow/conventions.md && commit -q -m "linking setup"; bash "$RUN" approve worktree_setup >/dev/null
 bash "$RUN" wt rm T7; bash "$RUN" finish done >/dev/null; bash "$RUN" new linking >/dev/null 2>&1
 mkdir -p node_modules && echo keep > node_modules/dep.js
 out="$(bash "$RUN" wt add T7 2>&1)"; rc=$?
-check "a setup that links main's node_modules is refused" '[ "$rc" = 6 ] && echo "$out" | grep -q "linked node_modules to the main checkout" && [ ! -e .idleflow/worktrees/T7/node_modules ] && [ "$(cat node_modules/dep.js)" = keep ]'
+check "a setup that links main's node_modules is refused" '[ "$rc" = 6 ] && echo "$out" | has "linked node_modules to the main checkout" && [ ! -e .idleflow/worktrees/T7/node_modules ] && [ "$(cat node_modules/dep.js)" = keep ]'
 rm -rf node_modules
 bash "$RUN" wt rm T7; bash "$RUN" finish done >/dev/null
 rm -rf shared-big; cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"; git add .idleflow/conventions.md && commit -q -m "restore conventions"
@@ -557,7 +561,7 @@ check "each task gets its own port"            "[ '$pa' = 4400 ] && [ '$pb' = 44
 bash "$RUN" wt add TA >/dev/null 2>&1
 check "a re-added task keeps its port"         '[ "$(bash "$RUN" get tasks.TA.port)" = 4400 ]'
 out="$(bash "$RUN" exec TA -- sh -c 'echo "$IDLEFLOW_TASK $IDLEFLOW_PORT"; echo "$TMPDIR"; pwd')"
-check "exec runs in the worktree with the task's port and temp folder" '[ "$(echo "$out" | sed -n 1p)" = "TA 4400" ] && echo "$out" | sed -n 2p | grep -q "^$utmp/[0-9a-f]\{10\}/TA$" && [ "$(echo "$out" | sed -n 3p)" = "$(cd "$wa" && pwd)" ]'
+check "exec runs in the worktree with the task's port and temp folder" '[ "$(echo "$out" | sed -n 1p)" = "TA 4400" ] && echo "$out" | sed -n 2p | has "^$utmp/[0-9a-f]\{10\}/TA$" && [ "$(echo "$out" | sed -n 3p)" = "$(cd "$wa" && pwd)" ]'
 check "exec runs the command without the agent's markers" '[ "$(CLAUDECODE=1 CLAUDE_CODE=1 AI_AGENT=claude CLAUDE_CODE_ENTRYPOINT=cli bash "$RUN" exec TA -- sh -c "echo \${CLAUDECODE-none} \${CLAUDE_CODE-none} \${AI_AGENT-none} \${CLAUDE_CODE_ENTRYPOINT-none}")" = "none none none none" ]'
 check "exec passes the command's exit code"    'bash "$RUN" exec TA -- sh -c "exit 3"; [ $? = 3 ]'
 inside="$(cd "$wa" && bash "$RUN" exec TA -- sh -c 'echo "$IDLEFLOW_PORT"')"
@@ -614,7 +618,7 @@ if [ "$py_ok" = yes ]; then
   if [ "$(id -u)" != 0 ]; then
     mkdir -p "$wa/pkg/__pycache__"; : > "$wa/pkg/stuck.py"; : > "$wa/pkg/__pycache__/stuck.cpython-0.pyc"; chmod a-w "$wa/pkg/__pycache__"
     out="$(bash "$RUN" exec TA -- echo ran 2>&1)"
-    check "bytecode exec cannot remove is named and the command still runs" 'echo "$out" | grep -q "could not remove stale bytecode: .*stuck.cpython-0.pyc" && echo "$out" | grep -qx ran'
+    check "bytecode exec cannot remove is named and the command still runs" 'echo "$out" | has "could not remove stale bytecode: .*stuck.cpython-0.pyc" && echo "$out" | has -x ran'
     chmod u+w "$wa/pkg/__pycache__"; rm -f "$wa/pkg/stuck.py" "$wa/pkg/__pycache__/stuck.cpython-0.pyc"; rmdir "$wa/pkg/__pycache__" "$wa/pkg"
   fi
 fi
@@ -649,7 +653,7 @@ job="$(sed -n 's/.*job \([0-9]*\) of TA started.*/\1/p' "$scratch/job.err")"; jd
 echo $(( $(date +%s) + 100 )) > "$jd/deadline"; bash "$RUN" wait TA "$job" >/dev/null 2>&1; rc_ahead=$?
 echo $(( $(date +%s) - 1 )) > "$jd/deadline"; bash "$RUN" wait TA "$job" >/dev/null 2> "$scratch/job.err"; rc_past=$?
 check "a job is stopped at the deadline it records, not before" '[ "$rc_ahead" = 75 ] && [ "$rc_past" = 124 ] && grep -q "passed its limit of 600 s" "$scratch/job.err"'
-check "a command that exits 75 itself is told apart from a job still running" 'out75="$(bash "$RUN" exec TA -- sh -c "exit 75" 2>&1)"; [ $? = 75 ] && echo "$out75" | tail -n 1 | grep -q "^\[idleflow\] job [0-9]* of TA ended with exit code 75$" && ! echo "$out75" | grep -q "is still running"'
+check "a command that exits 75 itself is told apart from a job still running" 'out75="$(bash "$RUN" exec TA -- sh -c "exit 75" 2>&1)"; [ $? = 75 ] && echo "$out75" | tail -n 1 | has "^\[idleflow\] job [0-9]* of TA ended with exit code 75$" && ! echo "$out75" | has "is still running"'
 check "exec refuses a --limit that is not whole seconds" '! bash "$RUN" exec TA --limit 0 -- true 2>/dev/null && ! bash "$RUN" exec TA --limit 1.5 -- true 2>/dev/null && ! bash "$RUN" exec TA --limit -- true 2>/dev/null'
 bash "$RUN" exec TA -- sh -c 'sleep 30 >/dev/null 2>&1 &' >/dev/null 2> "$scratch/job.err"; rc=$?
 job="$(sed -n 's/.*job \([0-9]*\) of TA started.*/\1/p' "$scratch/job.err")"
@@ -681,7 +685,7 @@ mkdir -p .idleflow/runs/active/tasks/_base-TA/lock && echo 999999 > .idleflow/ru
 check "a lock left by a dead exec --base is taken over" 'bash "$RUN" exec TA --base -- true >/dev/null 2>&1 && [ ! -d .idleflow/runs/active/tasks/_base-TA/lock ]'
 git worktree remove --force "$base_ta"; mkdir -p "$base_ta" && echo leftover > "$base_ta/leftover"
 out="$(bash "$RUN" exec TA --base -- echo ran 2>&1)"; rc=$?
-check "a base path that cannot be made again runs nothing" '[ "$rc" != 0 ] && ! echo "$out" | grep -qx ran && echo "$out" | grep -q "is not a clean checkout"'
+check "a base path that cannot be made again runs nothing" '[ "$rc" != 0 ] && ! echo "$out" | has -x ran && echo "$out" | has "is not a clean checkout"'
 rm "$base_ta/leftover"; rmdir "$base_ta"
 bash "$RUN" exec TB --base -- true >/dev/null 2>&1
 base_tb="$(git worktree list --porcelain | sed -n 's/^worktree \(.*_base-TB\)$/\1/p')"
@@ -721,7 +725,7 @@ bash "$RUN" new services-check >/dev/null 2>&1
 check "an unapproved services check never runs (exit 7)" 'bash "$RUN" services >/dev/null 2>&1; [ $? = 7 ] && [ ! -e .idleflow/runs/active/services.log ]'
 bash "$RUN" approve services >/dev/null
 out="$(bash "$RUN" services 2>&1)"; rc=$?
-check "a service that is down stops with exit 1 and says how to check again" '[ "$rc" = 1 ] && echo "$out" | grep -q "repo services: the check failed (exit 1)" && echo "$out" | grep -q "services$"'
+check "a service that is down stops with exit 1 and says how to check again" '[ "$rc" = 1 ] && echo "$out" | has "repo services: the check failed (exit 1)" && echo "$out" | has "services$"'
 touch .service-up
 check "services that are up pass, and the check runs from the main checkout" '[ "$(bash "$RUN" services 2>/dev/null)" = "repo services: up" ] && grep -qx db-up .idleflow/runs/active/services.log'
 rm -f .service-up; bash "$RUN" finish "done" >/dev/null; git config --local --unset idleflow.approved-services
@@ -744,12 +748,12 @@ out="$(bash "$RUN" repo-gate base 2>&1)"; rc=$?
 check "an unapproved gate never runs (exit 7)" '[ "$rc" = 7 ] && [ ! -e .idleflow/runs/active/repo-gate-base.log ]'
 bash "$RUN" approve gate >/dev/null
 out="$(CLAUDECODE=1 bash "$RUN" repo-gate base 2>/dev/null)"; rc=$?
-check "the gate runs on the base and keeps its output" '[ "$rc" = 0 ] && echo "$out" | grep -q "^repo gate base: exit 0" && grep -qx gate-ok .idleflow/runs/active/repo-gate-base.log'
+check "the gate runs on the base and keeps its output" '[ "$rc" = 0 ] && echo "$out" | has "^repo gate base: exit 0" && grep -qx gate-ok .idleflow/runs/active/repo-gate-base.log'
 wg="$(bash "$RUN" wt add T4 2>/dev/null)"; ( cd "$wg" && echo y > src/keep.py )
 out="$(bash "$RUN" repo-gate T4 2>/dev/null)"; rc=$?
-check "a red gate in a task worktree exits 1" '[ "$rc" = 1 ] && echo "$out" | grep -q "^repo gate T4: exit 1" && [ -f .idleflow/runs/active/tasks/T4/repo-gate.log ]'
+check "a red gate in a task worktree exits 1" '[ "$rc" = 1 ] && echo "$out" | has "^repo gate T4: exit 1" && [ -f .idleflow/runs/active/tasks/T4/repo-gate.log ]'
 bash "$RUN" wt rm T4; bash "$RUN" finish done >/dev/null
-check "the gate's time reaches the log"   'tail -1 .idleflow/runs/log.jsonl | grep -q "\"gate_seconds_max\":[0-9]"'
+check "the gate's time reaches the log"   'tail -1 .idleflow/runs/log.jsonl | has "\"gate_seconds_max\":[0-9]"'
 printf 'gate_quick: grep -q x src/keep.py && echo quick-ok\n' >> .idleflow/conventions.md
 sed -i.bak 's#^gate: .*#gate: sleep 2; grep -q x src/keep.py#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
 mkdir -p .husky && printf 'npm test\n' > .husky/pre-commit
@@ -757,20 +761,20 @@ git add .idleflow/conventions.md .husky && commit -q -m "slow gate"; bash "$RUN"
 bash "$RUN" custom set SLOW_GATE_SECONDS 1 >/dev/null
 bash "$RUN" new slow >/dev/null 2>&1
 err="$(bash "$RUN" repo-gate base 2>&1 >/dev/null)"
-check "a slow gate says so"               'echo "$err" | grep -q "^slow: the gate took [0-9]*s (over SLOW_GATE_SECONDS=1)"'
+check "a slow gate says so"               'echo "$err" | has "^slow: the gate took [0-9]*s (over SLOW_GATE_SECONDS=1)"'
 wq="$(bash "$RUN" wt add T3 2>/dev/null)"
 out="$(bash "$RUN" repo-gate T3 --quick 2>/dev/null)"
-check "--quick runs gate_quick in the task" 'echo "$out" | grep -q "^repo gate_quick T3: exit 0" && grep -q quick-ok .idleflow/runs/active/tasks/T3/repo-gate_quick.log'
+check "--quick runs gate_quick in the task" 'echo "$out" | has "^repo gate_quick T3: exit 0" && grep -q quick-ok .idleflow/runs/active/tasks/T3/repo-gate_quick.log'
 ( cd "$wq" && git -c user.name=t -c user.email=t@t commit -qam wip --allow-empty ); bash "$RUN" set tasks.T3.status '"approved"'
 echo z > src/keep.py; git add src/keep.py; commit -q -m "main moves on"
 out="$(bash "$RUN" repo-gate base 2>/dev/null)"; rc=$?
-check "the base check runs at the recorded base after main moved" '[ "$rc" = 0 ] && echo "$out" | grep -q "^repo gate base: exit 0" && [ ! -d "$(dirname "$wq")/_gate-base" ]'
+check "the base check runs at the recorded base after main moved" '[ "$rc" = 0 ] && echo "$out" | has "^repo gate base: exit 0" && [ ! -d "$(dirname "$wq")/_gate-base" ]'
 bash "$RUN" wt rm T3; bash "$RUN" finish done >/dev/null
 det="$(bash "$RUN" detect)"
-check "detect suggests gate_runs: once for a slow gate" 'echo "$det" | grep -q "^suggest gate_runs: once — the gate took"'
-check "detect names a hook that runs tests" 'echo "$det" | grep -q "^suggest hooks: move the tests out of .husky/pre-commit —"'
+check "detect suggests gate_runs: once for a slow gate" 'echo "$det" | has "^suggest gate_runs: once — the gate took"'
+check "detect names a hook that runs tests" 'echo "$det" | has "^suggest hooks: move the tests out of .husky/pre-commit —"'
 doc="$(bash "$RUN" doctor 2>/dev/null)"
-check "doctor shows hook advice without a fix it would apply" 'echo "$doc" | grep -q "^suggest fit hooks: .*idleflow never edits hooks"'
+check "doctor shows hook advice without a fix it would apply" 'echo "$doc" | has "^suggest fit hooks: .*idleflow never edits hooks"'
 bash "$RUN" custom unset SLOW_GATE_SECONDS >/dev/null; rm -rf .husky; git checkout -q HEAD~1 -- src/keep.py 2>/dev/null || true
 cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"; git add .idleflow/conventions.md && commit -q -m "restore conventions"
 if [ "$py_ok" = yes ]; then
@@ -797,7 +801,7 @@ bash "$RUN" approve preview >/dev/null
 check "a preview address off this machine is refused" '! bash "$RUN" preview T2 start >/dev/null 2>&1 && [ ! -f .idleflow/runs/active/tasks/T2/preview.pid ]'
 sed -i.bak 's#^preview_url: .*#preview_url: http://localhost:4173#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
 out="$(bash "$RUN" preview T2 start 2>/dev/null)"; pid="$(cat .idleflow/runs/active/tasks/T2/preview.pid 2>/dev/null)"
-check "an approved preview starts and records its process" 'echo "$out" | grep -q "^preview T2: serving at http://localhost:4173" && kill -0 "$pid" 2>/dev/null'
+check "an approved preview starts and records its process" 'echo "$out" | has "^preview T2: serving at http://localhost:4173" && kill -0 "$pid" 2>/dev/null'
 bash "$RUN" preview T2 stop >/dev/null; sleep 1
 check "preview stop ends it" '! kill -0 "$pid" 2>/dev/null && [ ! -f .idleflow/runs/active/tasks/T2/preview.pid ]'
 check "preview main is refused while tasks preview their worktrees" '! bash "$RUN" preview main start >/dev/null 2>&1 && [ ! -f .idleflow/runs/active/tasks/main/preview.pid ]'
@@ -811,8 +815,8 @@ printf '{"id":"r1","tasks":{"T9":{"port":4402},"T8":{"port":4400}}}\n' > "$o/.id
 printf '%s\tr1\tT8\n' "$o" > "$utmp/ports/4400"
 out="$(bash "$RUN" preview main start 2>/dev/null)"; pid="$(cat .idleflow/runs/active/tasks/main/preview.pid 2>/dev/null)"; sleep 1
 check "preview main claims a free port of its own" '[ "$(cut -f2,3 "$utmp/ports/4401" 2>/dev/null)" = "$(bash "$RUN" get id)	main" ] && [ "$(cut -f3 "$utmp/ports/4400")" = T8 ]'
-check "a second preview main start reports the server already serving and claims nothing" 'again="$(bash "$RUN" preview main start 2>/dev/null)" && echo "$again" | grep -q "^preview main: serving at http://localhost:4173 (already running" && [ "$(cat .idleflow/runs/active/tasks/main/preview.pid)" = "$pid" ] && [ "$(grep -ls "	main$" "$utmp"/ports/* | wc -l | tr -d " ")" = 1 ]'
-check "under preview_in: main the main checkout is served" 'echo "$out" | grep -q "^preview main: serving at http://localhost:4173" && kill -0 "$pid" 2>/dev/null && [ "$(cat "$utmp"/*/main/where 2>/dev/null)" = "$(pwd -P)" ]'
+check "a second preview main start reports the server already serving and claims nothing" 'again="$(bash "$RUN" preview main start 2>/dev/null)" && echo "$again" | has "^preview main: serving at http://localhost:4173 (already running" && [ "$(cat .idleflow/runs/active/tasks/main/preview.pid)" = "$pid" ] && [ "$(grep -ls "	main$" "$utmp"/ports/* | wc -l | tr -d " ")" = 1 ]'
+check "under preview_in: main the main checkout is served" 'echo "$out" | has "^preview main: serving at http://localhost:4173" && kill -0 "$pid" 2>/dev/null && [ "$(cat "$utmp"/*/main/where 2>/dev/null)" = "$(pwd -P)" ]'
 bash "$RUN" preview main stop >/dev/null; sleep 1
 check "preview main stop ends it" '! kill -0 "$pid" 2>/dev/null'
 check "preview main stop gives its port back and leaves other claims" '[ ! -e "$utmp/ports/4401" ] && [ "$(cut -f3 "$utmp/ports/4400")" = T8 ]'
@@ -837,7 +841,7 @@ check "extract reads a CRLF plan and keeps code fences in the task" '[ "$(cat "$
 printf '%s\n' '## Tasks' '### T1: first' 'blocked_until: none   # nothing to wait for' '### T2: waits' 'depends_on: [T1]' 'blocked_until: revision — the error code CI prints for T1' '```' 'blocked_until: none' '```' '### T3: plain' 'owns: [c]' > .idleflow/runs/active/plan.md
 check "plan-field reads a task's own field, not another's or a fenced one" '[ "$(bash "$RUN" plan-field T1 blocked_until)" = none ] && [ "$(bash "$RUN" plan-field T2 blocked_until)" = "revision — the error code CI prints for T1" ] && [ -z "$(bash "$RUN" plan-field T3 blocked_until)" ]'
 out="$(bash "$RUN" wt add T2 2>&1)"; rc=$?
-check "wt add refuses a task blocked until a revision, and creates nothing" '[ "$rc" = 8 ] && echo "$out" | grep -q "T2 is blocked until a revision (revision — the error code CI prints for T1)" && [ ! -d "$(dirname "$d")/$(basename "$d")__wt/T2" ] && ! git rev-parse -q --verify "refs/heads/idleflow/$(bash "$RUN" get id)/T2" >/dev/null && [ -z "$(bash "$RUN" get tasks.T2 2>/dev/null)" ]'
+check "wt add refuses a task blocked until a revision, and creates nothing" '[ "$rc" = 8 ] && echo "$out" | has "T2 is blocked until a revision (revision — the error code CI prints for T1)" && [ ! -d "$(dirname "$d")/$(basename "$d")__wt/T2" ] && ! git rev-parse -q --verify "refs/heads/idleflow/$(bash "$RUN" get id)/T2" >/dev/null && [ -z "$(bash "$RUN" get tasks.T2 2>/dev/null)" ]'
 # a plan longer than a pipe holds, with the field near its top: the reader must still exit 0
 { printf '%s\n' '## Tasks' '### T1: first' 'blocked_until: revision — the code CI prints for #47   # waits on T0'; for _ in $(seq 1 3000); do printf 'notes: %s\n' "a line of text that makes the plan long enough to fill a pipe"; done; } > .idleflow/runs/active/plan.md
 check "plan-field reads a long plan and keeps a # in the field's text" 'v="$(bash "$RUN" plan-field T1 blocked_until)" && [ "$v" = "revision — the code CI prints for #47" ]'
@@ -865,7 +869,7 @@ bash "$RUN" plan-check > "$scratch/pc.txt" 2>&1; rc=$?
 check "plan-check reads inline lists, entry points with symbols and items that run on" '[ "$rc" = 1 ] && [ "$(grep -c "^plan-check: T1 " "$scratch/pc.txt")" = 2 ] && grep -q "^plan-check: T1 does not own docs/report.md, which its acceptance A2 names" "$scratch/pc.txt" && grep -q "^plan-check: T1 does not own src/b/c.py, which its acceptance (unnumbered) names" "$scratch/pc.txt"'
 check "plan-check flags a protected file named inside its folder, and every task's wide glob" 'for l in "T2 owns the protected .claude/agents/" "T2 owns the protected .idleflow/" "T2 owns the protected .claude/hooks/" "T3 owns the protected .claude/settings.json" "T3 owns the protected .claude/agents/"; do grep -q "^plan-check: $l;" "$scratch/pc.txt" || exit 1; done && ! grep -q "T2 owns the protected .claude/settings" "$scratch/pc.txt"'
 printf '%s\n' '## Tasks' '### T1 — one' 'owns: [.claude/**]' > .idleflow/runs/active/plan.md
-check "plan-check refuses a task heading it cannot read, and a plan with no task" 'out="$(bash "$RUN" plan-check 2>&1)"; [ $? = 1 ] && echo "$out" | grep -q "### T1 — one\" is not a task heading" && echo "$out" | grep -q "has no task"'
+check "plan-check refuses a task heading it cannot read, and a plan with no task" 'out="$(bash "$RUN" plan-check 2>&1)"; [ $? = 1 ] && echo "$out" | has "### T1 — one\" is not a task heading" && echo "$out" | has "has no task"'
 printf '%s\n' '## Tasks' '### T1: one' 'owns: [.CLAUDE/Agents/**, src/**]' 'entry_points: [src/a.py]' > .idleflow/runs/active/plan.md
 check "plan-check folds case only where the guard does" 'command -v cygpath >/dev/null 2>&1 || bash "$RUN" plan-check >/dev/null'
 printf '%s\n' '## Tasks' '### T1: fix the writer' 'cause: `source src/a/x.py:write`' 'owns: [src/a/**]' '### T2: reader follows' 'cause: with T1  # comment' 'owns: [src/r/**]' \
@@ -889,7 +893,7 @@ bash "$RUN" set tasks.T6.status '"approved"'; bash "$RUN" merge T6 >/dev/null 2>
 subjects="$(git log -1 --format=%s HEAD)"; bodies="$(git log -1 --format=%b HEAD)"
 cc_re='^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([A-Za-z0-9_./-]+\))?!?: [^ ]'
 check "the merge commit is a Conventional Commit" '[ "$(echo "$subjects" | grep -Ec "$cc_re")" = 1 ] && [ "$(echo "$subjects" | awk "length > 72" | wc -l | tr -d " ")" = 0 ]'
-check "the run id moves to the commit body" '[ "$(echo "$bodies" | grep -c "^Run: ")" = 1 ] && echo "$bodies" | grep -qx "Task: T6"'
+check "the run id moves to the commit body" '[ "$(echo "$bodies" | grep -c "^Run: ")" = 1 ] && echo "$bodies" | has -x "Task: T6"'
 check "a conventional merge says what merged, not the tool" '[ "$subjects" = "chore: merge keep the y line" ]'
 bash "$RUN" wt rm T6; bash "$RUN" finish done >/dev/null
 sed -i.bak 's/^commit_format: .*/commit_format: plain/' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
@@ -901,7 +905,7 @@ git config merge.log true
 printf '%s\n' '### T70: Not this one' '### T7: Keep the `z` line, not $(z) or $HOME' > .idleflow/runs/active/plan.md
 bash "$RUN" set tasks.T7.status '"approved"'; bash "$RUN" merge T7 >/dev/null 2>&1
 git config --unset merge.log
-check "a plain merge is a plain sentence with the ids in the body" '[ "$(git log -1 --format=%s HEAD)" = "Merge Keep the \`z\` line, not \$(z) or \$HOME" ] && git log -1 --format=%b HEAD | grep -qx "Task: T7" && git log -1 --format=%b HEAD | grep -q "^Run: "'
+check "a plain merge is a plain sentence with the ids in the body" '[ "$(git log -1 --format=%s HEAD)" = "Merge Keep the \`z\` line, not \$(z) or \$HOME" ] && git log -1 --format=%b HEAD | has -x "Task: T7" && git log -1 --format=%b HEAD | has "^Run: "'
 check "the ids stay trailers when merge.log is set" '[ "$(git log -1 --format="%(trailers:key=Run,valueonly,separator=)" HEAD)" = "$(bash "$RUN" get id)" ]'
 long="$(printf "é%.0s" $(seq 1 80))"
 check "a long title is cut by characters, never inside one" '[ "$(LC_ALL=C idleflow_rt clip 72 "Merge $long")" = "Merge $(printf "é%.0s" $(seq 1 63))..." ]'
@@ -936,7 +940,7 @@ git checkout -q -
 bash "$RUN" new something-else >/dev/null 2>&1
 out="$(bash "$RUN" resume "$rid" 2>&1)"
 check "resume makes the stopped run active again and parks the one in its way" '[ "$(bash "$RUN" get id)" = "$rid" ] && [ "$(bash "$RUN" get status)" = building ] && [ "$(bash "$RUN" get resumed_from)" = needs-human ] && [ -n "$(ls -d .idleflow/runs/*-something-else 2>/dev/null)" ]'
-check "resume keeps what merged and starts the rest again" 'echo "$out" | grep -q "merged: T1; to build again: T2;" && [ -n "$(bash "$RUN" get tasks.T1.t_merge)" ] && [ "$(bash "$RUN" get tasks.T2)" = "{}" ] && grep -q "^r1$" src/keep.py && [ ! -d "$wr2" ]'
+check "resume keeps what merged and starts the rest again" 'echo "$out" | has "merged: T1; to build again: T2;" && [ -n "$(bash "$RUN" get tasks.T1.t_merge)" ] && [ "$(bash "$RUN" get tasks.T2)" = "{}" ] && grep -q "^r1$" src/keep.py && [ ! -d "$wr2" ]'
 check "resume keeps the old commits of a reset task on a branch of their own" '[ "$(git rev-parse "idleflow/$rid/T2-before-resume")" = "$t2_sha" ] && ! git show-ref -q --verify "refs/heads/idleflow/$rid/T2"'
 check "resume moves the review of the old build aside and takes the base failures again" '[ ! -f .idleflow/runs/active/review/T2-correct.md ] && [ -f .idleflow/runs/active/review/T2-correct.1.md ] && [ "$(bash "$RUN" get gate_base)" = null ] && [ ! -f .idleflow/runs/active/known-failures.md ] && [ -f .idleflow/runs/active/known-failures.1.md ]'
 wr2b="$(bash "$RUN" wt add T2 2>/dev/null)"
@@ -956,7 +960,7 @@ git branch -q -D "idleflow/$rid/T2-before-resume" "idleflow/$rid/T2-before-resum
 check "the run procedure and the handoffs name the resume command" 'grep -q "^\*\*Resuming a stopped run.\*\* When \`\$ARGUMENTS\` is \`resume <run id>\`" "$HERE/../commands/feature.md" && grep -q "/idleflow:feature resume <run id>" "$HERE/../commands/endsession.md" && grep -q "/idleflow:feature resume <run id>" "$HERE/../commands/progress.md"'
 
 echo "--- team"
-check "session notes are named by time and author" 'bash "$RUN" session-name | grep -Eq "^docs/sessions/s_[0-9]{8}-[0-9]{4}-human\.md$"'
+check "session notes are named by time and author" 'bash "$RUN" session-name | has -E "^docs/sessions/s_[0-9]{8}-[0-9]{4}-human\.md$"'
 # the clock is pinned for both names, so a minute that turns between them cannot change the answer
 # (the real date is looked up before the shim is on PATH, so the shim never runs itself)
 clock="$IDLEFLOW_TMP_ROOT/clock"; mkdir -p "$clock"
@@ -978,7 +982,7 @@ bash "$RUN" snapshot >/dev/null
 check "local merge rules go to .git/info/attributes" 'grep -qx "progress.md merge=union" "$attrs" && grep -qx ".idleflow/lessons.md merge=union" "$attrs" && cmp -s .gitattributes "$d-attrs.bak" && git diff --quiet HEAD -- .gitattributes'
 check "an ignored record gets no merge rule"          '! grep -q "suggestions.md" "$attrs"'
 doc="$(bash "$RUN" doctor 2>/dev/null)"
-check "doctor reads the local merge rules"            'echo "$doc" | grep -q "^ok merges"'
+check "doctor reads the local merge rules"            'echo "$doc" | has "^ok merges"'
 grep -vxF '.idleflow/suggestions.md' .git/info/exclude > "$scratch/exclude"; cp "$scratch/exclude" .git/info/exclude; rm -f "$attrs"
 cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak" "$d-attrs.bak"; git add .idleflow/conventions.md && commit -q -m "shared rules again"
 printf '{"permissions":{"allow":["Bash(ls)"]}}' > .claude/settings.json
@@ -990,26 +994,26 @@ check "team-install adds the CLAUDE.md note once" '[ "$(grep -c "idleflow instal
 check "team-install refuses broken JSON"  '! bash "$RUN" team-install 2>/dev/null && [ "$(cat .claude/settings.json)" = "{bad" ]'
 printf '{}' > .claude/settings.json
 doc="$(bash "$RUN" doctor 2>/dev/null)"
-check "doctor's path check ignores the install note" 'echo "$doc" | grep -q "^ok paths"'
+check "doctor's path check ignores the install note" 'echo "$doc" | has "^ok paths"'
 printf '# Index\n- `src/keep.py` code\n- `src/gone.py` removed\n- `origin/main` a branch\n```\nsrc/in-a-code-block.py\n```\n' > index.md
 doc="$(bash "$RUN" doctor 2>/dev/null)"
-check "doctor finds a path the docs name that is gone" 'echo "$doc" | grep -q "^warn paths: 1 path(s) the docs name do not exist: index.md: src/gone.py |"'
+check "doctor finds a path the docs name that is gone" 'echo "$doc" | has "^warn paths: 1 path(s) the docs name do not exist: index.md: src/gone.py |"'
 rm -f index.md
 printf '# P\n## Must do (v1)\n- a — done when: b\n## Milestones\n1. one\n' > prd.md; printf '# Progress\n<!-- progress start -->\n' > progress.md
 doc="$(bash "$RUN" doctor 2>/dev/null)"
-check "doctor finds milestones still in prd.md" 'echo "$doc" | grep -q "^warn milestones: milestones are still in prd.md"'
+check "doctor finds milestones still in prd.md" 'echo "$doc" | has "^warn milestones: milestones are still in prd.md"'
 printf '# P\n## Must do (v1)\n- a — done when: b\n' > prd.md; printf '# Progress\n## Milestones\n### M1: one\n- [ ] a\n## Log\n<!-- progress start -->\n' > progress.md
 doc="$(bash "$RUN" doctor 2>/dev/null)"
-check "doctor accepts milestones in progress.md" 'echo "$doc" | grep -q "^ok milestones"'
+check "doctor accepts milestones in progress.md" 'echo "$doc" | has "^ok milestones"'
 printf '# Progress\n## Milestones\n### M1: one\n- [x] a (run r1)\n- [ ] a\n## Log\n<!-- progress start -->\n' > progress.md
 doc="$(bash "$RUN" doctor 2>/dev/null)"
-check "doctor finds a milestone item a merge doubled" 'echo "$doc" | grep -q "^warn milestones: listed twice under Milestones (a merge kept both sides): a"'
+check "doctor finds a milestone item a merge doubled" 'echo "$doc" | has "^warn milestones: listed twice under Milestones (a merge kept both sides): a"'
 rm -f prd.md progress.md
 
 echo "--- customize"
 bash "$RUN" custom set DIFF_LIMIT 3000 >/dev/null
 c="$(bash "$RUN" conf)"
-check "a project setting overrides the default" 'echo "$c" | grep -qx "DIFF_LIMIT=3000"'
+check "a project setting overrides the default" 'echo "$c" | has -x "DIFF_LIMIT=3000"'
 check "STEP_MUTATION is a setting"         'bash "$RUN" custom set STEP_MUTATION on >/dev/null && bash "$RUN" custom unset STEP_MUTATION >/dev/null'
 check "out-of-range values are refused"   '! bash "$RUN" custom set DEBATE_ROUNDS 5 2>/dev/null && ! bash "$RUN" custom set MODEL_NO_SUCH_AGENT opus 2>/dev/null'
 printf 'touch "%s/pwned"\nDIFF_SLACK=$(touch "%s/pwned")\n' "$m" "$m" >> .idleflow/idleflow.conf
@@ -1017,29 +1021,29 @@ c="$(bash "$RUN" conf 2>&1)"
 mkdir -p src && touch src/x.py
 check "catch-all excludes are refused"   '! bash "$RUN" custom set DIFF_EXCLUDE_ADD "**/*" 2>/dev/null && ! bash "$RUN" custom set DIFF_EXCLUDE_ADD "*/*" 2>/dev/null && bash "$RUN" custom set DIFF_EXCLUDE_ADD "**/gen/**" >/dev/null && bash "$RUN" custom unset DIFF_EXCLUDE_ADD >/dev/null'
 check "report consent is local, never committed" '[ "$(bash "$RUN" custom report)" = ask ] && bash "$RUN" custom report always >/dev/null && [ "$(git config --local idleflow.reportCustomizations)" = always ] && ! grep -q REPORT .idleflow/idleflow.conf && ! bash "$RUN" custom set REPORT_CUSTOMIZATIONS always 2>/dev/null'
-check "the project file is parsed, never run" 'echo "$c" | grep -q "ignored in .idleflow/idleflow.conf" && [ ! -e "$m/pwned" ] && echo "$c" | grep -qx "DIFF_SLACK=300"'
+check "the project file is parsed, never run" 'echo "$c" | has "ignored in .idleflow/idleflow.conf" && [ ! -e "$m/pwned" ] && echo "$c" | has -x "DIFF_SLACK=300"'
 doc="$(bash "$RUN" doctor 2>/dev/null)"
-check "doctor lists skipped and kept settings" 'echo "$doc" | grep -q "^warn customizations: lines skipped" && echo "$doc" | grep -q "^ok customizations: DIFF_LIMIT=3000"'
+check "doctor lists skipped and kept settings" 'echo "$doc" | has "^warn customizations: lines skipped" && echo "$doc" | has "^ok customizations: DIFF_LIMIT=3000"'
 bash "$RUN" custom set MODEL_REVIEW_CONFORM opus >/dev/null; mkdir -p .idleflow/agents; echo "Also check X." > .idleflow/agents/retro.md
 a1="$(bash "$RUN" agent review-conform 2>/dev/null)"; a2="$(bash "$RUN" agent retro 2>/dev/null)"
-check "agent reports model and instructions" 'echo "$a1" | grep -qx "model: opus" && echo "$a2" | grep -q "^extra: .*\.idleflow/agents/retro\.md"'
+check "agent reports model and instructions" 'echo "$a1" | has -x "model: opus" && echo "$a2" | has "^extra: .*\.idleflow/agents/retro\.md"'
 bash "$RUN" custom replace planner >/dev/null 2>&1
 a1="$(bash "$RUN" agent planner 2>/dev/null)"
-check "replace copies the built-in agent"  'grep -q "^name: idleflow-planner" .claude/agents/idleflow-planner.md && echo "$a1" | grep -qx "agent: idleflow-planner"'
+check "replace copies the built-in agent"  'grep -q "^name: idleflow-planner" .claude/agents/idleflow-planner.md && echo "$a1" | has -x "agent: idleflow-planner"'
 sed -i.bak 's/^You are the planner\./You are the planner for this repo./' .claude/agents/idleflow-planner.md && rm -f .claude/agents/idleflow-planner.md.bak
 printf 'a line an older idleflow had\n' >> .idleflow/agents/planner.base.md
 doc="$(bash "$RUN" doctor 2>/dev/null)"
-check "doctor sees the built-in agent changed" 'echo "$doc" | grep -q "^warn agents: the built-in planner changed"'
+check "doctor sees the built-in agent changed" 'echo "$doc" | has "^warn agents: the built-in planner changed"'
 bash "$RUN" custom merge planner >/dev/null 2>&1
 doc="$(bash "$RUN" doctor 2>/dev/null)"
-check "merge keeps the project's edits"    'grep -q "planner for this repo" .claude/agents/idleflow-planner.md && echo "$doc" | grep -q "^ok agents: replaced planner is current"'
+check "merge keeps the project's edits"    'grep -q "planner for this repo" .claude/agents/idleflow-planner.md && echo "$doc" | has "^ok agents: replaced planner is current"'
 bash "$RUN" custom restore planner >/dev/null 2>&1
 printf -- '- [r1] SIZE_S_MAX: 150 -> 200 because a; evidence: r1\n- [r2] SIZE_S_MAX: 150 -> 250 because b; evidence: r1 r2\n- [r2] MAX_RETRIES: 1 -> 2 because c; evidence: r2\n- [r2] DIFF_LIMIT: 1500 -> 3000 because d; evidence: r2\n' > .idleflow/runs/config-proposals.md
 printf -- '- declined: MAX_RETRIES -> 2 (r2, today)\n' > .idleflow/suggestions.md
 sug="$(bash "$RUN" doctor 2>/dev/null | grep '^suggest' || true)"
-check "doctor offers the newest open suggestion" '[ "$(echo "$sug" | wc -l | tr -d " ")" = "1" ] && echo "$sug" | grep -q "^suggest SIZE_S_MAX: .*150 -> 250.*fix: /idleflow:customize SIZE_S_MAX 250"'
+check "doctor offers the newest open suggestion" '[ "$(echo "$sug" | wc -l | tr -d " ")" = "1" ] && echo "$sug" | has "^suggest SIZE_S_MAX: .*150 -> 250.*fix: /idleflow:customize SIZE_S_MAX 250"'
 a1="$(bash "$RUN" agent planner 2>/dev/null)"
-check "restore brings the built-in back"   '[ ! -e .claude/agents/idleflow-planner.md ] && echo "$a1" | grep -qx "agent: idleflow:planner"'
+check "restore brings the built-in back"   '[ ! -e .claude/agents/idleflow-planner.md ] && echo "$a1" | has -x "agent: idleflow:planner"'
 printf 'x\n' > .claude/conventions.md
 check "migrate refuses two copies"        '! bash "$RUN" migrate 2>/dev/null'
 cd "$d"
@@ -1053,16 +1057,16 @@ f="$(mktemp -d)"; ( cd "$f" && git init -q && git config user.name H && git conf
   && for i in 1 2 3 4 5 6 7 8 9 10 11; do echo $i >> f; git add f; git commit -qm "feat(core): step $i"; done )
 det="$(cd "$f" && bash "$RUN" detect)"
 for want in "commit_format: conventional" "lessons_in: lessons.md" "progress_file: docs/progress.md" "session_names: numbered" "index_rewrite: no" "shared_files: CHANGELOG.md" "worktrees_in: inside" "gate: python3 tools/gate.py"; do
-  check "detect suggests $want" 'echo "$det" | grep -qF "suggest $want —"'
+  check "detect suggests $want" 'echo "$det" | has -F "suggest $want —"'
 done
 ( cd "$f" && printf 'commit_format: idleflow\n' >> .idleflow/conventions.md && mkdir -p .idleflow && printf -- '- declined: gate -> python3 tools/gate.py (doctor, today)\n' > .idleflow/suggestions.md )
 det="$(cd "$f" && bash "$RUN" detect)"; doc="$(cd "$f" && bash "$RUN" doctor 2>/dev/null)"
-check "detect leaves an answered key alone" '! echo "$det" | grep -q "^suggest commit_format"'
-check "doctor hides a declined fit suggestion" '! echo "$doc" | grep -q "^suggest fit gate" && echo "$doc" | grep -q "^suggest fit lessons_in"'
+check "detect leaves an answered key alone" '! echo "$det" | has "^suggest commit_format"'
+check "doctor hides a declined fit suggestion" '! echo "$doc" | has "^suggest fit gate" && echo "$doc" | has "^suggest fit lessons_in"'
 rm -rf "$f"
 f="$(mktemp -d)"; ( cd "$f" && git init -q && printf '{"scripts":{"dev":"vite"}}' > package.json )
 det="$(cd "$f" && bash "$RUN" detect)"; det_rc=$?
-check "detect works before the first commit" '[ "$det_rc" = 0 ] && echo "$det" | grep -q "^suggest preview: npm run dev —"'
+check "detect works before the first commit" '[ "$det_rc" = 0 ] && echo "$det" | has "^suggest preview: npm run dev —"'
 check "doctor works before the first commit" '(cd "$f" && bash "$RUN" doctor >/dev/null 2>&1)'
 rm -rf "$f"
 
@@ -1084,13 +1088,13 @@ f="$(mktemp -d)"; ( cd "$f" && git init -q && git config user.name Ada && git co
 ( cd "$f" && bash "$RUN" docs --check >/dev/null 2>&1 ); rc=$?
 check "docs --check fails on stale blocks"  '[ "$rc" = 1 ]'
 out="$(cd "$f" && bash "$RUN" docs)"; idx="$(cat "$f/index.md")"
-check "docs regenerates in place"           'echo "$out" | grep -q "^docs: regenerated index.md"'
-check "files keeps written descriptions, drops gone rows" 'echo "$idx" | grep -qxF -- "- \`src/\` — the app source" && ! echo "$idx" | grep -q "gone/" && echo "$idx" | grep -qxF -- "- \`package.json\` — (describe)"'
-check "commands follow the package manager" 'echo "$idx" | grep -qxF -- "- \`pnpm test\` — runs \`vitest '"'"'run'"'"'\`" && echo "$idx" | grep -qxF -- "- \`make build\`" && ! echo "$idx" | grep -q "make VAR"'
-check "commands start with the lockfile's install" 'echo "$idx" | grep -qxF -- "- \`pnpm install --frozen-lockfile\` — install (pnpm-lock.yaml)"'
-check "milestones counted from progress"   'echo "$idx" | grep -qxF -- "- M1: Sign in: 1/2"'
-check "dependencies read from the manifest" 'echo "$idx" | grep -qxF -- "- \`react\` ^19.0.0 — package.json"'
-check "runs read from both merge formats"   'echo "$idx" | grep -q "run \`run-old\`, 1 task" && echo "$idx" | grep -q "run \`run-new\`, 1 task"'
+check "docs regenerates in place"           'echo "$out" | has "^docs: regenerated index.md"'
+check "files keeps written descriptions, drops gone rows" 'echo "$idx" | has -xF -- "- \`src/\` — the app source" && ! echo "$idx" | has "gone/" && echo "$idx" | has -xF -- "- \`package.json\` — (describe)"'
+check "commands follow the package manager" 'echo "$idx" | has -xF -- "- \`pnpm test\` — runs \`vitest '"'"'run'"'"'\`" && echo "$idx" | has -xF -- "- \`make build\`" && ! echo "$idx" | has "make VAR"'
+check "commands start with the lockfile's install" 'echo "$idx" | has -xF -- "- \`pnpm install --frozen-lockfile\` — install (pnpm-lock.yaml)"'
+check "milestones counted from progress"   'echo "$idx" | has -xF -- "- M1: Sign in: 1/2"'
+check "dependencies read from the manifest" 'echo "$idx" | has -xF -- "- \`react\` ^19.0.0 — package.json"'
+check "runs read from both merge formats"   'echo "$idx" | has "run \`run-old\`, 1 task" && echo "$idx" | has "run \`run-new\`, 1 task"'
 ( cd "$f" && bash "$RUN" docs --check >/dev/null 2>&1 ); rc=$?
 check "a second docs run changes nothing"   '[ "$rc" = 0 ] && [ "$(cd "$f" && bash "$RUN" docs)" = "docs: generated blocks are up to date" ]'
 ( cd "$f" && git checkout -qb c && echo d > src/d.ts && git add -A && git commit -qm "d" && git checkout -q - && git merge -q --no-ff -m "Merge the d file" -m "Run: run-plain
@@ -1098,14 +1102,14 @@ Task: T3" c && bash "$RUN" docs >/dev/null )
 check "runs are read from the Run trailer, whatever the subject" 'grep -q "run \`run-plain\`, 1 task" "$f/index.md" && grep -q "run \`run-old\`, 1 task" "$f/index.md"'
 ( cd "$f" && git add -A && git commit -qm "docs" && echo d > NOTES.md && git add -A && git commit -qm "d" )
 doc="$(cd "$f" && bash "$RUN" doctor 2>/dev/null)"
-check "doctor warns about a stale block"    'echo "$doc" | grep -q "^warn generated: out of date: index.md"'
-check "doctor warns about undescribed entries" 'echo "$doc" | grep -q "^warn generated: [0-9]* generated entries still say (describe)"'
+check "doctor warns about a stale block"    'echo "$doc" | has "^warn generated: out of date: index.md"'
+check "doctor warns about undescribed entries" 'echo "$doc" | has "^warn generated: [0-9]* generated entries still say (describe)"'
 ( cd "$f" && printf '# Index\n- `src/` — code\n' > index.md )
 det="$(cd "$f" && bash "$RUN" detect)"
 ( cd "$f" && for i in $(seq 1 40); do echo "$i" > "p$i.txt"; git add "p$i.txt"; git commit -qm "Add the p$i notes"; done )
 det="$(cd "$f" && bash "$RUN" detect)"
-check "detect suggests plain subjects for a plain history" 'echo "$det" | grep -q "^suggest commit_format: plain —"'
-check "detect suggests generated blocks for a hand-kept index" 'echo "$det" | grep -q "^suggest generated_docs: index.md —"'
+check "detect suggests plain subjects for a plain history" 'echo "$det" | has "^suggest commit_format: plain —"'
+check "detect suggests generated blocks for a hand-kept index" 'echo "$det" | has "^suggest generated_docs: index.md —"'
 ( cd "$f" && git checkout -q -- index.md 2>/dev/null; printf '# Index\n<!-- idleflow:generated files -->\n<!-- idleflow:end -->\n' > index.md && echo x > é.txt && git add -A && git commit -qm "é" && bash "$RUN" docs >/dev/null )
 check "the files block names non-ASCII files as they are" 'grep -qxF -- "- \`é.txt\` — (describe)" "$f/index.md"'
 ( cd "$f" && printf '# Index\n<!-- idleflow:generated files -->\n<!-- idleflow:end -->\n' > index.md && echo x > 'q"uote.txt' && git add -A && git commit -qm quote && bash "$RUN" docs >/dev/null )
@@ -1118,13 +1122,13 @@ f="$(mktemp -d)"; ( cd "$f" && git init -q && git config user.name Ada && git co
   && printf '{"scripts":{"test":"vitest run"}}' > package.json && printf '{}' > package-lock.json && git add -A && git commit -qm start )
 ( cd "$f" && bash "$RUN" docs >/dev/null )
 check "CLAUDE.md Commands is filled from the repo"    'grep -qxF -- "- \`npm ci\` — install (package-lock.json)" "$f/CLAUDE.md" && grep -qxF -- "- \`npm run test\` — runs \`vitest run\`" "$f/CLAUDE.md"'
-check "the template leaves the gate open to a proposal" '(cd "$f" && bash "$RUN" detect) | grep -q "^suggest gate: npm run test —"'
+check "the template leaves the gate open to a proposal" '(cd "$f" && bash "$RUN" detect) | has "^suggest gate: npm run test —"'
 printf -- '- declined: gate -> npm run test (run r1)\n' > "$f/.idleflow/suggestions.md"
-check "a declined gate is not proposed again"          '! (cd "$f" && bash "$RUN" detect) | grep -q "^suggest gate:"'
+check "a declined gate is not proposed again"          '! (cd "$f" && bash "$RUN" detect) | has "^suggest gate:"'
 rm -rf "$f"
 echo "--- a worktree builds its own Python environment"
 f="$(mktemp -d)"; ( cd "$f" && git init -q && mkdir -p .idleflow .venv && printf 'mode: repo\nworktree_setup: unset\n' > .idleflow/conventions.md && printf '[project]\nname = "x"\n' > pyproject.toml )
-check "detect suggests a worktree venv when main has one" '(cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup: py=.*-m venv .venv.*\.venv/Scripts/python\.exe.* -m pip install -q -e \. — the main checkout has .venv/"'
+check "detect suggests a worktree venv when main has one" '(cd "$f" && bash "$RUN" detect) | has "^suggest worktree_setup: py=.*-m venv .venv.*\.venv/Scripts/python\.exe.* -m pip install -q -e \. — the main checkout has .venv/"'
 # a Windows-style python: no python3 on PATH, and its venv keeps the interpreter in Scripts/
 cmd="$(cd "$f" && bash "$RUN" detect | sed -n 's/^suggest worktree_setup: \(.*\) — the main.*/\1/p')"
 t="$(mktemp -d)"; mkdir -p "$t/bin" "$t/w"; ln -s "$(command -v mkdir)" "$t/bin/mkdir"; ln -s "$(command -v chmod)" "$t/bin/chmod"
@@ -1140,29 +1144,29 @@ chmod +x "$t/bin/python"
 check "the proposed venv command runs on a Windows layout" 'grep -qx -- "-m pip install -q -e ." "$t/w/ran"'
 rm -rf "$t"
 touch "$f/uv.lock"
-check "a uv project syncs its own environment"   '(cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup: uv sync --frozen —"'
+check "a uv project syncs its own environment"   '(cd "$f" && bash "$RUN" detect) | has "^suggest worktree_setup: uv sync --frozen —"'
 printf 'worktree_setup: make env\n' >> "$f/.idleflow/conventions.md"; sed -i.bak '/^worktree_setup: unset$/d' "$f/.idleflow/conventions.md"
-check "a chosen worktree_setup is left alone"    '! (cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup"'
+check "a chosen worktree_setup is left alone"    '! (cd "$f" && bash "$RUN" detect) | has "^suggest worktree_setup"'
 sed -i.bak 's/^worktree_setup: make env$/worktree_setup: none/' "$f/.idleflow/conventions.md"
-check "worktree_setup: none is a decision"       '! (cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup"'
+check "worktree_setup: none is a decision"       '! (cd "$f" && bash "$RUN" detect) | has "^suggest worktree_setup"'
 rm -rf "$f/.venv"; sed -i.bak '/^worktree_setup:/d' "$f/.idleflow/conventions.md"
-check "no venv in main, no suggestion"           '! (cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup"'
+check "no venv in main, no suggestion"           '! (cd "$f" && bash "$RUN" detect) | has "^suggest worktree_setup"'
 rm -rf "$f"
 check "agents never borrow the main checkout's environment" 'grep -q "never the main checkout" "$HERE/../agents/implementer.md" && grep -q "never the main checkout" "$HERE/../agents/implementer-hard.md" && grep -q "never the main checkout" "$HERE/../agents/review-correct.md"'
 echo "--- a worktree installs its own node_modules"
 f="$(mktemp -d)"; ( cd "$f" && git init -q && mkdir -p .idleflow node_modules && printf 'mode: repo\nworktree_setup: unset\n' > .idleflow/conventions.md && printf '{}\n' > package.json && touch package-lock.json )
-check "detect suggests the lockfile's install when main has node_modules" '(cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup: npm ci — the main checkout has node_modules/"'
+check "detect suggests the lockfile's install when main has node_modules" '(cd "$f" && bash "$RUN" detect) | has "^suggest worktree_setup: npm ci — the main checkout has node_modules/"'
 rm -f "$f/package-lock.json"; touch "$f/pnpm-lock.yaml"
-check "the install follows the package manager" '(cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup: pnpm install --frozen-lockfile —"'
+check "the install follows the package manager" '(cd "$f" && bash "$RUN" detect) | has "^suggest worktree_setup: pnpm install --frozen-lockfile —"'
 rm -f "$f/pnpm-lock.yaml"; touch "$f/yarn.lock" "$f/.yarnrc.yml"
-check "Yarn 2 and later install with --immutable" '(cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup: yarn install --immutable —"'
+check "Yarn 2 and later install with --immutable" '(cd "$f" && bash "$RUN" detect) | has "^suggest worktree_setup: yarn install --immutable —"'
 rm -f "$f/yarn.lock" "$f/.yarnrc.yml"
-check "node_modules without a lockfile gets no proposal" '! (cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup"'
+check "node_modules without a lockfile gets no proposal" '! (cd "$f" && bash "$RUN" detect) | has "^suggest worktree_setup"'
 touch "$f/pnpm-lock.yaml"
 mkdir -p "$f/.venv"; touch "$f/uv.lock"
-check "a repo with both gets both installs" '(cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup: uv sync --frozen && pnpm install --frozen-lockfile — the main checkout has .venv/.*; the main checkout has node_modules/"'
+check "a repo with both gets both installs" '(cd "$f" && bash "$RUN" detect) | has "^suggest worktree_setup: uv sync --frozen && pnpm install --frozen-lockfile — the main checkout has .venv/.*; the main checkout has node_modules/"'
 rm -rf "$f/node_modules" "$f/.venv"
-check "no node_modules in main, no suggestion" '! (cd "$f" && bash "$RUN" detect) | grep -q "^suggest worktree_setup"'
+check "no node_modules in main, no suggestion" '! (cd "$f" && bash "$RUN" detect) | has "^suggest worktree_setup"'
 rm -rf "$f"
 echo "--- which files run.sh docs keeps"
 f="$(mktemp -d)"; ( cd "$f" && git init -q && git config user.name Ada && git config user.email a@a && mkdir -p .idleflow docs templates \
@@ -1173,7 +1177,7 @@ f="$(mktemp -d)"; ( cd "$f" && git init -q && git config user.name Ada && git co
   && printf '# Readme\n<!-- idleflow:generated milestones -->\n<!-- idleflow:end -->\n' > README.md \
   && git add -A && git commit -qm start )
 out="$(cd "$f" && bash "$RUN" docs)"
-check "docs fills an index kept out of git"   'echo "$out" | grep -q "docs/index.md" && grep -qxF -- "- M1: Sign in: 2/3" "$f/docs/index.md"'
+check "docs fills an index kept out of git"   'echo "$out" | has "docs/index.md" && grep -qxF -- "- M1: Sign in: 2/3" "$f/docs/index.md"'
 ( cd "$f" && git checkout -q -- templates README.md && printf 'generated_docs: README.md\n' >> .idleflow/conventions.md && git add -A && git commit -qm named )
 out="$(cd "$f" && bash "$RUN" docs)"
 check "generated_docs names the files kept"   '[ "$out" = "docs: regenerated README.md" ] && [ -z "$(cd "$f" && git status --porcelain templates)" ]'
@@ -1213,7 +1217,7 @@ check "attribution is one rule every commit writer gets" '( for a in implementer
 check "the doc-keeper edits sentences, never whole files" '! grep -q "^tools:.*Write" "$HERE/../agents/doc-keeper.md" && grep -q "belongs to humans" "$HERE/../agents/doc-keeper.md" && grep -q "as it is on disk now" "$HERE/../templates/CLAUDE.md"'
 check "agents run task commands through run.sh exec" '( for a in implementer implementer-hard review-correct; do grep -q "exec <task-id> -- <command>" "$HERE/../agents/$a.md" || exit 1; done ) && grep -q "IDLEFLOW_PORT" "$HERE/../agents/planner.md" && [ "$(grep -c "exec <task-id> -- <command>\|exec <id> -- <command>" "$HERE/../commands/feature.md")" = 2 ]'
 check "the index limit counts only hand-written text" 'grep -q "outside generated blocks) stays under 80 lines" "$HERE/../agents/retro.md" && grep -q "the text outside its generated blocks stays under 80 lines" "$HERE/../commands/setup.md" && ! grep -q "Under 80 lines\.\|), under 80 lines," "$HERE/../agents/retro.md" "$HERE/../commands/setup.md"'
-check "the planner writes prd.md only while it is the template" 'grep -q "Your prompt says whether \`prd.md\` is \`written\` or still the \`template\` R2 copied; \`greenfield\` is about code and never decides it" "$HERE/../agents/planner.md" && grep -q "When it is \`written\`, humans own it" "$HERE/../agents/planner.md" && ! grep -q "On a \*\*greenfield\*\* run you also \*write\* \`prd.md\`" "$HERE/../agents/planner.md" && grep -q "the paths of \`prd.md\` (with \`template\` when it is missing or its first line is still the template.s \`# <Project name> — product requirements\`, else \`written\`" "$HERE/../commands/feature.md" && grep -q "shows a change (the planner filled the template or applied a yes, the designer revised the design system), run \`bash \"\$RUN\" snapshot\` first, before any worktree exists" "$HERE/../commands/feature.md" && head -n 1 "$HERE/../templates/prd.md" | grep -qx "# <Project name> — product requirements" && ! grep -q "planner fills \`prd.md\` on a greenfield run" "$HERE/../procedures/repo-setup.md"'
+check "the planner writes prd.md only while it is the template" 'grep -q "Your prompt says whether \`prd.md\` is \`written\` or still the \`template\` R2 copied; \`greenfield\` is about code and never decides it" "$HERE/../agents/planner.md" && grep -q "When it is \`written\`, humans own it" "$HERE/../agents/planner.md" && ! grep -q "On a \*\*greenfield\*\* run you also \*write\* \`prd.md\`" "$HERE/../agents/planner.md" && grep -q "the paths of \`prd.md\` (with \`template\` when it is missing or its first line is still the template.s \`# <Project name> — product requirements\`, else \`written\`" "$HERE/../commands/feature.md" && grep -q "shows a change (the planner filled the template or applied a yes, the designer revised the design system), run \`bash \"\$RUN\" snapshot\` first, before any worktree exists" "$HERE/../commands/feature.md" && head -n 1 "$HERE/../templates/prd.md" | has -x "# <Project name> — product requirements" && ! grep -q "planner fills \`prd.md\` on a greenfield run" "$HERE/../procedures/repo-setup.md"'
 check "reviews record the checks they ran and the deviations they weighed" 'grep -q "^checks_run: <none (<why>) | one line each" "$HERE/../agents/review-correct.md" && grep -q "^deviations_weighed: <none | one line each" "$HERE/../agents/review-correct.md" && grep -q "record the judgement under \`deviations_weighed:\`" "$HERE/../agents/review-correct.md" && grep -q "^checks_run: <none (<why>) | one line each" "$HERE/../agents/review-design.md" && grep -q "\`deviations_weighed:\` is its judgement" "$HERE/../agents/retro.md"'
 check "each issue form's title hint is the form ISSUES.md gives its kind" '( for k in bug workflow idea pushback; do form="$(grep -o "^| \`$k\` | \`$k: <[^\`]*>\` |\$" "$HERE/../ISSUES.md" | sed "s/^| \`$k\` | \`//; s/\` |\$//")"; [ -n "$form" ] && grep -qF "Title: \"$form\"" "$HERE/../.github/ISSUE_TEMPLATE/$k.md" || exit 1; done ) && ! grep -qE "^\| \`(idea|pushback)\` \| \`[a-z]+: <what is wrong" "$HERE/../ISSUES.md"'
 check "a criterion checked after merge is reported apart and spends no retry" 'for a in implementer implementer-hard; do grep -q "^after_merge: <none | the A-ids of \`verify: browser after merge\` criteria" "$HERE/../agents/$a.md" && grep -q "it is not a criterion you failed, so it is never a deviation and never makes the task \`partial\`" "$HERE/../agents/$a.md" || exit 1; done && grep -q "\`partial\` whose \`deviations\` are \`none\` or name only A-ids listed under \`after_merge:\`, each written \`verify: browser after merge\`" "$HERE/../commands/feature.md" && grep -q "\`partial\` with any other deviation" "$HERE/../commands/feature.md"'
@@ -1242,6 +1246,8 @@ check "a change to a file git ignores is planned by hand after merge" 'grep -q "
 check "the designer and design reviewer exist" '[ -f "$HERE/../agents/designer.md" ] && [ -f "$HERE/../agents/review-design.md" ] && grep -q "\"ui\"" "$HERE/../agents/classifier.md" && grep -q "^### 2c. Design" "$HERE/../commands/feature.md"'
 check "requirements no screen shows reach the plan" 'grep -q "^- \`design.md\` at the output path: the screens for this run, \"Not on a screen\"" "$HERE/../agents/designer.md" && grep -q "Each line under \"Not on a screen\" becomes acceptance of the task that builds its surface" "$HERE/../agents/planner.md" && grep -q "listed under \"Not on a screen\"" "$HERE/../procedures/design.md"'
 check "the design handbook carries the contrast rule" 'grep -q "4.5:1" "$HERE/../procedures/design.md" && grep -q "0.2126 R + 0.7152 G + 0.0722 B" "$HERE/../procedures/design-data.md"'
+check "a check on a writer that pauses between lines still sees the match" '{ echo a; sleep 0.3; echo b; } | has a'
+check "no script pipes into a grep that stops at its first match" '[ -z "$(find "$HERE/.." -name "*.sh" -not -path "*/.git/*" -not -path "*/.idleflow/*" -not -path "*/node_modules/*" -exec grep -nE "(^|[^|])\| *e?grep( +-[^ ]+)* +(-[A-Za-z]*[q][A-Za-z]*|--[q]uiet|--[s]ilent)( |\$)" {} +)" ]'
 check "a bug fix goes to where the bad state is produced" 'grep -q "Name it as \`source: <file>:<function>" "$HERE/../agents/explorer.md" && grep -q "one \`sibling: <file>:<function> — <the case>\` line each" "$HERE/../agents/explorer.md" && grep -q "never cut the §2 \`source:\` and \`sibling:\` lines" "$HERE/../agents/explorer.md" && grep -q "^cause: none " "$HERE/../templates/plan.md" && grep -q "^9\. \*\*The cause, for a bug\.\*\*" "$HERE/../agents/planner.md" && grep -q "^7\. \*\*Cause or symptom, for a bug\.\*\*" "$HERE/../agents/red-team.md" && grep -q "^13\. \*\*Cause, not symptom\.\*\*" "$HERE/../agents/review-correct.md" && grep -q "^14\. \*\*Accepting more\.\*\*" "$HERE/../agents/review-correct.md" && grep -q "reproduces the reported failure end to end" "$HERE/../commands/fix.md"'
 check "STEP_DESIGN is a setting" 'grep -q STEP_DESIGN "$HERE/conf.sh" && grep -q "^STEP_DESIGN=auto" "$HERE/../config/idleflow.conf"'
 check "the human chooses a design direction before the design system" 'grep -q "STEP_DESIGN_OPTIONS)" "$HERE/conf.sh" && grep -q "^STEP_DESIGN_OPTIONS=auto" "$HERE/../config/idleflow.conf" && [ -n "$(bash "$RUN" conf | grep -x "STEP_DESIGN_OPTIONS=auto")" ] && grep -q "^## Options mode$" "$HERE/../agents/designer.md" && grep -q "^\*\*Directions first\*\*, when \`STEP_DESIGN_OPTIONS\` is \`on\`" "$HERE/../commands/feature.md" && grep -q "design-direction: <n>-<slug>" "$HERE/../commands/feature.md" && grep -q "as \`Chosen direction\`" "$HERE/../commands/feature.md"'
