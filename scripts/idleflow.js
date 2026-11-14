@@ -807,7 +807,8 @@ function cmdClip(n, text) {
   console.log(chars.length <= n ? text : chars.slice(0, n - 3).join("") + "...");
 }
 // Free means a server could take it now: a wildcard bind succeeds on IPv4 and, where the machine
-// has it, IPv6 (a specific bind elsewhere makes it fail), and nothing answers on localhost.
+// has it, IPv6 (Node binds with SO_REUSEADDR, so a port in TIME_WAIT counts as free), and nothing
+// answers on localhost over either: BSD lets that bind pass over a specific listener.
 function cmdPortFree(port) {
   const net = require("net");
   port = parseInt(port, 10);
@@ -816,8 +817,8 @@ function cmdPortFree(port) {
     s.once("error", (e) => done(e.code));
     s.listen({ port, host, exclusive: true }, () => s.close(() => done(null)));
   });
-  const answers = () => new Promise((done) => {
-    const c = net.connect({ port, host: "127.0.0.1" });
+  const answers = (host) => new Promise((done) => {
+    const c = net.connect({ port, host });
     c.setTimeout(500, () => { c.destroy(); done(false); });
     c.once("connect", () => { c.destroy(); done(true); });
     c.once("error", () => done(false));
@@ -827,7 +828,7 @@ function cmdPortFree(port) {
     if (v4 !== null) process.exit(1);
     const v6 = await bind("::");
     if (v6 !== null && v6 !== "EADDRNOTAVAIL" && v6 !== "EAFNOSUPPORT") process.exit(1);
-    process.exit((await answers()) ? 1 : 0);
+    process.exit((await answers("127.0.0.1")) || (await answers("::1")) ? 1 : 0);
   })();
 }
 const table = { get: cmdGet, set: cmdSet, inc: cmdInc, finish: cmdFinish, own: cmdOwn, gate: cmdGate, guard: cmdGuard, killguard: cmdKillguard, detach: cmdDetach, entries: cmdEntries, unowned: cmdUnowned, outside: cmdOutside, clip: cmdClip, "port-free": cmdPortFree };

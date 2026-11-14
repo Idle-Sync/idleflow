@@ -887,7 +887,8 @@ def cmd_killguard():
 
 def cmd_port_free(port):
     # Free means a server could take it now: a wildcard bind succeeds on IPv4 and, where the machine
-    # has it, IPv6 (a specific bind elsewhere makes it fail), and nothing answers on localhost.
+    # has it, IPv6, with SO_REUSEADDR as Node binds (so a port in TIME_WAIT counts as free), and
+    # nothing answers on localhost over either: BSD lets that bind pass over a specific listener.
     import errno
     import socket
     port = int(port)
@@ -899,6 +900,8 @@ def cmd_port_free(port):
         except OSError:
             continue
         try:
+            if not WIN:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             s.bind((host, port))
         except OSError as e:
             if family != socket.AF_INET and e.errno in (errno.EADDRNOTAVAIL, errno.EAFNOSUPPORT):
@@ -906,11 +909,13 @@ def cmd_port_free(port):
             sys.exit(1)
         finally:
             s.close()
-    try:
-        socket.create_connection(("127.0.0.1", port), timeout=0.5).close()
-    except OSError:
-        sys.exit(0)
-    sys.exit(1)
+    for host in ("127.0.0.1", "::1"):
+        try:
+            socket.create_connection((host, port), timeout=0.5).close()
+        except OSError:
+            continue
+        sys.exit(1)
+    sys.exit(0)
 
 
 def cmd_clip(n, text):

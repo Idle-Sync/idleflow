@@ -417,15 +417,26 @@ command_approved() { # command_approved <key> <command>
 # meets: the temp folder under a short root, because a Unix socket path may hold only about 104
 # bytes and a repo path can use most of that; the port claims in a registry beside it.
 # IDLEFLOW_TMP_ROOT moves that root (the selftest gives each suite its own).
-tmp_root() {
-  local r="${IDLEFLOW_TMP_ROOT:-/tmp}"
-  [ -d "$r" ] && [ -w "$r" ] || r="${TMPDIR:-/tmp}"
-  echo "${r%/}"
+tmp_root() { local r="${IDLEFLOW_TMP_ROOT:-/tmp}"; echo "${r%/}"; }
+# The root is shared by every user of the machine and its names are predictable, so everything
+# idleflow keeps there sits in one folder of this user's, mode 700: one another user made, or a
+# symlink, is refused rather than written through.
+user_tmp() {
+  local u; u="$(tmp_root)/idleflow-$(id -u)"
+  [ -e "$u" ] || [ -L "$u" ] || mkdir -m 700 "$u" 2>/dev/null || true
+  if [ -L "$u" ] || [ ! -d "$u" ] || [ ! -O "$u" ]; then
+    echo "run.sh: $u is not a folder this user owns; remove it, or set IDLEFLOW_TMP_ROOT to another root" >&2; return 1
+  fi
+  chmod 700 "$u" 2>/dev/null || true
+  echo "$u"
 }
 # One folder per run, named by a short hash of the repo and the run id, so two repos never share it.
-run_tmp() { echo "$(tmp_root)/idleflow-$(printf '%s' "$REPO/$(active_id)" | git hash-object --stdin | cut -c1-10)"; }
+run_tmp() {
+  local u key; u="$(user_tmp)" || return 1; key="$(printf '%s' "$REPO/$(active_id)" | git hash-object --stdin | cut -c1-10)"
+  echo "$u/$key"
+}
 task_port() { idleflow_rt get "$ACTIVE/run.json" "tasks.$1.port" 2>/dev/null || true; }
-task_tmp() { echo "$(run_tmp)/$1"; }
+task_tmp() { local r; r="$(run_tmp)" || return 1; echo "$r/$1"; }
 # The sha a task's commits start from: its own, recorded by `wt add`, or the run's for an older run.
 task_base() { # task_base <task-id>
   local base
@@ -434,45 +445,59 @@ task_base() { # task_base <task-id>
   [ -n "$base" ] && [ "$base" != "null" ] || { echo "$1: no base sha recorded (was the worktree created with run.sh wt add?)" >&2; return 1; }
   echo "$base"
 }
-# A port is claimed by a folder in the registry (mkdir is atomic, so two runs starting together never
-# take the same one) holding its owner: `<repo> <run id> <task-id>`. A claim whose owner no longer
-# holds the port (the run finished, the task got another) is stale and taken over.
-port_registry() { echo "$(tmp_root)/idleflow-ports"; }
-claim_live() { # claim_live <claim-folder> <port>
-  local orepo oid otid oport fresh=""
-  # A claim made in the last minute may still be being made: its owner line, or the port in its
-  # run's run.json, is written just after the folder.
-  [ -n "$(find "$1" -maxdepth 0 -mmin -1 2>/dev/null)" ] && fresh=yes
-  IFS=$'\t' read -r orepo oid otid < "$1/owner" 2>/dev/null || { [ -n "$fresh" ]; return; }
-  [ -f "$orepo/.idleflow/runs/active/run.json" ] || return 1
-  [ "$(idleflow_rt get "$orepo/.idleflow/runs/active/run.json" id 2>/dev/null)" = "$oid" ] || return 1
-  oport="$(idleflow_rt get "$orepo/.idleflow/runs/active/run.json" "tasks.$otid.port" 2>/dev/null || true)"
-  [ "$oport" = "$2" ] || { [ -n "$fresh" ] && { [ -z "$oport" ] || [ "$oport" = null ]; }; }
+# A port is claimed by a file in the registry, ports/<port>, holding its owner: `<repo> <run id>
+# <task-id>`. A claim is read and written only under the port's lock, the folder ports/<port>.lock
+# (mkdir is atomic), so two runs never both decide a port is theirs. A run that finds the lock taken
+# moves on to the next port; a lock left by a run that died costs that one port. A claim is live while
+# its run is its repo's active run and its task holds that port or has none recorded yet (`wt add`
+# records it right after the claim); any other claim is stale and is replaced.
+port_registry() { local u; u="$(user_tmp)" || return 1; echo "$u/ports"; }
+claim_live() { # claim_live <claim-file> <port>
+  local orepo oid otid oport rj
+  IFS=$'\t' read -r orepo oid otid < "$1" 2>/dev/null || return 1
+  rj="$orepo/.idleflow/runs/active/run.json"
+  [ -f "$rj" ] && [ "$(idleflow_rt get "$rj" id 2>/dev/null)" = "$oid" ] || return 1
+  oport="$(idleflow_rt get "$rj" "tasks.$otid.port" 2>/dev/null || true)"
+  [ "$oport" = "$2" ] || [ -z "$oport" ] || [ "$oport" = null ]
+}
+claim_port() { # claim_port <registry> <port> <task-id> <run id> <listening-check: yes|no>
+  local reg="$1" p="$2" me rc=1
+  me="$(printf '%s\t%s\t%s' "$REPO" "$4" "$3")"
+  mkdir "$reg/$p.lock" 2>/dev/null || return 1
+  if [ -f "$reg/$p" ] && [ "$(cat "$reg/$p")" != "$me" ] && claim_live "$reg/$p" "$p"; then
+    :
+  elif [ "$5" = no ] || idleflow_rt port-free "$p"; then
+    printf '%s\n' "$me" > "$reg/$p.new.$$" && mv -f "$reg/$p.new.$$" "$reg/$p" && rc=0
+  fi
+  rmdir "$reg/$p.lock" 2>/dev/null || true
+  return "$rc"
 }
 # The lowest PORT_BASE + n that no task of this run holds, no live claim on the machine holds and
-# nothing on the machine listens on; a task keeps its port when re-added.
+# nothing on the machine listens on. A task keeps its port when re-added, and claims it again in
+# case the claim was cleaned away.
 allocate_port() { # allocate_port <task-id>
-  local mine used p reg stale n=0 id; mine="$(task_port "$1")"
-  case "$mine" in ""|null) ;; *) echo "$mine"; return;; esac
+  local mine used p reg n=0 id; mine="$(task_port "$1")"
+  reg="$(port_registry)" || return 1; mkdir -p "$reg"; id="$(active_id)"
+  case "$mine" in ""|null) ;; *) claim_port "$reg" "$mine" "$1" "$id" no || true; echo "$mine"; return;; esac
   used="$(idleflow_rt entries "$ACTIVE/run.json" tasks 2>/dev/null | sed -n 's/.*"port":\([0-9]*\).*/\1/p')"
-  reg="$(port_registry)"; mkdir -p "$reg"; id="$(active_id)"
   while [ "$n" -lt 1000 ]; do
     p=$(( ${PORT_BASE:-4400} + n )); n=$((n + 1))
     printf '%s\n' "$used" | grep -qx "$p" && continue
-    if ! mkdir "$reg/$p" 2>/dev/null; then
-      claim_live "$reg/$p" "$p" && continue
-      # a stale claim: renaming it away is atomic, so of two runs taking it over only one goes on
-      stale="$reg/.stale.$$.$p"
-      mv "$reg/$p" "$stale" 2>/dev/null || continue
-      rm -f "$stale/owner"; rmdir "$stale" 2>/dev/null || true
-      mkdir "$reg/$p" 2>/dev/null || continue
-    fi
-    printf '%s\t%s\t%s\n' "$REPO" "$id" "$1" > "$reg/$p/owner"
-    if idleflow_rt port-free "$p"; then echo "$p"; return 0; fi
-    # something outside idleflow listens there: give the claim back and try the next port
-    rm -f "$reg/$p/owner"; rmdir "$reg/$p" 2>/dev/null || true
+    if claim_port "$reg" "$p" "$1" "$id" yes; then echo "$p"; return 0; fi
   done
   echo "allocate_port: no free port from ${PORT_BASE:-4400} to $(( ${PORT_BASE:-4400} + 999 ))" >&2; return 1
+}
+# Gives back every claim the active run holds, each under its lock.
+release_ports() {
+  local reg f mine; reg="$(port_registry)" || return 0
+  mine="$(printf '%s\t%s' "$REPO" "$(active_id)")"
+  for f in "$reg"/*; do
+    case "$f" in *.lock|*.new.*) continue;; esac
+    [ -f "$f" ] && [ "$(cut -f1,2 "$f")" = "$mine" ] || continue
+    mkdir "$f.lock" 2>/dev/null || continue
+    if [ "$(cut -f1,2 "$f")" = "$mine" ]; then rm -f "$f"; fi
+    rmdir "$f.lock" 2>/dev/null || true
+  done
 }
 # The repo's own commands (setup, gate, tests, preview) run as they would for a person or in CI.
 # Tools change behaviour when they see they run under an agent (Astro's preview detaches, for one),
@@ -506,7 +531,7 @@ clear_bytecode() { # clear_bytecode <checkout>
 # Runs a command for a task: in its worktree, with its port and temp folder and no stale bytecode.
 in_task() { # in_task <task-id> <dir> <command...>
   local tid="$1" dir="$2" port tmp rc=0; shift 2
-  port="$(task_port "$tid")"; tmp="$(task_tmp "$tid")"; mkdir -p "$tmp"
+  port="$(task_port "$tid")"; tmp="$(task_tmp "$tid")" || return 1; mkdir -p "$tmp"
   # the caller decides what a failure means; errexit is left as the caller set it
   (cd "$dir" && without_agent_markers && clear_bytecode . && MAIN="$REPO" IDLEFLOW_TASK="$tid" IDLEFLOW_PORT="$port" IDLEFLOW_TMP="$tmp" TMPDIR="$tmp" "$@") || rc=$?
   return "$rc"
@@ -823,7 +848,7 @@ JSON
         idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.worktree" "$(json_str "$(native_path "$p")")"
         port="$(allocate_port "$tid")" || exit 1
         idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.port" "$port"
-        mkdir -p "$(task_tmp "$tid")"
+        tmp="$(task_tmp "$tid")" || exit 1; mkdir -p "$tmp"
         # epoch seconds, so the retro's time log can subtract them without date parsing
         idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.t_start" "$(date +%s)"
         # the commit the first tasks branch from is the base a later gate is compared against
@@ -1088,7 +1113,7 @@ JSON
       if [ ! -f "$2" ] || ! grep -q '[^[:space:]]' "$2"; then echo "reword: $2 is missing or holds no message" >&2; exit 1; fi
       flagged="$flagged$full "; messages+=("$full=$2"); shift 2
     done
-    tmp="$(task_tmp "$tid")/reword.msg"; mkdir -p "${tmp%/*}"
+    tmp="$(task_tmp "$tid")" || exit 1; tmp="$tmp/reword.msg"; mkdir -p "${tmp%/*}"
     new="$base"; started=""
     for c in $("${W[@]}" rev-list --reverse "$base..$head"); do
       case "$flagged" in *" $c "*) started=1;; esac
@@ -1202,8 +1227,9 @@ Task: $tid")
     ;;
   finish)
     status="${1:-done}"; id="$(active_id)"
-    # the tasks' temp folders go with the run; their port claims go stale and are taken over
-    rm -rf "$(run_tmp)"
+    # the tasks' temp folders and port claims go with the run
+    release_ports
+    if rt="$(run_tmp)"; then rm -rf "$rt"; fi
     idleflow_rt finish "$ACTIVE/run.json" "$status" "$RUNS/log.jsonl"
     rm -rf "${RUNS:?}/$id"
     mv "$ACTIVE" "$RUNS/$id"
@@ -1540,9 +1566,9 @@ Task: $tid")
     if [ "$tid" = main ]; then dir="$REPO"; else dir="$(wt_path "$tid")"; [ -d "$dir" ] || { echo "preview: no worktree for $tid" >&2; exit 1; }; fi
     mkdir -p "$ACTIVE/tasks/$tid"
     echo "preview ($tid): $cmd" >&2
-    mkdir -p "$(task_tmp "$tid")"
+    ptmp="$(task_tmp "$tid")" || exit 1; mkdir -p "$ptmp"
     ( without_agent_markers; clear_bytecode "$dir"
-      MAIN="$REPO" IDLEFLOW_TASK="$tid" IDLEFLOW_PORT="$port" IDLEFLOW_TMP="$(task_tmp "$tid")" TMPDIR="$(task_tmp "$tid")" \
+      MAIN="$REPO" IDLEFLOW_TASK="$tid" IDLEFLOW_PORT="$port" IDLEFLOW_TMP="$ptmp" TMPDIR="$ptmp" \
         idleflow_rt detach "$dir" "$ACTIVE/tasks/$tid/preview.log" "$pidf" "$cmd" )
     echo "preview $tid: serving at $url (log: $(native_path "$ACTIVE/tasks/$tid/preview.log"); stop with: run.sh preview $tid stop)"
     ;;

@@ -48,7 +48,7 @@ d="$(mktemp -d)"; d="$(cd "$d" && pwd)"
 cleanup() { cd / ; rm -rf "$d" "$d-tmp" "${d}__wt" "$d.link" "${d}__wt.link" "$d-mig" "$d-human" "${d}-human__wt" "$d-stray" 2>/dev/null || true; }
 trap cleanup EXIT
 # the suite's own root for task temp folders and port claims, so a suite running beside it never meets it
-export IDLEFLOW_TMP_ROOT="$d-tmp"; mkdir -p "$IDLEFLOW_TMP_ROOT"
+export IDLEFLOW_TMP_ROOT="$d-tmp"; mkdir -p "$IDLEFLOW_TMP_ROOT"; utmp="$IDLEFLOW_TMP_ROOT/idleflow-$(id -u)"
 
 echo "--- new on a repo with no commits (what /idleflow:init does)"
 cd "$d" && git init -q && git config user.name "Human" && git config user.email "human@example.com"
@@ -523,28 +523,30 @@ check "each task gets its own port"            "[ '$pa' = 4400 ] && [ '$pb' = 44
 bash "$RUN" wt add TA >/dev/null 2>&1
 check "a re-added task keeps its port"         '[ "$(bash "$RUN" get tasks.TA.port)" = 4400 ]'
 out="$(bash "$RUN" exec TA -- sh -c 'echo "$IDLEFLOW_TASK $IDLEFLOW_PORT"; echo "$TMPDIR"; pwd')"
-check "exec runs in the worktree with the task's port and temp folder" '[ "$(echo "$out" | sed -n 1p)" = "TA 4400" ] && echo "$out" | sed -n 2p | grep -q "^$IDLEFLOW_TMP_ROOT/idleflow-[0-9a-f]\{10\}/TA$" && [ "$(echo "$out" | sed -n 3p)" = "$(cd "$wa" && pwd)" ]'
+check "exec runs in the worktree with the task's port and temp folder" '[ "$(echo "$out" | sed -n 1p)" = "TA 4400" ] && echo "$out" | sed -n 2p | grep -q "^$utmp/[0-9a-f]\{10\}/TA$" && [ "$(echo "$out" | sed -n 3p)" = "$(cd "$wa" && pwd)" ]'
 check "exec runs the command without the agent's markers" '[ "$(CLAUDECODE=1 CLAUDE_CODE=1 AI_AGENT=claude CLAUDE_CODE_ENTRYPOINT=cli bash "$RUN" exec TA -- sh -c "echo \${CLAUDECODE-none} \${CLAUDE_CODE-none} \${AI_AGENT-none} \${CLAUDE_CODE_ENTRYPOINT-none}")" = "none none none none" ]'
 check "exec passes the command's exit code"    'bash "$RUN" exec TA -- sh -c "exit 3"; [ $? = 3 ]'
 inside="$(cd "$wa" && bash "$RUN" exec TA -- sh -c 'echo "$IDLEFLOW_PORT"')"
 check "exec works from inside the task worktree" "[ '$inside' = 4400 ]"
 # Ports are claimed across the machine: another repo's live run holds 4402, something else listens
-# on 4403, and a claim left by a run that has ended holds 4404.
-o="$d-tmp/other"; mkdir -p "$o/.idleflow/runs/active" "$IDLEFLOW_TMP_ROOT/idleflow-ports/4402" "$IDLEFLOW_TMP_ROOT/idleflow-ports/4404"
+# on 4403, a claim left by a run that has ended holds 4404, and another run is deciding about 4405.
+o="$d-tmp/other"; mkdir -p "$o/.idleflow/runs/active" "$utmp/ports/4405.lock"
 printf '{"id":"r1","tasks":{"T9":{"port":4402}}}\n' > "$o/.idleflow/runs/active/run.json"
-printf '%s\tr1\tT9\n' "$o" > "$IDLEFLOW_TMP_ROOT/idleflow-ports/4402/owner"
-printf '%s\tgone\tT1\n' "$o" > "$IDLEFLOW_TMP_ROOT/idleflow-ports/4404/owner"
-touch -t 202001010000 "$IDLEFLOW_TMP_ROOT/idleflow-ports/4402" "$IDLEFLOW_TMP_ROOT/idleflow-ports/4404"
+printf '%s\tr1\tT9\n' "$o" > "$utmp/ports/4402"
+printf '%s\tgone\tT1\n' "$o" > "$utmp/ports/4404"
 listen_args=(node -e 'const s=require("net").createServer().listen(4403,"127.0.0.1",()=>console.log("up"));setTimeout(()=>s.close(),20000)')
 command -v node >/dev/null 2>&1 || listen_args=(python3 -c 'import socket,time;s=socket.socket();s.bind(("127.0.0.1",4403));s.listen();print("up",flush=True);time.sleep(20)')
 "${listen_args[@]}" > "$d-tmp/listen.out" 2>&1 & lpid=$!
 for _ in 1 2 3 4 5 6 7 8 9 10; do grep -q up "$d-tmp/listen.out" 2>/dev/null && break; sleep 0.3; done
 bash "$RUN" wt add TC >/dev/null 2>&1; bash "$RUN" wt add TD >/dev/null 2>&1
-kill "$lpid" 2>/dev/null; wait "$lpid" 2>/dev/null
-check "a port another live run claims, or something listens on, is skipped" '[ "$(bash "$RUN" get tasks.TC.port)" = 4404 ] && [ "$(bash "$RUN" get tasks.TD.port)" = 4405 ]'
-check "a stale claim is taken over, with this run as its owner" '[ "$(cut -f2,3 "$IDLEFLOW_TMP_ROOT/idleflow-ports/4404/owner")" = "$(bash "$RUN" get id)	TC" ] && [ ! -e "$IDLEFLOW_TMP_ROOT/idleflow-ports/4403" ]'
-check "the claim of a live run elsewhere stays its own" '[ "$(cut -f2,3 "$IDLEFLOW_TMP_ROOT/idleflow-ports/4402/owner")" = "r1	T9" ]'
-check "a task's temp folder is short and outside the repo" 't="$(bash "$RUN" exec TA -- sh -c "echo \$TMPDIR")"; [ "${#t}" -le $(( ${#IDLEFLOW_TMP_ROOT} + 24 )) ] && [ -d "$t" ] && case "$t" in "$d"/*) false;; *) true;; esac'
+kill "$lpid" 2>/dev/null; wait "$lpid" 2>/dev/null; rmdir "$utmp/ports/4405.lock"
+check "a port another live run claims, something listens on, or another run is deciding about is skipped" '[ "$(bash "$RUN" get tasks.TC.port)" = 4404 ] && [ "$(bash "$RUN" get tasks.TD.port)" = 4406 ]'
+check "a stale claim is taken over, with this run as its owner" '[ "$(cut -f2,3 "$utmp/ports/4404")" = "$(bash "$RUN" get id)	TC" ] && [ ! -e "$utmp/ports/4403" ] && [ ! -e "$utmp/ports/4405" ]'
+check "the claim of a live run elsewhere stays its own" '[ "$(cut -f2,3 "$utmp/ports/4402")" = "r1	T9" ]'
+check "a task's temp folder is short and outside the repo" 't="$(bash "$RUN" exec TA -- sh -c "echo \$TMPDIR")"; [ "${#t}" -eq $(( ${#utmp} + 14 )) ] && [ -d "$t" ] && case "$t" in "$d"/*) false;; *) true;; esac'
+mkdir -p "$d-tmp/r2" "$d-tmp/elsewhere"; ln -s "$d-tmp/elsewhere" "$d-tmp/r2/idleflow-$(id -u)"
+check "a user folder under the temp root that is a symlink is refused" '! IDLEFLOW_TMP_ROOT="$d-tmp/r2" bash "$RUN" exec TA -- true 2>/dev/null && [ -z "$(ls -A "$d-tmp/elsewhere")" ]'
+check "the user folder is private" '[ "$(ls -ld "$utmp" | cut -c1-10)" = drwx------ ]'
 # Python reuses bytecode while a source keeps its size and whole-second mtime (pinned here to a stamp);
 # -I ignores PYTHON* variables, as tox's environments do, so only clearing the bytecode helps
 py_ok=no; _idleflow_py_ok python3 && py_ok=yes
@@ -633,8 +635,10 @@ check "wt rm removes the task's base checkout too" '[ -n "$base_tb" ] && [ ! -d 
 check "wt rm stops the task's jobs" '[ "$(cat .idleflow/runs/active/tasks/TB/jobs/$job/status)" = 143 ] && ! kill -0 "$(cat .idleflow/runs/active/tasks/TB/jobs/$job/pid)" 2>/dev/null'
 rm -f .idleflow/idleflow.conf "$wa/child.pid"; [ ! -f "$scratch/conf.bak" ] || mv "$scratch/conf.bak" .idleflow/idleflow.conf
 run_tmp_dir="$(bash "$RUN" exec TA -- sh -c 'echo "$TMPDIR"')"; run_tmp_dir="${run_tmp_dir%/TA}"
+iso_id="$(bash "$RUN" get id)"
 bash "$RUN" wt rm TA; bash "$RUN" wt rm TB; bash "$RUN" wt rm TC; bash "$RUN" wt rm TD; bash "$RUN" finish done >/dev/null
 check "finish removes the run's temp folders" '[ -n "$run_tmp_dir" ] && [ ! -e "$run_tmp_dir" ]'
+check "finish gives back the run's port claims and no other" '! grep -qs "	$iso_id	" "$utmp"/ports/* && [ "$(cut -f2,3 "$utmp/ports/4402")" = "r1	T9" ]'
 
 echo "--- a run started in a linked checkout"
 hw="$d-human"; git worktree add -q -b human-work "$hw" 2>/dev/null
@@ -727,7 +731,7 @@ sed -i.bak 's#^preview: .*#preview: pwd > "$IDLEFLOW_TMP/where"; sleep 30#' .idl
 git add .idleflow/conventions.md && commit -q -m "preview from main"; bash "$RUN" approve preview >/dev/null
 bash "$RUN" wt rm T2; bash "$RUN" finish done >/dev/null; bash "$RUN" new previewmain >/dev/null 2>&1
 out="$(bash "$RUN" preview main start 2>/dev/null)"; pid="$(cat .idleflow/runs/active/tasks/main/preview.pid 2>/dev/null)"; sleep 1
-check "under preview_in: main the main checkout is served" 'echo "$out" | grep -q "^preview main: serving at http://localhost:4173" && kill -0 "$pid" 2>/dev/null && [ "$(cat "$IDLEFLOW_TMP_ROOT"/idleflow-*/main/where 2>/dev/null)" = "$(pwd -P)" ]'
+check "under preview_in: main the main checkout is served" 'echo "$out" | grep -q "^preview main: serving at http://localhost:4173" && kill -0 "$pid" 2>/dev/null && [ "$(cat "$utmp"/*/main/where 2>/dev/null)" = "$(pwd -P)" ]'
 bash "$RUN" preview main stop >/dev/null; sleep 1
 check "preview main stop ends it" '! kill -0 "$pid" 2>/dev/null'
 check "main and merged are not task ids" '! bash "$RUN" wt add main 2>/dev/null && ! bash "$RUN" wt add merged 2>/dev/null'
