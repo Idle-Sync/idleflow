@@ -37,10 +37,13 @@ def load(path):
 
 
 def save(path, obj):
-    # LF and raw UTF-8 so the bytes match what idleflow.js writes, on every platform
-    with open(path, "w", encoding="utf-8", newline="\n") as f:
+    # LF and raw UTF-8 so the bytes match what idleflow.js writes, on every platform. Written beside
+    # the file and renamed over it, so a reader in another run never sees it half written.
+    tmp = "%s.%d.tmp" % (path, os.getpid())
+    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
         json.dump(obj, f, indent=1, ensure_ascii=False)
         f.write("\n")
+    os.replace(tmp, path)
 
 
 def to_number(v):

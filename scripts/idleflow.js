@@ -29,8 +29,11 @@ const WIN = process.platform === "win32";
 function load(p) {
   return JSON.parse(fs.readFileSync(p, "utf8"));
 }
+// Written beside the file and renamed over it, so a reader in another run never sees it half written.
 function save(p, obj) {
-  fs.writeFileSync(p, JSON.stringify(obj, null, 1) + "\n");
+  const tmp = `${p}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(obj, null, 1) + "\n");
+  fs.renameSync(tmp, p);
 }
 function isObj(v) {
   return v !== null && typeof v === "object" && !Array.isArray(v);

@@ -424,7 +424,9 @@ tmp_root() { local r="${IDLEFLOW_TMP_ROOT:-/tmp}"; echo "${r%/}"; }
 user_tmp() {
   local u; u="$(tmp_root)/idleflow-$(id -u)"
   [ -e "$u" ] || [ -L "$u" ] || mkdir -m 700 "$u" 2>/dev/null || true
-  if [ -L "$u" ] || [ ! -d "$u" ] || [ ! -O "$u" ]; then
+  # Git Bash maps an elevated session's folders to the Administrators group, so there -O is skipped
+  # and only the symlink and folder checks hold
+  if [ -L "$u" ] || [ ! -d "$u" ] || { ! command -v cygpath >/dev/null 2>&1 && [ ! -O "$u" ]; }; then
     echo "run.sh: $u is not a folder this user owns; remove it, or set IDLEFLOW_TMP_ROOT to another root" >&2; return 1
   fi
   chmod 700 "$u" 2>/dev/null || true
@@ -478,7 +480,9 @@ claim_port() { # claim_port <registry> <port> <task-id> <run id> <listening-chec
 allocate_port() { # allocate_port <task-id>
   local mine used p reg n=0 id; mine="$(task_port "$1")"
   reg="$(port_registry)" || return 1; mkdir -p "$reg"; id="$(active_id)"
-  case "$mine" in ""|null) ;; *) claim_port "$reg" "$mine" "$1" "$id" no || true; echo "$mine"; return;; esac
+  case "$mine" in ""|null) ;; *)
+    claim_port "$reg" "$mine" "$1" "$id" no || echo "[idleflow] $1 keeps port $mine, which another run on this machine also claims" >&2
+    echo "$mine"; return;; esac
   used="$(idleflow_rt entries "$ACTIVE/run.json" tasks 2>/dev/null | sed -n 's/.*"port":\([0-9]*\).*/\1/p')"
   while [ "$n" -lt 1000 ]; do
     p=$(( ${PORT_BASE:-4400} + n )); n=$((n + 1))
