@@ -13,7 +13,7 @@
 #   run.sh wt rm <task-id>                -> removes the worktree (keeps the branch); works with or without an active run
 #   run.sh wt list                        -> lists idleflow worktrees
 #   run.sh own <task-id> '<globs json>'   -> registers file ownership for the guard hook
-#   run.sh skip <key>                     -> this run goes without a repo command (gate, gate_quick, worktree_setup, preview)
+#   run.sh skip <key>                     -> this run goes without a repo command (gate, gate_quick, worktree_setup, preview, services)
 #   run.sh unowned <task-id>              -> paths the task's commits change (base..HEAD, what merges) that its globs,
 #                                            .idleflow-run/** and shared_files do not cover; matched as the guard matches
 #   run.sh exec <task-id> [--limit <s>] -- <command...> -> runs a command in the task's worktree with its own port
@@ -63,7 +63,7 @@
 #   run.sh repo-gate <base|main|task> [--quick] -> runs the approved gate (or gate_quick) there, times it; 1 failed, 7 unapproved
 #   run.sh preview <task-id|main> start|stop -> serves the app from that worktree, or with preview_in: main from the main
 #                                            checkout after the merge, for screenshots (approved command, localhost only)
-#   run.sh commands                       -> the repo's commands (worktree_setup, gate) as committed, approved or unapproved here
+#   run.sh commands                       -> the repo's commands (worktree_setup, gate, ..., services) as committed, approved or unapproved here
 #   run.sh approve <key>                  -> records this person's approval of that exact committed command (local git config)
 #   run.sh agent <name>                   -> how to spawn that agent here: agent, model, extra instructions, contract
 #   run.sh custom list                    -> this repo's customizations (.idleflow/idleflow.conf, agent instructions, replaced agents)
@@ -374,7 +374,7 @@ gen_runs() { # the last ten idleflow runs merged here, newest first: merge commi
 gen_settings() {
   local k v
   for k in mode docs lessons_in progress_file index_file index_rewrite sessions_dir session_names time_log shared_files generated_docs \
-           worktrees_in worktree_setup commit_format gate gate_quick gate_runs preview preview_url preview_in language tone; do
+           worktrees_in worktree_setup commit_format gate gate_quick gate_runs preview preview_url preview_in services language tone; do
     v="$(conventions_value "$k")"; [ -n "$v" ] && echo "- \`$k\`: $(md_code "$v")"
   done
   [ -f "$PROJECT_CONF" ] && bash "$0" custom list 2>/dev/null | grep -v '^instructions:\|^replaced:' | sed 's/^/- `/; s/=/`: /'

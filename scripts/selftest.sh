@@ -705,12 +705,12 @@ out="$(bash "$RUN" services 2>&1)"; rc=$?
 check "a service that is down stops with exit 1 and says how to check again" '[ "$rc" = 1 ] && echo "$out" | grep -q "repo services: the check failed (exit 1)" && echo "$out" | grep -q "services$"'
 touch .service-up
 check "services that are up pass, and the check runs from the main checkout" '[ "$(bash "$RUN" services 2>/dev/null)" = "repo services: up" ] && grep -qx db-up .idleflow/runs/active/services.log'
-rm -f .service-up; bash "$RUN" finish done >/dev/null; git config --local --unset idleflow.approved-services
+rm -f .service-up; bash "$RUN" finish "done" >/dev/null; git config --local --unset idleflow.approved-services
 cp "$d-svc.bak" .idleflow/conventions.md && rm -f "$d-svc.bak"; git add .idleflow/conventions.md && commit -q -m "no services"
 bash "$RUN" new services-none >/dev/null 2>&1
 check "a repo without a services check passes with none" '[ "$(bash "$RUN" services)" = "repo services: none" ]'
-bash "$RUN" finish done >/dev/null
-check "the run checks services before the baseline, each build and each review" 'grep -q "^\*\*The services the tests need.\*\* When" "$HERE/../commands/feature.md" && grep -q "^services: unset$" "$HERE/../templates/conventions.md"'
+bash "$RUN" finish "done" >/dev/null
+check "the run checks services before the baseline, each build and review, and the gate after merge" 'grep -q "^\*\*The services the tests need.\*\* When" "$HERE/../commands/feature.md" && grep -q "before the gate and verification after the last merge (step 8)" "$HERE/../commands/feature.md" && grep -q "run the services check (step 0), then \`bash \"\$RUN\" repo-gate main\`" "$HERE/../commands/feature.md" && grep -q "^services: unset$" "$HERE/../templates/conventions.md"'
 
 echo "--- the repo's gate"
 git add -u && commit -q -m "tidy before the gate"
