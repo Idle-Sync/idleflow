@@ -47,12 +47,12 @@ jobs:
       matrix:
         runtime: [python, node]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: scripts/selftest.sh under bash 3.2
         env:
           IDLEFLOW_RUNTIME: ${{ matrix.runtime }}
         run: |
-          docker run --rm -v "$PWD":/w -w /w -e IDLEFLOW_RUNTIME bash:3.2 sh -c \
+          docker run --rm -v "$PWD":/w -w /w -e IDLEFLOW_RUNTIME bash:3.2@sha256:2556c2da19c32c1614d318645c73a7bf64d38be21cf69e98e3ca51f053983719 sh -c \
             'apk add --no-cache -q git python3 nodejs coreutils findutils grep sed gawk procps util-linux diffutils && git config --global --add safe.directory /w && bash --version | head -1 && bash scripts/selftest.sh'
 
   validate:
