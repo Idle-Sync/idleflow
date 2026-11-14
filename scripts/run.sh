@@ -450,7 +450,8 @@ task_base() { # task_base <task-id>
 # A port is claimed by a file in the registry, ports/<port>, holding its owner: `<repo> <run id>
 # <task-id>`. A claim is read and written only under the port's lock, the folder ports/<port>.lock
 # (mkdir is atomic), so two runs never both decide a port is theirs. A run that finds the lock taken
-# moves on to the next port; a lock left by a run that died costs that one port. A claim is live while
+# moves on to the next port; the lock holds its holder's pid, and one whose holder has died (a `wt add`
+# killed while it held it) is taken over, as the base checkout's lock is. A claim is live while
 # its run is its repo's active run and its task holds that port or has none recorded yet (`wt add`
 # records it right after the claim); any other claim is stale and is replaced.
 port_registry() { local u; u="$(user_tmp)" || return 1; echo "$u/ports"; }
@@ -462,16 +463,27 @@ claim_live() { # claim_live <claim-file> <port>
   oport="$(idleflow_rt get "$rj" "tasks.$otid.port" 2>/dev/null || true)"
   [ "$oport" = "$2" ] || [ -z "$oport" ] || [ "$oport" = null ]
 }
+port_lock() { # port_lock <lock-folder>
+  local holder
+  if ! mkdir "$1" 2>/dev/null; then
+    holder="$(cat "$1/pid" 2>/dev/null || true)"
+    if [ -z "$holder" ] || kill -0 "$holder" 2>/dev/null; then return 1; fi
+    rm -f "$1/pid"; rmdir "$1" 2>/dev/null || true
+    mkdir "$1" 2>/dev/null || return 1
+  fi
+  echo "$$" > "$1/pid"
+}
+port_unlock() { rm -f "$1/pid"; rmdir "$1" 2>/dev/null || true; }
 claim_port() { # claim_port <registry> <port> <task-id> <run id> <listening-check: yes|no>
   local reg="$1" p="$2" me rc=1
   me="$(printf '%s\t%s\t%s' "$REPO" "$4" "$3")"
-  mkdir "$reg/$p.lock" 2>/dev/null || return 1
+  port_lock "$reg/$p.lock" || return 1
   if [ -f "$reg/$p" ] && [ "$(cat "$reg/$p")" != "$me" ] && claim_live "$reg/$p" "$p"; then
     :
   elif [ "$5" = no ] || idleflow_rt port-free "$p"; then
     printf '%s\n' "$me" > "$reg/$p.new.$$" && mv -f "$reg/$p.new.$$" "$reg/$p" && rc=0
   fi
-  rmdir "$reg/$p.lock" 2>/dev/null || true
+  port_unlock "$reg/$p.lock"
   return "$rc"
 }
 # The lowest PORT_BASE + n that no task of this run holds, no live claim on the machine holds and
@@ -491,16 +503,18 @@ allocate_port() { # allocate_port <task-id>
   done
   echo "allocate_port: no free port from ${PORT_BASE:-4400} to $(( ${PORT_BASE:-4400} + 999 ))" >&2; return 1
 }
-# Gives back every claim the active run holds, each under its lock.
-release_ports() {
-  local reg f mine; reg="$(port_registry)" || return 0
+# Gives back every claim the active run holds, or only those of one owner (`main` for preview main),
+# each under its lock.
+release_ports() { # release_ports [<task-id>]
+  local reg f mine fields=1,2; reg="$(port_registry)" || return 0
   mine="$(printf '%s\t%s' "$REPO" "$(active_id)")"
+  if [ -n "${1:-}" ]; then mine="$mine"$'\t'"$1"; fields=1-3; fi
   for f in "$reg"/*; do
     case "$f" in *.lock|*.new.*) continue;; esac
-    if [ ! -f "$f" ] || [ "$(cut -f1,2 "$f")" != "$mine" ]; then continue; fi
-    mkdir "$f.lock" 2>/dev/null || continue
-    if [ "$(cut -f1,2 "$f")" = "$mine" ]; then rm -f "$f"; fi
-    rmdir "$f.lock" 2>/dev/null || true
+    if [ ! -f "$f" ] || [ "$(cut -f"$fields" "$f")" != "$mine" ]; then continue; fi
+    port_lock "$f.lock" || continue
+    if [ "$(cut -f"$fields" "$f")" = "$mine" ]; then rm -f "$f"; fi
+    port_unlock "$f.lock"
   done
 }
 # The repo's own commands (setup, gate, tests, preview) run as they would for a person or in CI.
@@ -1557,13 +1571,14 @@ Task: $tid")
     if [ "$act" = stop ]; then
       # the server runs in its own session, so its whole process group goes (dev servers start children)
       if [ -f "$pidf" ]; then pid="$(cat "$pidf")"; kill -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true; fi
-      rm -f "$pidf"; echo "preview $tid: stopped"; exit 0
+      rm -f "$pidf"; [ "$tid" != main ] || release_ports main; echo "preview $tid: stopped"; exit 0
     fi
     cmd="$(idleflow_rt get "$ACTIVE/run.json" preview 2>/dev/null || true)"
     case "$cmd" in ""|null) echo "preview: none"; exit 0;; esac
     command_approved preview "$cmd" || { echo "preview is not approved on this clone; nothing ran. The command is: $cmd" >&2; exit 7; }
     url="$(conventions_value preview_url)"
-    if [ "$tid" = main ]; then port="${PORT_BASE:-4400}"; else port="$(task_port "$tid")"; fi
+    # main is no task, so its port is claimed under the owner name `main`, live until stop or finish
+    if [ "$tid" = main ]; then port="$(allocate_port main)" || exit 1; else port="$(task_port "$tid")"; fi
     url="${url//\$\{IDLEFLOW_PORT\}/$port}"
     [[ "$url" =~ ^https?://(localhost|127\.0\.0\.1|\[::1\])(:[0-9]+)?(/[^[:space:]]*)?$ ]] \
       || { echo "preview_url must be a localhost address (got '$url')" >&2; exit 1; }
