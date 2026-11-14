@@ -33,7 +33,26 @@ fails=0
 export IDLEFLOW_NO_UPDATE_CHECK=1   # no network in the selftest
 ok()   { echo "  ok    $1"; }
 fail() { echo "  FAIL  $1"; fails=$((fails+1)); }
-check() { if eval "$2"; then ok "$1"; else fail "$1"; fi; }
+check() { if eval "$2"; then ok "$1"; else fail "$1"; evidence "$2"; fi; }
+# A failed check prints the value of every variable its test reads, so a failure that captured a
+# command's output (doctor, gate, a log) shows what that command said. Nothing is run again.
+# An escaped \$x is expanded by a child (sh -c, awk), not by the test, so it is left out; ${#x} and
+# ${!x} show x; an array shows every element.
+evidence() { # evidence <test>
+  local IFS=$'\n' _ev_name _ev_seen=" " _ev_value
+  for _ev_name in $(printf '%s\n' "$1" | sed 's/\\\$//g' | grep -oE '\$\{?[#!]?[A-Za-z_][A-Za-z0-9_]*' | sed 's/^\$[{]*[#!]*//'); do
+    case "$_ev_seen" in *" $_ev_name "*) continue;; esac
+    _ev_seen="$_ev_seen$_ev_name "
+    case "$(declare -p "$_ev_name" 2>/dev/null)" in
+      "declare -a"*|"declare -A"*) _ev_value="$(declare -p "$_ev_name")";;
+      *) if [ -z "${!_ev_name+set}" ]; then echo "        $_ev_name is unset"; continue; fi
+         _ev_value="${!_ev_name}";;
+    esac
+    echo "        $_ev_name:"
+    printf '%s\n' "$_ev_value" | LC_ALL=C tr -d '\000-\010\016-\037' \
+      | awk 'NR <= 40 { print "          " substr($0, 1, 500) (length($0) > 500 ? " ..." : "") } END { if (NR > 40) print "          ... " NR - 40 " more line(s)" }'
+  done
+}
 
 native() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else echo "$1"; fi; }
 json_esc() { echo "$1" | sed 's/\\/\\\\/g'; }
