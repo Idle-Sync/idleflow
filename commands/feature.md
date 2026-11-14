@@ -72,7 +72,7 @@ Spawn `idleflow:doc-keeper` with the repo root and the absolute paths of `progre
 
 ## 3. Plan (Fable)
 
-Spawn `idleflow:planner` with: the issue path (`.idleflow/runs/active/issue.md`), context.md path, the `$LESSONS` path, conventions path, plan template path, output path `.idleflow/runs/active/plan.md`, the size, `greenfield`, the implementer cap for this size, the diff limit for this run, `STEP_MUTATION` from `conf`, the time log path (`bash "$RUN" path time-log`), the `design.md` and `DESIGN_SYSTEM` paths when step 2c ran, whether R3 and R4 ran (when they did not, a plan that adds a dependency anyway lists it under "Open questions" for the human), and when `docs: yes` the paths of `prd.md` (with `template` when its first line is still the template's `# <Project name> — product requirements`, else `written`; checked now, whatever `greenfield` says), `progress.md`, `index.md` plus `templates/prd.md`. Every later planner call (a revision, a one-task revision) gets the issue path too, and comes right after `bash "$RUN" keep plan.md`, which keeps the plan it replaces as `plan.<n>.md`, so any revision can be undone exactly. Wait.
+Spawn `idleflow:planner` with: the issue path (`.idleflow/runs/active/issue.md`), context.md path, the `$LESSONS` path, conventions path, plan template path, output path `.idleflow/runs/active/plan.md`, the size, `greenfield`, the implementer cap for this size, the diff limit for this run, `STEP_MUTATION` from `conf`, the time log path (`bash "$RUN" path time-log`), the `design.md` and `DESIGN_SYSTEM` paths when step 2c ran, whether R3 and R4 ran (when they did not, a plan that adds a dependency anyway lists it under "Open questions" for the human), and when `docs: yes` the paths of `prd.md` (with `template` when it is missing or its first line is still the template's `# <Project name> — product requirements`, else `written`; checked at this first call, whatever `greenfield` says, and the same value goes to every later planner call in the run), `progress.md`, `index.md` plus `templates/prd.md`. Every later planner call (a revision, a one-task revision) gets the issue path too, and comes right after `bash "$RUN" keep plan.md`, which keeps the plan it replaces as `plan.<n>.md`, so any revision can be undone exactly. Wait.
 
 Read `plan.md` once now; keep the task list, groups, owned globs, models and merge order in working memory and do not re-read the plan unless it is revised.
 
@@ -92,7 +92,7 @@ Before the revision, the human decides what gets cut. Read the debate files (fou
 
 Then spawn `idleflow:planner` in revision mode with the issue path, the debate paths and the `decisions.md` path; it rewrites plan.md with a "Debate resolution" section. Re-read plan.md. If any resolution is `deferred to human`, ask now, append `<id>: <answer>` to `decisions.md`, and spawn the planner in revision mode once more with only the issue and decisions paths; re-read plan.md.
 
-Tell the human: `Plan locked: <N> tasks in <G> groups, est <L> lines. Building.` If there is more than one group, one line per group.
+When `git status --porcelain -- prd.md` shows a change (the planner filled the template or applied a yes), run `bash "$RUN" snapshot` first, before any worktree exists, so the product the plan was written against is committed with it; the gate keeps the base it ran on (`gate_base`). Then tell the human: `Plan locked: <N> tasks in <G> groups, est <L> lines. Building.` If there is more than one group, one line per group.
 
 ## 5. Build (parallel worktrees)
 
