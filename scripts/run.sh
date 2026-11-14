@@ -656,14 +656,18 @@ gone_job() { # gone_job <task-id> <job> <process group or empty> <deadline or em
 # to the deadline, so the stop happens even when no one waits; a foreground exec or wait may reach the
 # deadline at the same moment. One of them takes the stop (mkdir is atomic), the others wait for it to
 # finish, and every waiter, then or later, reports a stop at the limit the same way.
-await_job() { # await_job <task-id> <job> [watch]: the command's output and exit code, 75 while it runs, 124 past
-  # its limit; with watch, it waits up to the job's deadline rather than EXEC_WAIT_SECONDS
-  local d end deadline="" n=0 group; d="$(job_dir "$1" "$2")"
-  [ -d "$d" ] || { echo "no job $2 for task $1" >&2; exit 1; }
+await_job() { # await_job <task-id> <job> [watch [<group> <deadline>]]: the command's output and exit code, 75
+  # while it runs, 124 past its limit; with watch, it waits up to the job's deadline rather than
+  # EXEC_WAIT_SECONDS, and takes the group and deadline exec gave it over what the folder says
+  local d end deadline="${5:-}" n=0 group="${4:-}"; d="$(job_dir "$1" "$2")"
+  if [ ! -d "$d" ]; then
+    if [ "${3:-}" = watch ] && [ -n "$group" ] && [ -n "$deadline" ]; then gone_job "$1" "$2" "$group" "$deadline" watch; fi
+    echo "no job $2 for task $1" >&2; exit 1
+  fi
   while [ ! -f "$d/pid" ] && [ ! -f "$d/status" ] && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
-  group="$(job_pid "$d")"
+  [ -n "$group" ] || group="$(job_pid "$d")"
   end=$(( $(date +%s) + ${EXEC_WAIT_SECONDS:-100} ))
-  [ -f "$d/deadline" ] && deadline="$(cat "$d/deadline")"
+  if [ -z "$deadline" ] && [ -f "$d/deadline" ]; then deadline="$(cat "$d/deadline")"; fi
   if [ -n "$deadline" ] && { [ "$deadline" -lt "$end" ] || [ "${3:-}" = watch ]; }; then end="$deadline"; fi
   while [ ! -f "$d/status" ] && [ "$(date +%s)" -lt "$end" ]; do
     [ -d "$d" ] || gone_job "$1" "$2" "$group" "$deadline" "${3:-}"
@@ -1075,7 +1079,7 @@ JSON
     done
     [ "${1:-}" = -- ] && shift
     [ "$#" -gt 0 ] || { echo "usage: run.sh exec <task-id> [--limit <seconds>] [--base] -- <command...>" >&2; exit 1; }
-    active_id >/dev/null
+    rid="$(active_id)"
     dir="$(wt_path "$tid")"; [ -d "$dir" ] || { echo "exec: no worktree for $tid (run.sh wt add $tid first)" >&2; exit 1; }
     if [ -n "$on_base" ]; then dir="$(base_worktree "$tid")" || exit $?; fi
     jobs="$ACTIVE/tasks/$tid/jobs"; mkdir -p "$jobs"
@@ -1086,7 +1090,7 @@ JSON
     if [ -n "$on_base" ]; then echo "base $(task_base "$tid")" > "$jd/checkout"; else echo task > "$jd/checkout"; fi
     # the start is a whole second, so the deadline is one more: a job always gets its full limit
     date +%s > "$jd/started"
-    if [ -n "$limit" ]; then echo "$limit" > "$jd/limit"; echo $(( $(cat "$jd/started") + limit + 1 )) > "$jd/deadline"; fi
+    if [ -n "$limit" ]; then echo "$limit" > "$jd/limit"; jdeadline=$(( $(cat "$jd/started") + limit + 1 )); echo "$jdeadline" > "$jd/deadline"; fi
     # the exit code is written to a temp name and moved, so a reader never sees half of it
     printf -v pf '%q' "$jd/pid"; printf -v fin '%q' "$jd/finished"
     in_task "$tid" "$dir" idleflow_rt detach "$dir" "$jd/log" "$jd/pid.runtime" \
@@ -1096,15 +1100,31 @@ JSON
     # The limit holds even when no one waits again: a watcher of its own waits up to the deadline,
     # and the wait stops the job there as any wait would.
     if [ -n "$limit" ]; then
-      printf -v watch 'bash %q wait %q %q --watch' "$HERE/run.sh" "$tid" "$n"
+      # The watcher is told the run, the job's process group and its deadline, so it never needs the
+      # job's folder to learn them: a run moved aside (finish, or new after a crash) before the
+      # watcher starts would otherwise leave the job without its limit.
+      # (a pid that never appears is passed as -, so the deadline keeps its place, and the watcher
+      # reads the folder as before)
+      w=0; while [ ! -f "$jd/pid" ] && [ ! -f "$jd/status" ] && [ "$w" -lt 50 ]; do sleep 0.1; w=$((w + 1)); done
+      grp="$(job_pid "$jd")"
+      printf -v watch 'bash %q wait %q %q --watch %q %q %q' "$HERE/run.sh" "$tid" "$n" "$rid" "${grp:--}" "$jdeadline"
       idleflow_rt detach "$REPO" /dev/null "$jd/watch.pid" "$watch" || echo "[idleflow] job $n of $tid: could not start the watcher of its limit; the next exec or wait of it enforces it" >&2
     fi
     await_job "$tid" "$n"
     ;;
   wait|stop)
-    tid="${1:?task-id}"; check_task_id "$tid"; job="${2:?job number}"; active_id >/dev/null
+    tid="${1:?task-id}"; check_task_id "$tid"; job="${2:?job number}"
     [[ "$job" =~ ^[0-9]+$ ]] || { echo "$cmd: '$job' is not a job number" >&2; exit 1; }
-    # --watch is exec's own watcher of a limit: it waits up to the deadline, however long that is
+    # --watch <run id> <group> <deadline> is exec's own watcher of a limit: it waits up to the
+    # deadline, however long that is. Its run may be gone, or another may be active, when it starts:
+    # it then stops the group it was told about at the deadline, and never reads the folder of
+    # another run's job with the same number. Told all three, it needs no active run at all, so a
+    # run that moves away between its check and its wait cannot end it either.
+    if [ "$cmd" = wait ] && [ "${3:-}" = --watch ] && [[ "${5:-}" =~ ^[0-9]+$ ]] && [[ "${6:-}" =~ ^[0-9]+$ ]]; then
+      [ "$(idleflow_rt get "$ACTIVE/run.json" id 2>/dev/null || true)" = "${4:-}" ] || gone_job "$tid" "$job" "$5" "$6" watch
+      await_job "$tid" "$job" watch "$5" "$6"
+    fi
+    active_id >/dev/null
     if [ "$cmd" = wait ]; then if [ "${3:-}" = --watch ]; then await_job "$tid" "$job" watch; else await_job "$tid" "$job"; fi; fi
     [ -f "$(job_dir "$tid" "$job")/pid" ] || { echo "no job $job for task $tid" >&2; exit 1; }
     stop_job "$(job_dir "$tid" "$job")" || exit 1
