@@ -34,6 +34,6 @@ In this order, short, paths and names rather than prose:
 2. **Landed** in the window: one line per run or commit group, `<date> <who>: <what> (<run id or sha>)`; at most ten, newest first.
 3. **In progress**: the active run in this clone, or `none here`.
 4. **Next**: the first three items of the newest handoff, in its order.
-5. **Waiting on a human**: needs-human runs with their reason, doctor problems, commits to pull.
+5. **Waiting on a human**: needs-human runs with their reason and `/idleflow:feature resume <run id>` to go on with them, doctor problems, commits to pull.
 
 When the focus names a milestone or a person, filter every section to it. End with one line: `Milestone <n>: <ticked>/<total>; <N> people active in <days> days.`
