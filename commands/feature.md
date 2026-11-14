@@ -1,6 +1,6 @@
 ---
-description: Plan → debate → build in parallel worktrees → review → merge, for a feature or issue. Usage: /idleflow:feature <issue text, issue URL, or path to a file describing it>
-argument-hint: <issue description or URL>
+description: Plan → debate → build in parallel worktrees → review → merge, for a feature or issue. Usage: /idleflow:feature <issue text, issue URL, or path to a file describing it>, or /idleflow:feature resume <run id> to go on with a run that stopped
+argument-hint: <issue description or URL | resume <run id>>
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob, Agent, AskUserQuestion
 ---
 
@@ -17,6 +17,12 @@ RUN="${CLAUDE_PLUGIN_ROOT}/scripts/run.sh"     # keep the quotes: the path may c
 Issue: $ARGUMENTS
 
 If `$ARGUMENTS` is a URL, fetch the issue body with `gh issue view <url> --json title,body` if it is GitHub, otherwise ask the human to paste it. If it is a file path, read it. Write the normalised issue text to `.idleflow/runs/active/issue.md` after step 0.
+
+**Resuming a stopped run.** When `$ARGUMENTS` is `resume <run id>`, a run under `.idleflow/runs/` that stopped before it finished `done` (a `needs-human` stop, a time limit, a run a later `new` parked) goes on from its locked plan instead of starting again:
+- Run step 0's block without `new` (`migrate`, `update-check`, `behind`, `conf`, `LESSONS=`), then `bash "$RUN" resume <run id>`. It refuses, and changes nothing, when the checkout is not on the branch the run merged into, a merged task's branch is no longer on it, or a worktree the stop left holds uncommitted work: show its message and stop. Otherwise it makes that run the active one again, keeps every task it merged, resets every other task to start afresh from the branch as it is now (commits a task's old branch holds stay on `<branch>-before-resume`), moves their old reviews and reports aside, and prints the lists.
+- Skip steps 1 to 4: `issue.md`, `context.md`, the classification and the locked `plan.md` are the run's own. Read back what they set for the rest of the run: the size and `greenfield` (`bash "$RUN" get size`, `get greenfield`) for the diff limit and the implementers per group (step 2), `design.md` and `DESIGN_SYSTEM` when `.idleflow/runs/active/design.md` exists (step 2c), and `decisions.md` for any later planner call.
+- Run the plan check (step 3) once; when it fails because the branch moved since the stop, send its lines to the planner for a revision as step 3 says. Then the repo command approvals and the gate's baseline (step 0, "Repo commands" and "The repo's gate"): the base has moved, so the baseline and the known base failures are taken again.
+- Then step 5 from the first group that still has a task to build, building only those tasks; the merged ones stay merged and are reported as in step 7.
 
 **Spawning an agent, everywhere in this run.** A project can customize agents (`/idleflow:customize`). Before an agent's first spawn in this run, `bash "$RUN" agent <name>` (for example `planner`, `implementer-hard`) and keep its four lines for the rest of the run:
 - `agent:` is the name to spawn: `idleflow:<name>`, or `idleflow-<name>` when the project replaced it. If a replaced agent is not available, the replacement was added after Claude Code started: stop and tell the human to restart Claude Code.

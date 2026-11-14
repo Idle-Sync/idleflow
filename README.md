@@ -96,6 +96,9 @@ are committed, so everyone who pulls plans with the same rules and lessons. What
   the doctor reports a milestone item listed twice so one line can be kept.
 - **Session notes.** Named `s_<YYYYMMDD-HHMM>-<author>.md` (`run.sh session-name`), never by a running
   number two people could both pick.
+- **A run that stopped.** `/idleflow:feature resume <run id>` goes on with a run that stopped before it
+  finished (a `needs-human` stop, a time limit): its merged tasks stay merged, the rest are built from its
+  locked plan on the branch as it is now, without exploring, planning or debating again.
 - **A stale base.** `/idleflow:feature` checks `run.sh behind` first and offers to pull, so a run plans with
   the team's latest lessons and settings.
 - **Who did what.** `run.json` records `by`; merge commits carry the run id; `/idleflow:progress` shows the

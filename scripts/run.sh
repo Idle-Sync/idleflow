@@ -3,6 +3,8 @@
 # Everything is plain git + files so a run can be inspected or resumed by hand.
 #
 #   run.sh new <slug>                     -> creates .idleflow/runs/active/ for a new run, prints its <id>
+#   run.sh resume <run-id>                -> makes a stopped run active again from its locked plan: its merged tasks
+#                                            stay merged, every other task starts afresh from the branch as it is now
 #   run.sh wt add <task-id> [base-ref]    -> creates the task's worktree and branch, records its base sha, runs the approved
 #                                            worktree_setup there (exit 6: setup failed, 7: not approved, 8: the plan
 #                                            marks it blocked_until a revision), prints the path
@@ -1249,6 +1251,77 @@ Task: $tid")
     fi
     # setup is over: the run now uses the conventions it just committed
     if [ -f "$ACTIVE/run.json" ] && ! run_has_tasks; then conventions_to_run; fi
+    ;;
+  resume)
+    # A run that stopped before it finished done (needs-human, a time limit, a run a later `new` parked)
+    # goes on from its locked plan. What it merged is on the branch and stays merged; every other task
+    # starts afresh from the branch as it is now. Everything that can refuse is checked before anything
+    # moves, and a resume that stopped half way is run again the same way.
+    rid="${1:-}"
+    case "$rid" in ""|active|*/*|.*) echo "resume: '$rid' is not a run id" >&2; exit 1;; esac
+    if [ -f "$ACTIVE/run.json" ] && [ "$(idleflow_rt get "$ACTIVE/run.json" id 2>/dev/null)" = "$rid" ]; then src="$ACTIVE"; else src="$RUNS/$rid"; fi
+    if [ ! -f "$src/run.json" ] || [ ! -f "$src/plan.md" ]; then echo "resume: no stopped run $rid with a plan under .idleflow/runs/" >&2; exit 1; fi
+    st="$(idleflow_rt get "$src/run.json" status 2>/dev/null || true)"
+    [ "$st" != "done" ] || { echo "resume: run $rid finished done; start a new run" >&2; exit 1; }
+    # it goes on where it merged, with what it merged still there
+    rbase="$(idleflow_rt get "$src/run.json" base 2>/dev/null || true)"
+    cur="$("${G[@]}" symbolic-ref --short -q HEAD || true)"
+    [ "$cur" = "$rbase" ] || { echo "resume: run $rid merged into $rbase, but the checkout is on ${cur:-a detached HEAD}; switch to $rbase first" >&2; exit 1; }
+    tids="$(idleflow_rt entries "$src/run.json" tasks | cut -f1)"
+    for tid in $tids; do
+      br="idleflow/$rid/$tid"
+      t_merge="$(idleflow_rt get "$src/run.json" "tasks.$tid.t_merge" 2>/dev/null || true)"
+      case "$t_merge" in ""|null) ;; *)
+        if "${G[@]}" show-ref -q --verify "refs/heads/$br" && ! "${G[@]}" merge-base --is-ancestor "$br" HEAD; then
+          echo "resume: $tid merged in run $rid, but $rbase no longer holds its branch $br" >&2; exit 1
+        fi
+        continue;; esac
+      # a time-limit stop leaves worktrees: work only they hold is never removed
+      for p in "$(wt_path "$tid")" "$(wt_path "_base-$tid")"; do
+        if [ -d "$p" ] && [ -n "$(git -C "$p" status --porcelain 2>/dev/null)" ]; then
+          echo "resume: $(native_path "$p") holds uncommitted changes of $tid; commit or discard them first" >&2; exit 1
+        fi
+      done
+    done
+    if [ "$src" != "$ACTIVE" ]; then park_active; mv "$src" "$ACTIVE"; fi
+    # this idleflow carries the run on, so it is the version the run records
+    idleflow_rt set "$ACTIVE/run.json" plugin_version "$(json_str "$(plugin_version)")"
+    merged=""; again=""; split=""
+    for tid in $tids; do
+      t_merge="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$tid.t_merge" 2>/dev/null || true)"
+      case "$t_merge" in ""|null) ;; *) merged="$merged $tid"; continue;; esac
+      if [ "$(idleflow_rt get "$ACTIVE/run.json" "tasks.$tid.status" 2>/dev/null || true)" = split ]; then split="$split $tid"; continue; fi
+      for p in "$(wt_path "$tid")" "$(wt_path "_base-$tid")"; do
+        [ -d "$p" ] && { "${G[@]}" worktree remove --force "$p" 2>/dev/null || true; }
+      done
+      "${G[@]}" worktree prune
+      # commits the branch holds beyond the run's branch keep a name of their own, never one in use;
+      # a branch with none of its own is simply reset by the next `wt add`
+      br="idleflow/$rid/$tid"
+      if "${G[@]}" show-ref -q --verify "refs/heads/$br" && [ "$("${G[@]}" rev-list --count "HEAD..$br")" -gt 0 ]; then
+        kept="$br-before-resume"; n=1
+        while "${G[@]}" show-ref -q --verify "refs/heads/$kept"; do n=$((n + 1)); kept="$br-before-resume-$n"; done
+        "${G[@]}" branch -q -m "$br" "$kept"
+      fi
+      # its reviews, report and gate result were of the build that is gone
+      for rel in "review/$tid-correct.md" "review/$tid-conform.md" "review/$tid-design.md" "tasks/$tid/report.md" "tasks/$tid/gate.json"; do
+        [ ! -f "$ACTIVE/$rel" ] || bash "$0" keep --move "$rel" >/dev/null
+      done
+      idleflow_rt set "$ACTIVE/run.json" "tasks.$tid" '{}'
+      again="$again $tid"
+    done
+    # the stopped run's port claims go; the tasks built again take new ones
+    release_ports
+    # the repo commands and shared files as committed now, which the approvals check
+    conventions_to_run
+    # the base has moved, so the gate's baseline and the base's known failures are taken again
+    idleflow_rt set "$ACTIVE/run.json" gate_base null
+    idleflow_rt set "$ACTIVE/run.json" baseline_red null
+    [ ! -f "$ACTIVE/known-failures.md" ] || bash "$0" keep --move known-failures.md >/dev/null
+    [ "$st" = building ] || idleflow_rt set "$ACTIVE/run.json" resumed_from "$(json_str "${st:-unknown}")"
+    idleflow_rt set "$ACTIVE/run.json" finished null
+    idleflow_rt set "$ACTIVE/run.json" status '"building"'
+    echo "resumed $rid: merged:${merged:- none}; to build again:${again:- none}; split:${split:- none} (tasks the run never started are built as planned)"
     ;;
   finish)
     status="${1:-done}"; id="$(active_id)"

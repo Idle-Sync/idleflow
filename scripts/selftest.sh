@@ -853,6 +853,41 @@ check "a long title is cut by characters, never inside one" '[ "$(LC_ALL=C idlef
 bash "$RUN" wt rm T7; bash "$RUN" finish done >/dev/null
 cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"
 
+echo "--- resume a stopped run"
+rid="$(bash "$RUN" new resume-me 2>/dev/null)"
+wr1="$(bash "$RUN" wt add T1 2>/dev/null)"; ( cd "$wr1" && echo r1 >> src/keep.py && git add src/keep.py && commit -m "keep r1" )
+printf '## Tasks\n\n### T1: keep r1\n\n### T2: keep r2\n\n### T3: keep r3\n' > .idleflow/runs/active/plan.md
+bash "$RUN" set tasks.T1.status '"approved"'; bash "$RUN" merge T1 >/dev/null 2>&1
+wr2="$(bash "$RUN" wt add T2 2>/dev/null)"; ( cd "$wr2" && echo r2 >> src/keep.py && git add src/keep.py && commit -m "keep r2" )
+t2_sha="$(git -C "$wr2" rev-parse HEAD)"; bash "$RUN" set tasks.T2.status '"approved"'
+printf 'verdict: approve\n' > .idleflow/runs/active/review/T2-correct.md
+echo "- a test — fails — \"x\" — T2 base job 1" > .idleflow/runs/active/known-failures.md
+bash "$RUN" wt rm T1; bash "$RUN" finish needs-human >/dev/null
+# a time-limit stop leaves the worktree: uncommitted work in it stops the resume before anything moves
+echo dirty > "$wr2/dirty.txt"
+check "resume refuses while a left worktree holds uncommitted work, and moves nothing" '! bash "$RUN" resume "$rid" 2>/dev/null && [ -d ".idleflow/runs/$rid" ] && [ ! -d .idleflow/runs/active ] && [ -f "$wr2/dirty.txt" ]'
+rm "$wr2/dirty.txt"
+git checkout -q -b elsewhere
+check "resume refuses on a branch other than the one the run merged into" '! bash "$RUN" resume "$rid" 2>/dev/null && [ -d ".idleflow/runs/$rid" ]'
+git checkout -q -
+bash "$RUN" new something-else >/dev/null 2>&1
+out="$(bash "$RUN" resume "$rid" 2>&1)"
+check "resume makes the stopped run active again and parks the one in its way" '[ "$(bash "$RUN" get id)" = "$rid" ] && [ "$(bash "$RUN" get status)" = building ] && [ "$(bash "$RUN" get resumed_from)" = needs-human ] && [ -n "$(ls -d .idleflow/runs/*-something-else 2>/dev/null)" ]'
+check "resume keeps what merged and starts the rest again" 'echo "$out" | grep -q "merged: T1; to build again: T2;" && [ -n "$(bash "$RUN" get tasks.T1.t_merge)" ] && [ "$(bash "$RUN" get tasks.T2)" = "{}" ] && grep -q "^r1$" src/keep.py && [ ! -d "$wr2" ]'
+check "resume keeps the old commits of a reset task on a branch of their own" '[ "$(git rev-parse "idleflow/$rid/T2-before-resume")" = "$t2_sha" ] && ! git show-ref -q --verify "refs/heads/idleflow/$rid/T2"'
+check "resume moves the review of the old build aside and takes the base failures again" '[ ! -f .idleflow/runs/active/review/T2-correct.md ] && [ -f .idleflow/runs/active/review/T2-correct.1.md ] && [ "$(bash "$RUN" get gate_base)" = null ] && [ ! -f .idleflow/runs/active/known-failures.md ] && [ -f .idleflow/runs/active/known-failures.1.md ]'
+wr2b="$(bash "$RUN" wt add T2 2>/dev/null)"
+check "a reset task builds from the branch as it is now" '[ "$(bash "$RUN" get tasks.T2.base_sha)" = "$(git rev-parse HEAD)" ] && grep -q "^r1$" "$wr2b/src/keep.py" && ! grep -q "^r2$" "$wr2b/src/keep.py"'
+# stopped and resumed again: the second build's commits get a name of their own too
+( cd "$wr2b" && echo r2b >> src/keep.py && git add src/keep.py && commit -m "keep r2 again" ); t2b_sha="$(git -C "$wr2b" rev-parse HEAD)"
+bash "$RUN" wt rm T2; bash "$RUN" finish needs-human >/dev/null; bash "$RUN" resume "$rid" >/dev/null 2>&1
+check "a second resume never overwrites the branch the first one kept" '[ "$(git rev-parse "idleflow/$rid/T2-before-resume")" = "$t2_sha" ] && [ "$(git rev-parse "idleflow/$rid/T2-before-resume-2")" = "$t2b_sha" ]'
+check "a resume run again on the active run goes on where it is" 'bash "$RUN" resume "$rid" >/dev/null 2>&1 && [ "$(bash "$RUN" get id)" = "$rid" ]'
+bash "$RUN" finish "done" >/dev/null
+check "resume refuses a run that finished done, and a name that is no run" '! bash "$RUN" resume "$rid" 2>/dev/null && ! bash "$RUN" resume no-such-run 2>/dev/null && ! bash "$RUN" resume ../x 2>/dev/null'
+git branch -q -D "idleflow/$rid/T2-before-resume" "idleflow/$rid/T2-before-resume-2"; git branch -q -D elsewhere
+check "the run procedure and the handoffs name the resume command" 'grep -q "^\*\*Resuming a stopped run.\*\* When \`\$ARGUMENTS\` is \`resume <run id>\`" "$HERE/../commands/feature.md" && grep -q "/idleflow:feature resume <run id>" "$HERE/../commands/endsession.md" && grep -q "/idleflow:feature resume <run id>" "$HERE/../commands/progress.md"'
+
 echo "--- team"
 check "session notes are named by time and author" 'bash "$RUN" session-name | grep -Eq "^docs/sessions/s_[0-9]{8}-[0-9]{4}-human\.md$"'
 mkdir -p docs/sessions && touch "$(bash "$RUN" session-name)"
