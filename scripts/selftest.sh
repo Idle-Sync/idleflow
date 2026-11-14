@@ -830,6 +830,13 @@ check "plan-check names each file a task names but does not own" '[ "$rc" = 1 ] 
 check "plan-check names every protected file a wide glob owns" 'for p in .claude/settings.json .claude/settings.local.json .claude/agents/ .claude/hooks/; do grep -qx "plan-check: T2 owns the protected $p; protected files belong to no task" "$scratch/pc.txt" || exit 1; done && [ "$(grep -c "protected" "$scratch/pc.txt")" = 4 ] && ! grep -q "T3\|zzz" "$scratch/pc.txt"'
 printf '%s\n' '## Tasks' '### T1: one' 'owns:' '  - src/a/**' '  - .gitignore' 'entry_points:' '  - src/a/x.py: run' 'acceptance:' '  - A1: `src/a/x.py` and .gitignore → verify: true' > .idleflow/runs/active/plan.md
 check "plan-check passes a plan whose tasks own what they name" '[ "$(bash "$RUN" plan-check)" = "plan-check: every file each task names is in its owns: or shared_files, and no task owns a protected file" ]'
+# a file git ignores is in no worktree and no merge: a task may not change it, but a criterion may name
+# a build output the task's commands write
+echo "local-notes.md" >> "$(git rev-parse --git-path info/exclude)"; echo "dist/" >> "$(git rev-parse --git-path info/exclude)"
+printf '%s\n' '## Tasks' '### T1: one' 'owns:' '  - src/a/**' '  - local-notes.md' 'entry_points:' '  - src/a/x.py: run' 'acceptance:' '  - A1: `src/a/x.py` builds dist/app.js → verify: true' '### T2: two' 'owns:' '  - dist/**' 'acceptance:' '  - A1: dist/app.js is rebuilt → verify: true' > .idleflow/runs/active/plan.md
+bash "$RUN" plan-check > "$scratch/pc-ign.txt" 2>&1; rc=$?
+check "plan-check refuses a task that would change a file or folder git ignores, and still lets a criterion name a build output" '[ "$rc" = 1 ] && grep -q "^plan-check: T1 would change local-notes.md, which git ignores" "$scratch/pc-ign.txt" && grep -q "^plan-check: T2 would change dist/\*\*, which git ignores" "$scratch/pc-ign.txt" && ! grep -q "T1.*dist" "$scratch/pc-ign.txt"'
+sed -i.bak '/^local-notes.md$/d; /^dist\/$/d' "$(git rev-parse --git-path info/exclude)" && rm -f "$(git rev-parse --git-path info/exclude).bak"
 printf '%s\n' '## Tasks' \
   '### T1: inline lists and odd entry points' 'owns: [src/a/**, "tests/**"]' 'entry_points: [src/a/x.py: run]' 'entry_points:' '  - src/a/x.py:run' '  - src/a/y.py (new file)' '  - src/a/z.py::Klass' 'acceptance:' \
   '  - A1: writes $IDLEFLOW_TMP/report.json, /tmp/x.log and ~/.cache/a.json; serves localhost:4173/index.html' '  - A2: the report also' '    lands in docs/report.md → verify: true' '  - prints src\b\c.py' \
@@ -1200,6 +1207,7 @@ yaml_unsafe() { # the frontmatter lines of the given files whose unquoted value 
   done
 }
 check "every command, agent and issue form frontmatter is valid YAML" '[ -z "$(yaml_unsafe "$HERE"/../commands/*.md "$HERE"/../agents/*.md "$HERE"/../.github/ISSUE_TEMPLATE/*.md)" ] && [ -n "$(printf "%s\n" "---" "description: Usage: x" "a: \"open" "b: ends:" "c: #lost" "---" > "$scratch/yaml-bad.md"; yaml_unsafe "$scratch/yaml-bad.md" | wc -l | grep -x " *4")" ]'
+check "a change to a file git ignores is planned by hand after merge" 'grep -q "^## By hand after merge$" "$HERE/../templates/plan.md" && grep -q "A file git ignores (\`.gitignore\`, \`.git/info/exclude\`) belongs to no task either" "$HERE/../agents/planner.md" && grep -q "Then the plan.s \"By hand after merge\" lines" "$HERE/../commands/feature.md" && grep -q "each line of the plan.s \"By hand after merge\"" "$HERE/../agents/retro.md"'
 check "the designer and design reviewer exist" '[ -f "$HERE/../agents/designer.md" ] && [ -f "$HERE/../agents/review-design.md" ] && grep -q "\"ui\"" "$HERE/../agents/classifier.md" && grep -q "^### 2c. Design" "$HERE/../commands/feature.md"'
 check "requirements no screen shows reach the plan" 'grep -q "^- \`design.md\` at the output path: the screens for this run, \"Not on a screen\"" "$HERE/../agents/designer.md" && grep -q "Each line under \"Not on a screen\" becomes acceptance of the task that builds its surface" "$HERE/../agents/planner.md" && grep -q "listed under \"Not on a screen\"" "$HERE/../procedures/design.md"'
 check "the design handbook carries the contrast rule" 'grep -q "4.5:1" "$HERE/../procedures/design.md" && grep -q "0.2126 R + 0.7152 G + 0.0722 B" "$HERE/../procedures/design-data.md"'
