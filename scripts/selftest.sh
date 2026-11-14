@@ -612,6 +612,12 @@ job="$(sed -n 's/.*job \([0-9]*\) of TA started.*/\1/p' "$scratch/job.err")"
 for _ in 1 2 3 4 5; do [ "$rc" = 75 ] || break; bash "$RUN" wait TA "$job" >/dev/null 2> "$scratch/job.err"; rc=$?; done
 jd=".idleflow/runs/active/tasks/TA/jobs/$job"
 check "a job gets its whole --limit and says how long it ran" '[ "$rc" = 0 ] && [ "$(cat "$jd/deadline")" = "$(( $(cat "$jd/started") + 6 + 1 ))" ] && grep -q "^\[idleflow\] job $job of TA ran for [1-5] s$" "$scratch/job.err"'
+# and the stop follows that recorded deadline: moved ahead the job runs on, moved back it is stopped
+bash "$RUN" exec TA --limit 600 -- sleep 60 >/dev/null 2> "$scratch/job.err"
+job="$(sed -n 's/.*job \([0-9]*\) of TA started.*/\1/p' "$scratch/job.err")"; jd=".idleflow/runs/active/tasks/TA/jobs/$job"
+echo $(( $(date +%s) + 100 )) > "$jd/deadline"; bash "$RUN" wait TA "$job" >/dev/null 2>&1; rc_ahead=$?
+echo $(( $(date +%s) - 1 )) > "$jd/deadline"; bash "$RUN" wait TA "$job" >/dev/null 2> "$scratch/job.err"; rc_past=$?
+check "a job is stopped at the deadline it records, not before" '[ "$rc_ahead" = 75 ] && [ "$rc_past" = 124 ] && grep -q "passed its limit of 600 s" "$scratch/job.err"'
 check "exec refuses a --limit that is not whole seconds" '! bash "$RUN" exec TA --limit 0 -- true 2>/dev/null && ! bash "$RUN" exec TA --limit 1.5 -- true 2>/dev/null && ! bash "$RUN" exec TA --limit -- true 2>/dev/null'
 bash "$RUN" exec TA -- sh -c 'sleep 30 >/dev/null 2>&1 &' >/dev/null 2> "$scratch/job.err"; rc=$?
 job="$(sed -n 's/.*job \([0-9]*\) of TA started.*/\1/p' "$scratch/job.err")"
