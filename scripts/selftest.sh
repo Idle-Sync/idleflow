@@ -912,6 +912,39 @@ bash "$RUN" plan-check > "$scratch/pc-cause.txt" 2>&1; rc=$?
 check "plan-check refuses a cause it cannot hold a task to, and a source the task does not own" '[ "$rc" = 1 ] && grep -qx "plan-check: T1 has cause: source; write none, source <file>:<function>, with T<n> or symptom — <why the source cannot be fixed>" "$scratch/pc-cause.txt" && grep -q "^plan-check: T2 does not own src/b/y.py, which its cause: source names" "$scratch/pc-cause.txt" && grep -q "^plan-check: T3 has cause: with T3; with names another task" "$scratch/pc-cause.txt" && grep -q "^plan-check: T4 has cause: with T9;" "$scratch/pc-cause.txt" && grep -q "^plan-check: T5 has cause: symptom; write none" "$scratch/pc-cause.txt" && grep -q "^plan-check: T6 has cause: source /src/f/x.py:run; write the file relative to the repo root" "$scratch/pc-cause.txt" && [ "$(grep -c "^plan-check: " "$scratch/pc-cause.txt")" = 6 ]'
 bash "$RUN" finish "done" >/dev/null
 
+echo "--- a split task's finished work"
+bash "$RUN" new split-keeps-work >/dev/null 2>&1
+mkdir -p src/sa src/sb && echo a0 > src/sa/a.txt && echo b0 > src/sb/b.txt && git add src/sa src/sb && commit -m "split base"
+printf '%s\n' '## Tasks' '### T1: big' 'owns: [src/sa/**, src/sb/**, src/sc/**]' > .idleflow/runs/active/plan.md
+bash "$RUN" own T1 '["src/sa/**","src/sb/**","src/sc/**"]'
+w1="$(bash "$RUN" wt add T1 2>/dev/null)"
+mkdir -p "$w1/src/sc" && echo a1 > "$w1/src/sa/a.txt" && echo b1 > "$w1/src/sb/b.txt" && echo c1 > "$w1/src/sc/c.txt"
+git -C "$w1" add src && git -C "$w1" -c user.name=t -c user.email=t@t commit -qm "T1: big work"
+bash "$RUN" set tasks.T1.status '"split"'; bash "$RUN" wt rm T1
+# a group merged meanwhile, so the sub-tasks start from a base the split task never saw
+echo other > src/other.txt && git add src/other.txt && commit -m "a group merged"
+printf '%s\n' '## Tasks' '### T2: part a' 'from: T1' 'owns: [src/sa/**]' '### T3: part b' 'from: T1' 'owns: [src/sb/**]' \
+  '### T4: from a task not split' 'from: T9' 'owns: [src/sd/**]' '### T5: part a again' 'from: T1' 'owns: [src/sa/**]' > .idleflow/runs/active/plan.md
+bash "$RUN" plan-check > "$scratch/pc-split.txt" 2>&1; rc=$?
+check "plan-check refuses a split file no sub-task owns, one two sub-tasks own, and a from: that names no split task" '[ "$rc" = 1 ] && grep -qx "plan-check: T1 changed src/sc/c.txt, which none of its sub-tasks (T2, T3, T5) owns; give each file to one sub-task.s owns:, or that finished work is lost" "$scratch/pc-split.txt" && grep -qx "plan-check: src/sa/a.txt, which T1 changed, is owned by T2 and T5; give it to one of them, or both bring the same lines" "$scratch/pc-split.txt" && grep -qx "plan-check: T4 has from: T9; write the id of a task the diff gate split (status split), as from: T<n>, or from: none" "$scratch/pc-split.txt" && [ "$(wc -l < "$scratch/pc-split.txt")" -eq 3 ]'
+# the form plan-check reads is the form wt add reads: backticks and a comment around the id
+printf '%s\n' '## Tasks' '### T2: part a' 'from: T1' 'owns: [src/sa/**]' '### T3: part b' 'from: `T1` # the split task' 'owns: [src/sb/**, src/sc/**]' '### T6: not owned yet' 'from: T1' 'owns: [src/se/**]' > .idleflow/runs/active/plan.md
+check "plan-check passes a split whose sub-tasks own every file it changed" '[ "$(bash "$RUN" plan-check 2>&1)" = "plan-check: every file each task names is in its owns: or shared_files, and no task owns a protected file" ]'
+out="$(bash "$RUN" wt add T6 HEAD 2>&1)"; rc=$?
+check "wt add refuses a sub-task that owns nothing yet, and creates nothing (exit 9)" '[ "$rc" = 9 ] && echo "$out" | has -F "T6 has from: T1 but owns nothing yet; run.sh own T6 first" && [ ! -d "$(dirname "$d")/$(basename "$d")__wt/T6" ] && ! git rev-parse -q --verify "refs/heads/idleflow/$(bash "$RUN" get id)/T6" >/dev/null'
+bash "$RUN" own T2 '["src/sa/**"]'; bash "$RUN" own T3 '["src/sb/**","src/sc/**"]'
+w2="$(bash "$RUN" wt add T2 HEAD 2> "$scratch/bring2.err")"
+w3="$(bash "$RUN" wt add T3 HEAD 2> "$scratch/bring3.err")"
+check "a sub-task starts with the split task's work on the files it owns, as one commit on its own base" '[ -d "$w2" ] && [ "$(cat "$w2/src/sa/a.txt")" = a1 ] && [ "$(cat "$w2/src/sb/b.txt")" = b0 ] && [ ! -e "$w2/src/sc" ] && [ -f "$w2/src/other.txt" ] && [ "$(git -C "$w2" rev-parse HEAD^)" = "$(git rev-parse HEAD)" ] && [ -z "$(git -C "$w2" status --porcelain --untracked-files=no)" ] && has -F "T2 starts with T1'"'"'s finished work on 1 file(s) it owns" "$scratch/bring2.err"'
+check "the bring commit follows the commit format and carries the task trailer" '[ "$(git -C "$w2" log -1 --format=%s)" = "T2: bring over T1'"'"'s finished work on the files it owns" ] && [ "$(git -C "$w2" log -1 --format="%(trailers:key=Task,valueonly)")" = T2 ]'
+check "a sub-task whose from: has backticks and a comment brings its files too" '[ "$(cat "$w3/src/sb/b.txt")" = b1 ] && [ "$(cat "$w3/src/sc/c.txt")" = c1 ] && [ "$(cat "$w3/src/sa/a.txt")" = a0 ] && has -F "T3 starts with T1'"'"'s finished work on 2 file(s) it owns" "$scratch/bring3.err"'
+# the same file changed since on the base: the work no longer applies, and the sub-task starts clean
+bash "$RUN" wt rm T2; echo zz > src/sa/a.txt && git add src/sa/a.txt && commit -m "a.txt changed on the base"
+w2="$(bash "$RUN" wt add T2 HEAD 2> "$scratch/bring2.err")"
+check "a split task's work that no longer applies leaves the sub-task at its base and says so" '[ -d "$w2" ] && [ "$(cat "$w2/src/sa/a.txt")" = zz ] && [ "$(git -C "$w2" rev-parse HEAD)" = "$(git rev-parse HEAD)" ] && [ -z "$(git -C "$w2" status --porcelain --untracked-files=no)" ] && has -F "T1'"'"'s work on the files T2 owns no longer applies to T2'"'"'s base" "$scratch/bring2.err" && [ -s .idleflow/runs/active/tasks/T2/bring.log ]'
+check "the split path keeps a split task's work and hands it to its sub-tasks" 'has -F "\`wt rm\` removes the worktree but keeps the task'"'"'s branch" "$HERE/../commands/feature.md" && has -F "Each sub-task has \`from: <task-id>\`" "$HERE/../commands/feature.md" && has "^\*\*A split\.\*\* When the diff gate splits a task" "$HERE/../agents/planner.md" && has "^from: none " "$HERE/../templates/plan.md" && has -F "When your task has \`from: <task-id>\`, its first commit" "$HERE/../agents/implementer.md" && has -F "When your task has \`from: <task-id>\`, its first commit" "$HERE/../agents/implementer-hard.md" && has -F "its branch is kept, and each new task starts with" "$HERE/../agents/diff-auditor.md"'
+bash "$RUN" wt rm T2; bash "$RUN" wt rm T3; bash "$RUN" finish "done" >/dev/null
+
 echo "--- conventional commits"
 cp .idleflow/conventions.md "$d-conv.bak"
 printf 'commit_format: conventional\n' >> .idleflow/conventions.md

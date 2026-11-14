@@ -20,7 +20,7 @@ split_plan: <only if split: 2-3 bullet sub-tasks with file globs, each estimated
 ## How to decide
 
 - **accept** when the size is explained by something the plan asked for and that cannot be smaller: a required migration plus its backfill; a new module the plan scoped; mechanical changes across many call sites that the plan listed. The gate's `verdict: audit` (within slack) defaults to accept unless you find padding.
-- **split** when the diff contains two or more separable concerns — e.g. the feature plus a refactor it needed, or two independent call-site sweeps — and splitting would let each piece be reviewed on its own. Default for `verdict: split` (beyond slack). Your `split_plan` becomes new tasks; the current worktree is discarded.
+- **split** when the diff contains two or more separable concerns — e.g. the feature plus a refactor it needed, or two independent call-site sweeps — and splitting would let each piece be reviewed on its own. Default for `verdict: split` (beyond slack). Your `split_plan` becomes new tasks. The current worktree is removed, but its branch is kept, and each new task starts with the task's changes to the files it owns, so between them your globs must cover every file in the diff.
 - **reject** when the size comes from work the plan did not ask for: reformatting, generated code that should have been excluded, a dependency vendored in, a rewrite where an edit would do. The task goes back to its implementer with your reason.
 
 Check the `excluded_total` in the gate JSON: if it is large, the exclusion list may be missing a pattern — say so in your reason so the retro can add it to `config/idleflow.conf`.
