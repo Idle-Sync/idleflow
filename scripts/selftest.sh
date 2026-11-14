@@ -1181,6 +1181,24 @@ check "each issue form's title hint is the form ISSUES.md gives its kind" '( for
 check "a criterion checked after merge is reported apart and spends no retry" 'for a in implementer implementer-hard; do grep -q "^after_merge: <none | the A-ids of \`verify: browser after merge\` criteria" "$HERE/../agents/$a.md" && grep -q "it is not a criterion you failed, so it is never a deviation and never makes the task \`partial\`" "$HERE/../agents/$a.md" || exit 1; done && grep -q "\`partial\` whose \`deviations\` are \`none\` or name only A-ids listed under \`after_merge:\`, each written \`verify: browser after merge\`" "$HERE/../commands/feature.md" && grep -q "\`partial\` with any other deviation" "$HERE/../commands/feature.md"'
 check "a finding after merge is recorded with a fix command and comes before any push" 'grep -q "^\*\*Findings after merge.\*\* A run ends at its merge" "$HERE/../commands/feature.md" && grep -q "/idleflow:fix \"<the finding> in <file, or the check> (found after run <id>)\"" "$HERE/../commands/feature.md" && grep -q "A \`needs-human\` stop that lists any ends, like the final message, with the" "$HERE/../commands/feature.md" && grep -q "the entries of \`after-merge.md\` (step 8) for the final message" "$HERE/../commands/feature.md" && grep -q "first every entry of \`after-merge.md\` in the run directory" "$HERE/../agents/retro.md" && grep -q "every entry of \`.idleflow/runs/<id>/after-merge.md\`" "$HERE/../commands/endsession.md"'
 check "a criterion whose check fails on the base is a plan problem, not a retry" 'grep -q "| base: <the failing tests or checks> — base job <n>, task job <n>>" "$HERE/../agents/review-correct.md" && grep -q "an entry under \`unverified:\` as \`base\` (see Format), never a finding" "$HERE/../agents/review-correct.md" && for a in implementer implementer-hard; do grep -q "its \`base_failures:\` line names the criterion.s A-id" "$HERE/../agents/$a.md" || exit 1; done && grep -q "A \`base\` entry is a criterion whose own check fails on the base the same way" "$HERE/../commands/feature.md" && grep -q "the run.s \`known-failures.md\` that names an A-id of a task that merged" "$HERE/../agents/retro.md" && grep -q "one the task.s commits add or change, or one the task.s plan section says is broken" "$HERE/../agents/review-correct.md" && grep -q "no \`environment\` or \`base\` entry is still open" "$HERE/../commands/feature.md"'
+# A frontmatter value is YAML: an unquoted one may not hold ": " or " #", nor start with a character
+# YAML reads as syntax, or GitHub (and any strict parser) refuses the file or reads it as a list.
+yaml_unsafe() { # the frontmatter lines of the given files whose unquoted value strict YAML breaks on
+  local f
+  for f in "$@"; do
+    awk -v f="${f##*/}" -v q="'" -v ind='[]{}*&!|>%@`,?:' '
+      NR == 1 && $0 != "---" { exit }
+      NR > 1 && $0 == "---" { exit }
+      NR > 1 && /^[A-Za-z_-]+:\t/ { print f ": " $0; next }
+      NR > 1 && /^[A-Za-z_-]+: / {
+        v = $0; sub(/^[A-Za-z_-]+: /, "", v); c = substr(v, 1, 1)
+        # a quoted value closes with its own quote and has nothing after it
+        if (c == "\"" || c == q) { if (length(v) < 2 || substr(v, length(v)) != c) print f ": " $0; next }
+        if (v ~ /: / || v ~ /:\t/ || v ~ /:$/ || v ~ / #/ || v ~ /^#/ || v ~ /^- / || (c != "" && index(ind, c))) print f ": " $0
+      }' "$f"
+  done
+}
+check "every command, agent and issue form frontmatter is valid YAML" '[ -z "$(yaml_unsafe "$HERE"/../commands/*.md "$HERE"/../agents/*.md "$HERE"/../.github/ISSUE_TEMPLATE/*.md)" ] && [ -n "$(printf "%s\n" "---" "description: Usage: x" "a: \"open" "b: ends:" "c: #lost" "---" > "$scratch/yaml-bad.md"; yaml_unsafe "$scratch/yaml-bad.md" | wc -l | grep -x " *4")" ]'
 check "the designer and design reviewer exist" '[ -f "$HERE/../agents/designer.md" ] && [ -f "$HERE/../agents/review-design.md" ] && grep -q "\"ui\"" "$HERE/../agents/classifier.md" && grep -q "^### 2c. Design" "$HERE/../commands/feature.md"'
 check "requirements no screen shows reach the plan" 'grep -q "^- \`design.md\` at the output path: the screens for this run, \"Not on a screen\"" "$HERE/../agents/designer.md" && grep -q "Each line under \"Not on a screen\" becomes acceptance of the task that builds its surface" "$HERE/../agents/planner.md" && grep -q "listed under \"Not on a screen\"" "$HERE/../procedures/design.md"'
 check "the design handbook carries the contrast rule" 'grep -q "4.5:1" "$HERE/../procedures/design.md" && grep -q "0.2126 R + 0.7152 G + 0.0722 B" "$HERE/../procedures/design-data.md"'

@@ -1,6 +1,6 @@
 ---
-description: Report a bug, a bad decision, or an idea about idleflow itself to github.com/Idle-Sync/idleflow. Collects the run's evidence (run id, config, gate and review results), shows the draft, and opens the issue with gh after you confirm. Usage: /idleflow:plugin-feedback <what went wrong or what you want>
-argument-hint: <what went wrong or what you want>
+description: "Report a bug, a bad decision, or an idea about idleflow itself to github.com/Idle-Sync/idleflow. Collects the run's evidence (run id, config, gate and review results), shows the draft, and opens the issue with gh after you confirm. Usage: /idleflow:plugin-feedback <what went wrong or what you want>"
+argument-hint: "<what went wrong or what you want>"
 allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion
 ---
 

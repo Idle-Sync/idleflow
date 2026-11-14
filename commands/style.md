@@ -1,6 +1,6 @@
 ---
-description: Set or change this repo's readability mode (repo / balanced / explicit / idiomatic) in .idleflow/conventions.md. Asked automatically on the first /idleflow run; use this to change it later.
-argument-hint: [repo|balanced|explicit|idiomatic]
+description: "Set or change this repo's readability mode (repo / balanced / explicit / idiomatic) in .idleflow/conventions.md. Asked automatically on the first /idleflow run; use this to change it later."
+argument-hint: "[repo|balanced|explicit|idiomatic]"
 allowed-tools: Read, Write, Edit, Bash, AskUserQuestion
 ---
 

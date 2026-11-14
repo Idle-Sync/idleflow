@@ -1,5 +1,5 @@
 ---
-description: Check this repo's idleflow setup and whether a newer idleflow is out. Reports every check (layout, conventions, lessons, what the team shares, ignore rules, leftover runs and worktrees, project docs, customizations), then offers the safe fixes. Use when idleflow behaves oddly, after updating the plugin, when a teammate joins, or when asked "is idleflow set up right", "check idleflow", "idleflow doctor". Usage: /idleflow:doctor
+description: "Check this repo's idleflow setup and whether a newer idleflow is out. Reports every check (layout, conventions, lessons, what the team shares, ignore rules, leftover runs and worktrees, project docs, customizations), then offers the safe fixes. Use when idleflow behaves oddly, after updating the plugin, when a teammate joins, or when asked \"is idleflow set up right\", \"check idleflow\", \"idleflow doctor\". Usage: /idleflow:doctor"
 argument-hint: ""
 allowed-tools: Bash, Read, Edit, AskUserQuestion
 ---

@@ -1,6 +1,6 @@
 ---
-description: Customize idleflow for this project: numbers (diff limit, implementers, retries, debate rounds, size budgets), steps on or off (debate, stack and library research, tooling, doc-keeper), the model of any agent, extra instructions for an agent, or a full replacement of an agent's prompt. Saved in .idleflow/ and .claude/agents/, committed for the team, kept mergeable with plugin updates. Each change can be reported to Idle-Sync/idleflow (asked once, remembered) so idleflow learns what projects change. Use when asked to "customize idleflow", "change the diff limit", "turn off the debate", "use opus for the planner", "change how the reviewer works", or to restore a default. Usage: /idleflow:customize [what to change]
-argument-hint: [what to change]
+description: "Customize idleflow for this project: numbers (diff limit, implementers, retries, debate rounds, size budgets), steps on or off (debate, stack and library research, tooling, doc-keeper), the model of any agent, extra instructions for an agent, or a full replacement of an agent's prompt. Saved in .idleflow/ and .claude/agents/, committed for the team, kept mergeable with plugin updates. Each change can be reported to Idle-Sync/idleflow (asked once, remembered) so idleflow learns what projects change. Use when asked to \"customize idleflow\", \"change the diff limit\", \"turn off the debate\", \"use opus for the planner\", \"change how the reviewer works\", or to restore a default. Usage: /idleflow:customize [what to change]"
+argument-hint: "[what to change]"
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 ---
 
