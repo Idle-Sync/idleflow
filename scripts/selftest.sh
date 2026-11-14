@@ -869,6 +869,14 @@ bash "$RUN" wt rm T1; bash "$RUN" finish needs-human >/dev/null
 echo dirty > "$wr2/dirty.txt"
 check "resume refuses while a left worktree holds uncommitted work, and moves nothing" '! bash "$RUN" resume "$rid" 2>/dev/null && [ -d ".idleflow/runs/$rid" ] && [ ! -d .idleflow/runs/active ] && [ -f "$wr2/dirty.txt" ]'
 rm "$wr2/dirty.txt"
+idleflow_rt set ".idleflow/runs/$rid/ownership.json" tasks.T2 '["src/**"]'
+echo link > "$wr2/setup-made.txt"; echo new > "$wr2/src/new-of-t2.py"
+check "a new file inside the task's globs still stops the resume, and names it" '! bash "$RUN" resume "$rid" 2>"$scratch/resume.err" && grep -q "src/new-of-t2.py" "$scratch/resume.err" && [ -d ".idleflow/runs/$rid" ]'
+rm "$wr2/src/new-of-t2.py"
+t1_merge="$(git log -1 --format=%H --all-match --grep="^Run: $rid\$" --grep="^Task: T1\$" HEAD)"; tip="$(git rev-parse HEAD)"
+git branch -q -m "idleflow/$rid/T1" "idleflow/$rid/T1-away"; git reset -q --hard "$t1_merge^1"
+check "resume refuses when the branch no longer holds a merge whose task branch is gone" '[ -n "$t1_merge" ] && ! bash "$RUN" resume "$rid" 2>"$scratch/resume.err" && grep -q "no longer holds that merge" "$scratch/resume.err" && [ -d ".idleflow/runs/$rid" ]'
+git reset -q --hard "$tip"
 git checkout -q -b elsewhere
 check "resume refuses on a branch other than the one the run merged into" '! bash "$RUN" resume "$rid" 2>/dev/null && [ -d ".idleflow/runs/$rid" ]'
 git checkout -q -
@@ -879,6 +887,10 @@ check "resume keeps what merged and starts the rest again" 'echo "$out" | grep -
 check "resume keeps the old commits of a reset task on a branch of their own" '[ "$(git rev-parse "idleflow/$rid/T2-before-resume")" = "$t2_sha" ] && ! git show-ref -q --verify "refs/heads/idleflow/$rid/T2"'
 check "resume moves the review of the old build aside and takes the base failures again" '[ ! -f .idleflow/runs/active/review/T2-correct.md ] && [ -f .idleflow/runs/active/review/T2-correct.1.md ] && [ "$(bash "$RUN" get gate_base)" = null ] && [ ! -f .idleflow/runs/active/known-failures.md ] && [ -f .idleflow/runs/active/known-failures.1.md ]'
 wr2b="$(bash "$RUN" wt add T2 2>/dev/null)"
+# a job another session still runs: a job folder with a live process and no exit code yet
+sleep 30 & busy=$!; jb=".idleflow/runs/active/tasks/T2/jobs/99"; mkdir -p "$jb"; echo "$busy" > "$jb/pid"
+check "a resume in place refuses while a job of the run still runs" '! bash "$RUN" resume "$rid" 2>"$scratch/resume.err" && grep -q "still runs; wait for it or stop it first" "$scratch/resume.err" && [ -d "$wr2b" ]'
+kill "$busy" 2>/dev/null; wait "$busy" 2>/dev/null; echo 143 > "$jb/status"
 check "a reset task builds from the branch as it is now" '[ "$(bash "$RUN" get tasks.T2.base_sha)" = "$(git rev-parse HEAD)" ] && grep -q "^r1$" "$wr2b/src/keep.py" && ! grep -q "^r2$" "$wr2b/src/keep.py"'
 # stopped and resumed again: the second build's commits get a name of their own too
 ( cd "$wr2b" && echo r2b >> src/keep.py && git add src/keep.py && commit -m "keep r2 again" ); t2b_sha="$(git -C "$wr2b" rev-parse HEAD)"
@@ -887,7 +899,7 @@ check "a second resume never overwrites the branch the first one kept" '[ "$(git
 check "a resume run again on the active run goes on where it is" 'bash "$RUN" resume "$rid" >/dev/null 2>&1 && [ "$(bash "$RUN" get id)" = "$rid" ]'
 bash "$RUN" finish "done" >/dev/null
 check "resume refuses a run that finished done, and a name that is no run" '! bash "$RUN" resume "$rid" 2>/dev/null && ! bash "$RUN" resume no-such-run 2>/dev/null && ! bash "$RUN" resume ../x 2>/dev/null'
-git branch -q -D "idleflow/$rid/T2-before-resume" "idleflow/$rid/T2-before-resume-2"; git branch -q -D elsewhere
+git branch -q -D "idleflow/$rid/T2-before-resume" "idleflow/$rid/T2-before-resume-2" "idleflow/$rid/T1-away"; git branch -q -D elsewhere
 check "the run procedure and the handoffs name the resume command" 'grep -q "^\*\*Resuming a stopped run.\*\* When \`\$ARGUMENTS\` is \`resume <run id>\`" "$HERE/../commands/feature.md" && grep -q "/idleflow:feature resume <run id>" "$HERE/../commands/endsession.md" && grep -q "/idleflow:feature resume <run id>" "$HERE/../commands/progress.md"'
 
 echo "--- team"
