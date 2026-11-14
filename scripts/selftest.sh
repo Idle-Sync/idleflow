@@ -956,6 +956,45 @@ check "run.json records that nothing came over, and which file was left out" '[ 
 bash "$RUN" wt rm T3; mkdir -p src/sc && echo yy > src/sc/c.txt && git add src/sc/c.txt && commit -m "c.txt made on the base"
 w3="$(bash "$RUN" wt add T3 HEAD 2> "$scratch/bring3.err")"
 check "a sub-task brings the files that still apply and names the one left out" '[ "$(cat "$w3/src/sb/b.txt")" = b1 ] && [ "$(cat "$w3/src/sc/c.txt")" = yy ] && git -C "$w3" log -1 --format=%b | has -xF -- "- src/sc/c.txt" && [ "$(git -C "$w3" rev-parse HEAD^)" = "$(git rev-parse HEAD)" ] && [ -z "$(git -C "$w3" status --porcelain --untracked-files=no)" ] && has -F "T3 starts with T1'"'"'s finished work on 1 file(s) it owns" "$scratch/bring3.err" && has -F "T1'"'"'s work on these files no longer applies to T3'"'"'s base and was left out" "$scratch/bring3.err" && has -F "\"src/sc/c.txt\"" "$scratch/bring3.err" && [ "$(bash "$RUN" get tasks.T3.brought)" = "{\"from\":\"T1\",\"commit\":\"$(git -C "$w3" rev-parse HEAD)\",\"files\":1,\"left_out\":[\"src/sc/c.txt\"]}" ]'
+# a file that became a folder, beside a file that changed on the base: the per-file path brings the
+# file's removal and the folder's file each as one entry, and leaves out only the changed file
+echo tx0 > src/tx && echo ty0 > src/ty.txt && git add src/tx src/ty.txt && commit -m "tx and ty"
+printf '%s\n' '## Tasks' '### T8: type change' 'owns: [src/tx, src/tx/**, src/ty.txt]' > .idleflow/runs/active/plan.md
+bash "$RUN" own T8 '["src/tx","src/tx/**","src/ty.txt"]'
+w8="$(bash "$RUN" wt add T8 HEAD 2>/dev/null)"
+git -C "$w8" rm -q src/tx && mkdir -p "$w8/src/tx" && echo a1 > "$w8/src/tx/a.txt" && echo ty1 > "$w8/src/ty.txt"
+git -C "$w8" add -A src && git -C "$w8" -c user.name=t -c user.email=t@t commit -qm "T8: tx becomes a folder"
+bash "$RUN" set tasks.T8.status '"split"'; bash "$RUN" wt rm T8
+echo tyz > src/ty.txt && git add src/ty.txt && commit -m "ty changed on the base"
+printf '%s\n' '## Tasks' '### T9: from the type change' 'from: T8' 'owns: [src/tx, src/tx/**, src/ty.txt]' > .idleflow/runs/active/plan.md
+bash "$RUN" own T9 '["src/tx","src/tx/**","src/ty.txt"]'
+w9="$(bash "$RUN" wt add T9 HEAD 2> "$scratch/bring9.err")"
+check "a file that became a folder comes over entry by entry, and only the changed file is left out" '[ "$(cat "$w9/src/tx/a.txt")" = a1 ] && [ "$(cat "$w9/src/ty.txt")" = tyz ] && [ "$(bash "$RUN" get tasks.T9.brought.files)" = 2 ] && [ "$(bash "$RUN" get tasks.T9.brought.left_out)" = "[\"src/ty.txt\"]" ]'
+bash "$RUN" wt rm T9
+# the other way: a folder that became a file, beside the same changed file; its folder's file is
+# deleted before the file is written, and neither is listed as left out
+# (src/zz, deleted by the split task and changed on the base, fails between the folder's file and
+# the new file, so the files that applied are applied again in between)
+mkdir -p src/fx && echo f0 > src/fx/a.txt && echo zz0 > src/zz && git add src/fx src/zz && commit -m "fx folder"
+printf '%s\n' '## Tasks' '### T10: folder to file' 'owns: [src/fx, src/fx/**, src/ty.txt, src/zz]' > .idleflow/runs/active/plan.md
+bash "$RUN" own T10 '["src/fx","src/fx/**","src/ty.txt","src/zz"]'
+w10="$(bash "$RUN" wt add T10 HEAD 2>/dev/null)"
+git -C "$w10" rm -rq src/fx src/zz && echo fx1 > "$w10/src/fx" && echo ty2 > "$w10/src/ty.txt"
+git -C "$w10" add -A src && git -C "$w10" -c user.name=t -c user.email=t@t commit -qm "T10: fx becomes a file"
+bash "$RUN" set tasks.T10.status '"split"'; bash "$RUN" wt rm T10
+echo tyw > src/ty.txt && echo zz1 > src/zz && git add src/ty.txt src/zz && commit -m "ty and zz changed on the base"
+printf '%s\n' '## Tasks' '### T11: from folder to file' 'from: T10' 'owns: [src/fx, src/fx/**, src/ty.txt, src/zz]' > .idleflow/runs/active/plan.md
+bash "$RUN" own T11 '["src/fx","src/fx/**","src/ty.txt","src/zz"]'
+w11="$(bash "$RUN" wt add T11 HEAD 2> "$scratch/bring11.err")"
+check "a folder that became a file comes over, its folder removed first, and only the files changed on the base are left out" '[ -f "$w11/src/fx" ] && [ "$(cat "$w11/src/fx")" = fx1 ] && [ "$(cat "$w11/src/ty.txt")" = tyw ] && [ "$(cat "$w11/src/zz")" = zz1 ] && [ "$(bash "$RUN" get tasks.T11.brought.files)" = 2 ] && [ "$(bash "$RUN" get tasks.T11.brought.left_out)" = "[\"src/zz\",\"src/ty.txt\"]" ]'
+bash "$RUN" wt rm T11
+# a glob matcher that fails: one line says so, and brought records the error, not "changed none"
+printf '%s\n' '## Tasks' '### T9: from the type change' 'from: T8' 'owns: [src/tx, src/tx/**, src/ty.txt]' > .idleflow/runs/active/plan.md
+cp .idleflow/runs/active/ownership.json "$scratch/own.bak"
+idleflow_rt set .idleflow/runs/active/ownership.json tasks.T9.owns '"not a list"'
+w9="$(bash "$RUN" wt add T9 HEAD 2> "$scratch/bring9.err")"
+check "a failed glob match gives its own reason only, and brought records the error" 'has -F "the glob matcher failed; T9 starts from its base alone" "$scratch/bring9.err" && ! has -F "changed none of the files" "$scratch/bring9.err" && [ "$(bash "$RUN" get tasks.T9.brought.error)" = "glob matcher failed" ] && [ "$(bash "$RUN" get tasks.T9.brought.files)" = 0 ] && [ "$(bash "$RUN" get tasks.T9.brought.left_out)" = "[]" ]'
+bash "$RUN" wt rm T9; cp "$scratch/own.bak" .idleflow/runs/active/ownership.json
 eval "$(sed -n '/^json_str() {/,/^}/p' "$RUN")"
 jname="$(printf 'a"b\\c\nd\te\001f')"; echo '{}' > "$scratch/j.json"
 idleflow_rt set "$scratch/j.json" k "$(json_str "$jname")" 2> "$scratch/j.err"
