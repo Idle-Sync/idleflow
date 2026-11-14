@@ -1059,18 +1059,21 @@ JSON
         [ -n "$path" ] || continue
         case "$where" in
           entry*) ;;
-          *) grep -qxF -- "$path" "$tracked" || [[ "$path" == */* && "${path##*/}" == *[A-Za-z]*.*[A-Za-z]* ]] || continue;;
+          *) grep -qxF -- "$path" "$tracked" || [[ "$path" == */* && "${path##*/}" == *[A-Za-z]*.*[A-Za-z]* ]] || continue
+             # a criterion may name a file git ignores (a build output) without owning it: no task changes it
+             "${G[@]}" check-ignore -q --no-index -- "$path" 2>/dev/null && ! grep -qxF -- "$path" "$tracked" && continue;;
         esac
         out="$(printf '%s\0' "$path" | idleflow_rt outside "$globs")" || { echo "plan-check: the glob matcher failed" >&2; rm -f "$tracked" "$problems"; exit 2; }
         [ -z "$out" ] || echo "plan-check: $tid does not own $path, which its $where names; add it to $tid's owns: (or to shared_files when every task adds lines to it)" >> "$problems"
       done <<< "$named"
       # A file git ignores (.gitignore, .git/info/exclude) is in no worktree and in no merge, so a task
-      # cannot change it: its entry points and the files its owns: names outright are checked. An
+      # cannot change it: its entry points and owns: are checked, a glob by its fixed folder. An
       # acceptance criterion may still name one, such as a build output the task's commands write.
       while IFS= read -r path; do
         [ -n "$path" ] || continue
-        case "$path" in *[*?]*) continue;; esac
-        if ! grep -qxF -- "$path" "$tracked" && "${G[@]}" check-ignore -q --no-index -- "$path" 2>/dev/null; then
+        # a glob is checked by its fixed folder: one git ignores whole holds nothing a task can change
+        case "$path" in *[*?]*) probe="${path%%[*?]*}"; probe="${probe%/*}"; [ "$probe" != "${path%%[*?]*}" ] && [ -n "$probe" ] || continue; probe="$probe/.idleflow-probe";; *) probe="$path";; esac
+        if ! grep -qxF -- "$path" "$tracked" && "${G[@]}" check-ignore -q --no-index -- "$probe" 2>/dev/null; then
           echo "plan-check: $tid would change $path, which git ignores: no worktree has it and no merge carries a change to it; take it out of $tid and write the change under \"By hand after merge\"" >> "$problems"
         fi
       done < <({ printf '%s\n' "$owned"; printf '%s\n' "$facts" | awk -F'\t' -v t="$tid" '$1 == t && $2 == "entry" { print $3 }'; } | awk 'NF && !seen[$0]++')

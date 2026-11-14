@@ -833,9 +833,9 @@ check "plan-check passes a plan whose tasks own what they name" '[ "$(bash "$RUN
 # a file git ignores is in no worktree and no merge: a task may not change it, but a criterion may name
 # a build output the task's commands write
 echo "local-notes.md" >> "$(git rev-parse --git-path info/exclude)"; echo "dist/" >> "$(git rev-parse --git-path info/exclude)"
-printf '%s\n' '## Tasks' '### T1: one' 'owns:' '  - src/a/**' '  - local-notes.md' '  - dist/**' 'entry_points:' '  - src/a/x.py: run' 'acceptance:' '  - A1: `src/a/x.py` builds dist/app.js → verify: true' > .idleflow/runs/active/plan.md
+printf '%s\n' '## Tasks' '### T1: one' 'owns:' '  - src/a/**' '  - local-notes.md' 'entry_points:' '  - src/a/x.py: run' 'acceptance:' '  - A1: `src/a/x.py` builds dist/app.js → verify: true' '### T2: two' 'owns:' '  - dist/**' 'acceptance:' '  - A1: dist/app.js is rebuilt → verify: true' > .idleflow/runs/active/plan.md
 bash "$RUN" plan-check > "$scratch/pc-ign.txt" 2>&1; rc=$?
-check "plan-check refuses a task that would change a file git ignores, and still lets a criterion name a build output" '[ "$rc" = 1 ] && grep -q "^plan-check: T1 would change local-notes.md, which git ignores" "$scratch/pc-ign.txt" && ! grep -q "dist" "$scratch/pc-ign.txt"'
+check "plan-check refuses a task that would change a file or folder git ignores, and still lets a criterion name a build output" '[ "$rc" = 1 ] && grep -q "^plan-check: T1 would change local-notes.md, which git ignores" "$scratch/pc-ign.txt" && grep -q "^plan-check: T2 would change dist/\*\*, which git ignores" "$scratch/pc-ign.txt" && ! grep -q "T1.*dist" "$scratch/pc-ign.txt"'
 sed -i.bak '/^local-notes.md$/d; /^dist\/$/d' "$(git rev-parse --git-path info/exclude)" && rm -f "$(git rev-parse --git-path info/exclude).bak"
 printf '%s\n' '## Tasks' \
   '### T1: inline lists and odd entry points' 'owns: [src/a/**, "tests/**"]' 'entry_points: [src/a/x.py: run]' 'entry_points:' '  - src/a/x.py:run' '  - src/a/y.py (new file)' '  - src/a/z.py::Klass' 'acceptance:' \
