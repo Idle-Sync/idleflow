@@ -18,6 +18,7 @@
 //   entries <file> <key>                    one "name<TAB>value" line per entry of the object at that top-level key
 //   clip   <n> <text>                       the text cut to at most n characters (not bytes), "..." marking a cut
 //   unowned <file> <task-id>                NUL-separated paths on stdin; prints those the task may not change
+//   outside <globs-json>                    NUL-separated paths on stdin; prints those no glob covers
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -342,6 +343,13 @@ function cmdUnowned(p, tid) {
   const allowed = owns.concat([".idleflow-run/**"], shared);
   // paths come NUL-separated (`git diff -z --name-only`), so none is quoted. git separates folders
   // with `/` on every OS; a `\` is part of a name and is kept, or `src\x.py` would pass as `src/x.py`.
+  for (const rel of fs.readFileSync(0, "utf8").split("\0")) {
+    if (rel && !globMatch(WIN ? rel.toLowerCase() : rel, allowed)) process.stdout.write(rel + "\n");
+  }
+}
+function cmdOutside(globs) {
+  // The plan check's matcher is the guard's, so a plan that passes is one the guard lets build.
+  const allowed = JSON.parse(globs);
   for (const rel of fs.readFileSync(0, "utf8").split("\0")) {
     if (rel && !globMatch(WIN ? rel.toLowerCase() : rel, allowed)) process.stdout.write(rel + "\n");
   }
@@ -797,7 +805,7 @@ function cmdClip(n, text) {
   const chars = Array.from(text); // code points, as Python counts them
   console.log(chars.length <= n ? text : chars.slice(0, n - 3).join("") + "...");
 }
-const table = { get: cmdGet, set: cmdSet, inc: cmdInc, finish: cmdFinish, own: cmdOwn, gate: cmdGate, guard: cmdGuard, killguard: cmdKillguard, detach: cmdDetach, entries: cmdEntries, unowned: cmdUnowned, clip: cmdClip };
+const table = { get: cmdGet, set: cmdSet, inc: cmdInc, finish: cmdFinish, own: cmdOwn, gate: cmdGate, guard: cmdGuard, killguard: cmdKillguard, detach: cmdDetach, entries: cmdEntries, unowned: cmdUnowned, outside: cmdOutside, clip: cmdClip };
 const [cmd, ...args] = process.argv.slice(2);
 if (!cmd || !(cmd in table)) {
   process.stderr.write(`idleflow.js: unknown subcommand ${JSON.stringify(cmd)}\n`);

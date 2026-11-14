@@ -18,6 +18,7 @@ Subcommands:
   entries <file> <key>                    one "name<TAB>value" line per entry of the object at that top-level key
   clip   <n> <text>                       the text cut to at most n characters (not bytes), "..." marking a cut
   unowned <file> <task-id>                NUL-separated paths on stdin; prints those the task may not change
+  outside <globs-json>                    NUL-separated paths on stdin; prints those no glob covers
 """
 import json
 import os
@@ -352,6 +353,14 @@ def cmd_unowned(path, tid):
     allowed = list(task.get("owns") or []) + [".idleflow-run/**"] + list(omap.get("shared") or [])
     # paths come NUL-separated (`git diff -z --name-only`), so none is quoted. git separates folders
     # with `/` on every OS; a `\` is part of a name and is kept, or `src\x.py` would pass as `src/x.py`.
+    for rel in sys.stdin.buffer.read().decode("utf-8", "replace").split("\0"):
+        if rel and not glob_match(rel.lower() if WIN else rel, allowed):
+            print(rel)
+
+
+def cmd_outside(globs):
+    # The plan check's matcher is the guard's, so a plan that passes is one the guard lets build.
+    allowed = json.loads(globs)
     for rel in sys.stdin.buffer.read().decode("utf-8", "replace").split("\0"):
         if rel and not glob_match(rel.lower() if WIN else rel, allowed):
             print(rel)
@@ -895,7 +904,7 @@ def main(argv):
     table = {
         "get": cmd_get, "set": cmd_set, "inc": cmd_inc, "finish": cmd_finish,
         "own": cmd_own, "gate": cmd_gate, "guard": cmd_guard, "killguard": cmd_killguard, "detach": cmd_detach, "entries": cmd_entries,
-        "unowned": cmd_unowned, "clip": cmd_clip,
+        "unowned": cmd_unowned, "outside": cmd_outside, "clip": cmd_clip,
     }
     if cmd not in table:
         sys.stderr.write("idleflow.py: unknown subcommand %r\n" % cmd)
