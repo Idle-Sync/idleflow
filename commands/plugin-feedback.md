@@ -14,7 +14,7 @@ Feedback: $ARGUMENTS
 2. Check for duplicates: `gh issue list --repo Idle-Sync/idleflow --search "<three key words>" --state all --limit 10`. If one matches, say which and offer to comment there instead (only if the human says yes).
 3. Gather evidence, read-only, from this repo if present: the plugin version (`cat "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json"`), `bash "${CLAUDE_PLUGIN_ROOT}/scripts/run.sh" conf` (config values and runtime), the last line of `.idleflow/runs/log.jsonl`, and for the most recent run directory under `.idleflow/runs/` its `run.json` size, retries, gate_trips and review_findings and the one-line `verdict:` of each `review/*.md`. Nothing from `plan.md`, `context.md` or the code: those may be private.
 
-   Draft the issue exactly as `${CLAUDE_PLUGIN_ROOT}/ISSUES.md` describes; read it now. It is the one blueprint for every idleflow issue, the same one people see on the GitHub form: its kinds (`bug`, `workflow`, `idea`, `pushback`), its title (`<kind>: <what is wrong, in about six words>`, the problem, not the fix) and its four body headings in order. Put the evidence gathered above under its Evidence heading.
+   Draft the issue exactly as `${CLAUDE_PLUGIN_ROOT}/ISSUES.md` describes; read it now. It is the one blueprint for every idleflow issue, the same one people see on the GitHub form: its kinds (`bug`, `workflow`, `idea`, `pushback`), its title (the form its "Title" table gives for the kind: the problem, not the fix, for `bug` and `workflow`) and its four body headings in order. Put the evidence gathered above under its Evidence heading.
 
 No meta commentary, no secrets, no private paths, no code or plan contents from the project.
 
