@@ -549,6 +549,11 @@ bash "$RUN" wt add TE >/dev/null 2>&1
 check "a port lock whose holder has died is taken over and given back" '[ "$(bash "$RUN" get tasks.TE.port)" = 4403 ] && [ ! -e "$utmp/ports/4403.lock" ]'
 mkdir "$utmp/ports/4405.lock"; bash "$RUN" wt add TF >/dev/null 2>&1; rmdir "$utmp/ports/4405.lock"
 check "a port lock that names no holder yet is still skipped" '[ "$(bash "$RUN" get tasks.TF.port)" = 4407 ]'
+# a dead holder's lock that another run is already taking over is left to it
+mkdir -p "$utmp/ports/4405.lock" "$utmp/ports/4405.lock.takeover"; echo "$dead" > "$utmp/ports/4405.lock/pid"
+bash "$RUN" wt add TG >/dev/null 2>&1
+check "a dead lock another run is taking over is skipped" '[ "$(bash "$RUN" get tasks.TG.port)" = 4408 ] && [ "$(cat "$utmp/ports/4405.lock/pid")" = "$dead" ]'
+rm -f "$utmp/ports/4405.lock/pid"; rmdir "$utmp/ports/4405.lock" "$utmp/ports/4405.lock.takeover"
 check "a task's temp folder is short and outside the repo" 't="$(bash "$RUN" exec TA -- sh -c "echo \$TMPDIR")"; [ "${#t}" -eq $(( ${#utmp} + 14 )) ] && [ -d "$t" ] && case "$t" in "$d"/*) false;; *) true;; esac'
 mkdir -p "$d-tmp/r2" "$d-tmp/elsewhere"; ln -s "$d-tmp/elsewhere" "$d-tmp/r2/idleflow-$(id -u)"
 check "a user folder under the temp root that is a symlink is refused" '! IDLEFLOW_TMP_ROOT="$d-tmp/r2" bash "$RUN" exec TA -- true 2>/dev/null && [ -z "$(ls -A "$d-tmp/elsewhere")" ]'
@@ -642,7 +647,7 @@ check "wt rm stops the task's jobs" '[ "$(cat .idleflow/runs/active/tasks/TB/job
 rm -f .idleflow/idleflow.conf "$wa/child.pid"; [ ! -f "$scratch/conf.bak" ] || mv "$scratch/conf.bak" .idleflow/idleflow.conf
 run_tmp_dir="$(bash "$RUN" exec TA -- sh -c 'echo "$TMPDIR"')"; run_tmp_dir="${run_tmp_dir%/TA}"
 iso_id="$(bash "$RUN" get id)"
-bash "$RUN" wt rm TA; bash "$RUN" wt rm TB; bash "$RUN" wt rm TC; bash "$RUN" wt rm TD; bash "$RUN" wt rm TE; bash "$RUN" wt rm TF; bash "$RUN" finish done >/dev/null
+bash "$RUN" wt rm TA; bash "$RUN" wt rm TB; bash "$RUN" wt rm TC; bash "$RUN" wt rm TD; bash "$RUN" wt rm TE; bash "$RUN" wt rm TF; bash "$RUN" wt rm TG; bash "$RUN" finish done >/dev/null
 check "finish removes the run's temp folders" '[ -n "$run_tmp_dir" ] && [ ! -e "$run_tmp_dir" ]'
 check "finish gives back the run's port claims and no other" '! grep -qs "	$iso_id	" "$utmp"/ports/* && [ "$(cut -f2,3 "$utmp/ports/4402")" = "r1	T9" ]'
 
@@ -741,13 +746,16 @@ printf '{"id":"r1","tasks":{"T9":{"port":4402},"T8":{"port":4400}}}\n' > "$o/.id
 printf '%s\tr1\tT8\n' "$o" > "$utmp/ports/4400"
 out="$(bash "$RUN" preview main start 2>/dev/null)"; pid="$(cat .idleflow/runs/active/tasks/main/preview.pid 2>/dev/null)"; sleep 1
 check "preview main claims a free port of its own" '[ "$(cut -f2,3 "$utmp/ports/4401" 2>/dev/null)" = "$(bash "$RUN" get id)	main" ] && [ "$(cut -f3 "$utmp/ports/4400")" = T8 ]'
+check "a second preview main start is refused while the first serves" '! bash "$RUN" preview main start >/dev/null 2>&1 && [ "$(cat .idleflow/runs/active/tasks/main/preview.pid)" = "$pid" ] && [ "$(grep -ls "	main$" "$utmp"/ports/* | wc -l | tr -d " ")" = 1 ]'
 check "under preview_in: main the main checkout is served" 'echo "$out" | grep -q "^preview main: serving at http://localhost:4173" && kill -0 "$pid" 2>/dev/null && [ "$(cat "$utmp"/*/main/where 2>/dev/null)" = "$(pwd -P)" ]'
 bash "$RUN" preview main stop >/dev/null; sleep 1
 check "preview main stop ends it" '! kill -0 "$pid" 2>/dev/null'
 check "preview main stop gives its port back and leaves other claims" '[ ! -e "$utmp/ports/4401" ] && [ "$(cut -f3 "$utmp/ports/4400")" = T8 ]'
+bash "$RUN" preview main start >/dev/null 2>&1; pid2="$(cat .idleflow/runs/active/tasks/main/preview.pid 2>/dev/null)"; sleep 1
 check "main and merged are not task ids" '! bash "$RUN" wt add main 2>/dev/null && ! bash "$RUN" wt add merged 2>/dev/null'
 check "findings reads the browser check after merge" 'printf "### D1. A label   severity: minor\n" > .idleflow/runs/active/review/merged-design.md && [ "$(bash "$RUN" findings merged)" = "merged: D1. A label   severity: minor (review/merged-design.md)" ]'
-bash "$RUN" finish "done" >/dev/null
+bash "$RUN" finish "done" >/dev/null; sleep 1
+check "finish stops a preview of main still serving and gives its port back" '[ -n "$pid2" ] && ! kill -0 "$pid2" 2>/dev/null && ! grep -qs "	main$" "$utmp"/ports/*'
 cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"; git add .idleflow/conventions.md && commit -q -m "restore conventions"
 
 echo "--- plan extract"

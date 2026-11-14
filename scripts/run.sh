@@ -455,8 +455,8 @@ task_base() { # task_base <task-id>
 # A port is claimed by a file in the registry, ports/<port>, holding its owner: `<repo> <run id>
 # <task-id>`. A claim is read and written only under the port's lock, the folder ports/<port>.lock
 # (mkdir is atomic), so two runs never both decide a port is theirs. A run that finds the lock taken
-# moves on to the next port; the lock holds its holder's pid, and one whose holder has died (a `wt add`
-# killed while it held it) is taken over, as the base checkout's lock is. A claim is live while
+# moves on to the next port; one whose holder has died (a `wt add` killed while it held it) is taken
+# over (lock_dir). A claim is live while
 # its run is its repo's active run and its task holds that port or has none recorded yet (`wt add`
 # records it right after the claim); any other claim is stale and is replaced.
 port_registry() { local u; u="$(user_tmp)" || return 1; echo "$u/ports"; }
@@ -468,27 +468,32 @@ claim_live() { # claim_live <claim-file> <port>
   oport="$(idleflow_rt get "$rj" "tasks.$otid.port" 2>/dev/null || true)"
   [ "$oport" = "$2" ] || [ -z "$oport" ] || [ "$oport" = null ]
 }
-port_lock() { # port_lock <lock-folder>
+# A lock is a folder (mkdir is atomic) holding its holder's pid: the shell that holds it, which inside
+# a command substitution is not run.sh's own $$. One whose holder has died (killed while holding it)
+# is taken over, but only under a second short lock, <lock>.takeover, inside which the pid is read
+# again: of two runs that found the same dead holder, the second then sees the first's live pid and
+# backs off. A lock that names no holder yet is being taken, never taken over.
+lock_dir() { # lock_dir <lock-folder>: 0 when this shell now holds it
   local holder
-  if ! mkdir "$1" 2>/dev/null; then
-    holder="$(cat "$1/pid" 2>/dev/null || true)"
-    if [ -z "$holder" ] || kill -0 "$holder" 2>/dev/null; then return 1; fi
-    rm -f "$1/pid"; rmdir "$1" 2>/dev/null || true
-    mkdir "$1" 2>/dev/null || return 1
-  fi
-  echo "$$" > "$1/pid"
+  if mkdir "$1" 2>/dev/null; then echo "${BASHPID:-$$}" > "$1/pid"; return 0; fi
+  holder="$(cat "$1/pid" 2>/dev/null || true)"
+  if [ -z "$holder" ] || kill -0 "$holder" 2>/dev/null; then return 1; fi
+  mkdir "$1.takeover" 2>/dev/null || return 1
+  if [ "$(cat "$1/pid" 2>/dev/null || true)" = "$holder" ]; then rm -f "$1/pid"; rmdir "$1" 2>/dev/null || true; fi
+  if mkdir "$1" 2>/dev/null; then echo "${BASHPID:-$$}" > "$1/pid"; rmdir "$1.takeover"; return 0; fi
+  rmdir "$1.takeover"; return 1
 }
-port_unlock() { rm -f "$1/pid"; rmdir "$1" 2>/dev/null || true; }
+unlock_dir() { rm -f "$1/pid"; rmdir "$1" 2>/dev/null || true; }
 claim_port() { # claim_port <registry> <port> <task-id> <run id> <listening-check: yes|no>
   local reg="$1" p="$2" me rc=1
   me="$(printf '%s\t%s\t%s' "$REPO" "$4" "$3")"
-  port_lock "$reg/$p.lock" || return 1
+  lock_dir "$reg/$p.lock" || return 1
   if [ -f "$reg/$p" ] && [ "$(cat "$reg/$p")" != "$me" ] && claim_live "$reg/$p" "$p"; then
     :
   elif [ "$5" = no ] || idleflow_rt port-free "$p"; then
     printf '%s\n' "$me" > "$reg/$p.new.$$" && mv -f "$reg/$p.new.$$" "$reg/$p" && rc=0
   fi
-  port_unlock "$reg/$p.lock"
+  unlock_dir "$reg/$p.lock"
   return "$rc"
 }
 # The lowest PORT_BASE + n that no task of this run holds, no live claim on the machine holds and
@@ -515,11 +520,11 @@ release_ports() { # release_ports [<task-id>]
   mine="$(printf '%s\t%s' "$REPO" "$(active_id)")"
   if [ -n "${1:-}" ]; then mine="$mine"$'\t'"$1"; fields=1-3; fi
   for f in "$reg"/*; do
-    case "$f" in *.lock|*.new.*) continue;; esac
+    case "$f" in *.lock|*.takeover|*.new.*) continue;; esac
     if [ ! -f "$f" ] || [ "$(cut -f"$fields" "$f")" != "$mine" ]; then continue; fi
-    port_lock "$f.lock" || continue
+    lock_dir "$f.lock" || continue
     if [ "$(cut -f"$fields" "$f")" = "$mine" ]; then rm -f "$f"; fi
-    port_unlock "$f.lock"
+    unlock_dir "$f.lock"
   done
 }
 # The repo's own commands (setup, gate, tests, preview) run as they would for a person or in CI.
@@ -647,19 +652,16 @@ await_job() { # await_job <task-id> <job>: the command's output and exit code, 7
 # file is made again, so a proof never runs on a half-set-up or edited base. It is registered with no
 # owned globs, so the guard refuses every edit in it. `wt rm` and `wt add` remove it.
 base_worktree() { # base_worktree <task-id>: prints its path; exits as worktree_setup does (6, 7) when that fails
-  local tid="$1" base p d rc n=0 holder jd
+  local tid="$1" base p d rc n=0 jd
   base="$(task_base "$tid")" || return 1
   p="$(wt_path "_base-$tid")"; d="$ACTIVE/tasks/_base-$tid"
   mkdir -p "$d" "$(dirname "$p")"
   # one creator at a time: a second first use waits instead of running in a half-made checkout; a
-  # lock whose holder has died (killed mid-setup) is taken over
-  until mkdir "$d/lock" 2>/dev/null; do
-    holder="$(cat "$d/lock/pid" 2>/dev/null || true)"
-    if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then rm -f "$d/lock/pid"; rmdir "$d/lock" 2>/dev/null || true; continue; fi
+  # lock whose holder has died (killed mid-setup) is taken over (lock_dir)
+  until lock_dir "$d/lock"; do
     n=$((n + 1)); [ "$n" -lt 180 ] || { echo "exec --base: another exec --base of $tid is still making its base checkout; try again" >&2; return 1; }
     sleep 0.5
   done
-  echo "$$" > "$d/lock/pid"
   if [ -d "$p" ] && { [ "$(cat "$d/ready" 2>/dev/null)" != "$base" ] || [ -n "$(git -C "$p" status --porcelain --untracked-files=no 2>/dev/null)" ]; }; then
     # a base job still running there would lose its checkout mid-run
     for jd in "$ACTIVE/tasks/$tid/jobs"/*/; do
@@ -1250,7 +1252,10 @@ Task: $tid")
     ;;
   finish)
     status="${1:-done}"; id="$(active_id)"
-    # the tasks' temp folders and port claims go with the run
+    # the tasks' temp folders and port claims go with the run, and so does a preview of main still
+    # serving, since its port is given back here
+    mp="$ACTIVE/tasks/main/preview.pid"
+    if [ -f "$mp" ]; then pid="$(cat "$mp")"; kill -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true; rm -f "$mp"; fi
     release_ports
     if rt="$(run_tmp)"; then rm -rf "$rt"; fi
     idleflow_rt finish "$ACTIVE/run.json" "$status" "$RUNS/log.jsonl"
@@ -1577,6 +1582,9 @@ Task: $tid")
       # the server runs in its own session, so its whole process group goes (dev servers start children)
       if [ -f "$pidf" ]; then pid="$(cat "$pidf")"; kill -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true; fi
       rm -f "$pidf"; [ "$tid" != main ] || release_ports main; echo "preview $tid: stopped"; exit 0
+    fi
+    if [ -f "$pidf" ] && kill -0 "$(cat "$pidf")" 2>/dev/null; then
+      echo "preview $tid: already running (pid $(cat "$pidf")); stop it first: run.sh preview $tid stop" >&2; exit 1
     fi
     cmd="$(idleflow_rt get "$ACTIVE/run.json" preview 2>/dev/null || true)"
     case "$cmd" in ""|null) echo "preview: none"; exit 0;; esac
