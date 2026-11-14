@@ -1,6 +1,6 @@
 ---
-description: Plan → debate → build in parallel worktrees → review → merge, for a feature or issue. Usage: /idleflow:feature <issue text, issue URL, or path to a file describing it>, or /idleflow:feature resume <run id> to go on with a run that stopped
-argument-hint: <issue description or URL | resume <run id>>
+description: "Plan → debate → build in parallel worktrees → review → merge, for a feature or issue. Usage: /idleflow:feature <issue text, issue URL, or path to a file describing it>, or /idleflow:feature resume <run id> to go on with a run that stopped"
+argument-hint: "<issue description or URL | resume <run id>>"
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob, Agent, AskUserQuestion
 ---
 

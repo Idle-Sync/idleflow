@@ -1,6 +1,6 @@
 ---
-description: Set idleflow up in a project that already has code, before the first /idleflow:feature run. Maps the code, asks the repo's rules once (readability mode, ignore file, project docs, lessons location), records the stack the project already uses, offers tooling, writes the project docs and commits them for the team. On a repo already set up (by /idleflow:init or an earlier setup) it fills only what is missing, or runs /idleflow:doctor when nothing is. Optional: /idleflow:feature asks the same questions on its first run. Use when moving an existing project to idleflow, or when asked to "set up idleflow here", "onboard this repo". Not the plugin install; that is setup.md in the plugin. Usage: /idleflow:setup [one line on what the project is]
-argument-hint: [one line on what the project is]
+description: "Set idleflow up in a project that already has code, before the first /idleflow:feature run. Maps the code, asks the repo's rules once (readability mode, ignore file, project docs, lessons location), records the stack the project already uses, offers tooling, writes the project docs and commits them for the team. On a repo already set up (by /idleflow:init or an earlier setup) it fills only what is missing, or runs /idleflow:doctor when nothing is. Optional: /idleflow:feature asks the same questions on its first run. Use when moving an existing project to idleflow, or when asked to \"set up idleflow here\", \"onboard this repo\". Not the plugin install; that is setup.md in the plugin. Usage: /idleflow:setup [one line on what the project is]"
+argument-hint: "[one line on what the project is]"
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob, Agent, AskUserQuestion
 ---
 

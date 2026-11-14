@@ -1,6 +1,6 @@
 ---
-description: Same pipeline as /idleflow:feature, biased for bug fixes — classifier leans S, explorer looks for the failing path and the regression test first. Usage: /idleflow:fix <bug description, issue URL, or failing test name>
-argument-hint: <bug description or URL>
+description: "Same pipeline as /idleflow:feature, biased for bug fixes — classifier leans S, explorer looks for the failing path and the regression test first. Usage: /idleflow:fix <bug description, issue URL, or failing test name>"
+argument-hint: "<bug description or URL>"
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob, Agent, AskUserQuestion
 ---
 
