@@ -421,12 +421,17 @@ tmp_root() { local r="${IDLEFLOW_TMP_ROOT:-/tmp}"; echo "${r%/}"; }
 # The root is shared by every user of the machine and its names are predictable, so everything
 # idleflow keeps there sits in one folder of this user's, mode 700: one another user made, or a
 # symlink, is refused rather than written through.
+owned_by_me() { # owned_by_me <path>
+  [ -O "$1" ] && return 0
+  # Git Bash gives a folder an elevated session made to the Administrators group (gid 544); it is
+  # this user's only when this session is in that group
+  command -v cygpath >/dev/null 2>&1 || return 1
+  [ "$(stat -c %u "$1" 2>/dev/null)" = 544 ] && id -G | tr ' ' '\n' | grep -qx 544
+}
 user_tmp() {
   local u; u="$(tmp_root)/idleflow-$(id -u)"
   [ -e "$u" ] || [ -L "$u" ] || mkdir -m 700 "$u" 2>/dev/null || true
-  # Git Bash maps an elevated session's folders to the Administrators group, so there -O is skipped
-  # and only the symlink and folder checks hold
-  if [ -L "$u" ] || [ ! -d "$u" ] || { ! command -v cygpath >/dev/null 2>&1 && [ ! -O "$u" ]; }; then
+  if [ -L "$u" ] || [ ! -d "$u" ] || ! owned_by_me "$u"; then
     echo "run.sh: $u is not a folder this user owns; remove it, or set IDLEFLOW_TMP_ROOT to another root" >&2; return 1
   fi
   chmod 700 "$u" 2>/dev/null || true
