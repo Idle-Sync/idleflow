@@ -9,7 +9,9 @@
 #                                            stay merged, every other task starts afresh from the branch as it is now
 #   run.sh wt add <task-id> [base-ref]    -> creates the task's worktree and branch, records its base sha, runs the approved
 #                                            worktree_setup there (exit 6: setup failed, 7: not approved, 8: the plan
-#                                            marks it blocked_until a revision), prints the path
+#                                            marks it blocked_until a revision, 9: its from: names work that cannot
+#                                            be found), prints the path; a sub-task with from: <split task> starts
+#                                            with that task's changes to the files it owns, as one commit
 #   run.sh wt rm <task-id>                -> removes the worktree (keeps the branch); works with or without an active run
 #   run.sh wt list                        -> lists idleflow worktrees
 #   run.sh own <task-id> '<globs json>'   -> registers file ownership for the guard hook
@@ -34,7 +36,8 @@
 #   run.sh plan-field <task-id> <key>     -> one field of the task's plan section (blocked_until, model, ...), empty when missing
 #   run.sh plan-check                     -> checks plan.md before anyone builds: every file a task's entry points or
 #                                            acceptance name is in its owns: or shared_files, and no owns: glob covers a
-#                                            protected file; prints one line per problem and exits 1, or exits 0
+#                                            protected file, and every file a split task changed is owned by exactly
+#                                            one of its sub-tasks; prints one line per problem and exits 1, or exits 0
 #   run.sh extract <task-id>              -> the task's plan extract: the plan's Stack & style constraints and Interfaces
 #                                            sections, then the task's own ### <task-id>: section
 #   run.sh report <task-id>               -> copies the task's .idleflow-run/result.md into the run dir as report.md, prints its path
@@ -777,6 +780,62 @@ base_worktree() { # base_worktree <task-id>: prints its path; exits as worktree_
   echo "$p"
 }
 
+# A task the diff gate split is never merged, but wt rm keeps its branch: its finished work is still
+# there. A sub-task whose plan section says from: <that task> starts with that task's changes to the
+# files the sub-task owns, applied to its own base as one commit, so the implementer finishes and
+# checks that work rather than writing it again.
+# The from: value as plan-check reads it: backticks dropped, and only its first word.
+split_from() { # split_from <task-id>
+  local v; v="$(plan_field "$1" from)"; v="${v//\`/}"; v="${v#"${v%%[![:space:]]*}"}"; printf '%s' "${v%%[[:space:]]*}"
+}
+# The files a split task changed, NUL-separated. Plumbing, so no diff setting of the user's (colour,
+# no prefix, an external diff) changes what is read.
+split_files() { # split_files <split task-id> <run id>
+  local fbase; fbase="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$1.base_sha" 2>/dev/null || true)"
+  "${G[@]}" diff-tree -r -z --no-renames --name-only "$fbase" "refs/heads/idleflow/$2/$1"
+}
+# Before anything is created: work that cannot be found would otherwise be built again unnoticed.
+split_ready() { # split_ready <task-id> <split task-id> <run id>
+  local fbase; fbase="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$2.base_sha" 2>/dev/null || true)"
+  if [ -z "$fbase" ] || [ "$fbase" = null ] || ! "${G[@]}" rev-parse -q --verify "$fbase^{commit}" >/dev/null \
+     || ! "${G[@]}" rev-parse -q --verify "refs/heads/idleflow/$3/$2^{commit}" >/dev/null; then
+    echo "wt add: $1 has from: $2, but $2's branch idleflow/$3/$2 or its base sha is gone; nothing to bring over, so give $1 from: none and run plan-check" >&2; return 1
+  fi
+  idleflow_rt get "$ACTIVE/ownership.json" "tasks.$1.owns" >/dev/null 2>&1 \
+    || { echo "wt add: $1 has from: $2 but owns nothing yet; run.sh own $1 first, so it brings over $2's work on the files it owns" >&2; return 1; }
+}
+# A change that no longer applies to the sub-task's base leaves the worktree at its base, and the
+# sub-task is built from the plan as any other. git's own words go to the task's bring.log.
+bring_split() { # bring_split <task-id> <split task-id> <worktree> <run id>
+  local fbase owns out f n=0 specs=() log subject
+  fbase="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$2.base_sha")"; owns="$(idleflow_rt get "$ACTIVE/ownership.json" "tasks.$1.owns")"
+  log="$ACTIVE/tasks/$1/bring.log"; : > "$log"
+  # the changed files the matcher does not print as outside the sub-task's globs; shared_files are
+  # left out, since every sibling would bring the same lines (plan-check gives each to one sub-task)
+  out="$(split_files "$2" "$4" | idleflow_rt outside "$owns")" \
+    || { echo "[idleflow] wt add: the glob matcher failed; $1 starts from its base alone" >&2; return 0; }
+  while IFS= read -r -d '' f; do
+    [ -n "$f" ] || continue
+    grep -qxF -- "$f" <<< "$out" || { specs+=(":(literal)$f"); n=$((n + 1)); }
+  done < <(split_files "$2" "$4")
+  [ "$n" -gt 0 ] || { echo "[idleflow] wt add: $1 has from: $2, but $2 changed none of the files $1 owns; $1 starts from its base alone" >&2; return 0; }
+  case "$(conventions_value commit_format)" in
+    conventional) subject="$(idleflow_rt clip 72 "chore: bring over $2's finished work on the files $1 owns")";;
+    plain) subject="$(idleflow_rt clip 72 "Bring over $2's finished work on the files $1 owns")";;
+    *) subject="$1: bring over $2's finished work on the files it owns";;
+  esac
+  if ! "${G[@]}" diff-tree -p --binary --full-index --no-renames "$fbase" "refs/heads/idleflow/$4/$2" -- "${specs[@]}" \
+       | git -C "$3" apply --3way --index --whitespace=nowarn 2>> "$log"; then
+    git -C "$3" reset -q --hard >> "$log" 2>&1 || true
+    echo "[idleflow] wt add: $2's work on the files $1 owns no longer applies to $1's base (git's words in $(native_path "$log")); $1 starts from its base alone and is built from the plan" >&2
+  # --no-verify: the repo's hooks would run in a worktree nothing is installed in yet
+  elif ! git -C "$3" ${IDENTITY[@]+"${IDENTITY[@]}"} commit -q --no-verify -m "$subject" -m "Task: $1" >> "$log" 2>&1; then
+    git -C "$3" reset -q --hard >> "$log" 2>&1 || true
+    echo "[idleflow] wt add: $2's work on the files $1 owns applied but could not be committed (git's words in $(native_path "$log")); $1 starts from its base alone" >&2
+  else
+    echo "[idleflow] wt add: $1 starts with $2's finished work on $n file(s) it owns, in commit $(git -C "$3" rev-parse --short HEAD); finish and check it, do not write it again" >&2
+  fi
+}
 # The repo's own preparation for a fresh worktree (link shared folders, copy fixtures).
 run_worktree_setup() { # run_worktree_setup <task-id> <worktree>
   local cmd log
@@ -932,6 +991,8 @@ JSON
         blocked="$(plan_field "$tid" blocked_until)"
         case "$(printf '%s' "$blocked" | tr '[:upper:]' '[:lower:]')" in ""|none) ;; *) echo "wt add: $tid is blocked until a revision ($blocked); have the planner revise its section first, which sets blocked_until: none" >&2; exit 8;; esac
         p="$(wt_path "$tid")"; br="idleflow/$id/$tid"
+        from="$(split_from "$tid")"
+        case "$from" in ""|none) from="";; *) split_ready "$tid" "$from" "$id" || exit 9;; esac
         "${G[@]}" rev-parse -q --verify "$base^{commit}" >/dev/null || { echo "base '$base' has no commits yet; commit first (run.sh snapshot)" >&2; exit 1; }
         # a leftover from a crashed run must not make `add` fail, nor a base checkout of an earlier base stay
         "${G[@]}" worktree remove --force "$(wt_path "_base-$tid")" 2>/dev/null || true
@@ -958,6 +1019,7 @@ JSON
         # the commit the first tasks branch from is the base a later gate is compared against
         gb="$(idleflow_rt get "$ACTIVE/run.json" gate_base 2>/dev/null || true)"
         [ -n "$gb" ] && [ "$gb" != null ] || idleflow_rt set "$ACTIVE/run.json" gate_base "\"$("${G[@]}" rev-parse "$base")\""
+        [ -z "$from" ] || bring_split "$tid" "$from" "$p" "$id"
         run_worktree_setup "$tid" "$p"
         native_path "$p"
         ;;
@@ -1072,7 +1134,7 @@ JSON
     tracked="$(mktemp)"; problems="$(mktemp)"
     "${G[@]}" ls-files > "$tracked"
     # One line per fact: <task>\town\t<glob> | <task>\tentry\t<path> | <task>\taccept\t<A-id>\t<text> |
-    # <task>\tcause\t<value>.
+    # <task>\tcause\t<value> | <task>\tfrom\t<value>.
     # Lists come as "- item" lines or inline ([a, b]); an acceptance item runs on over indented lines,
     # and only its text before verify: names files.
     facts="$(tr -d '\r' < "$ACTIVE/plan.md" | awk '
@@ -1098,6 +1160,8 @@ JSON
       /^[a-z_]+:/ {
         flush(); key = $0; sub(/:.*/, "", key); rest = $0; sub(/^[a-z_]+:[[:space:]]*/, "", rest); sub(/[[:space:]]+#.*/, "", rest)
         if (key == "cause") { gsub(/`/, "", rest); sub(/[[:space:]]+$/, "", rest); print tid "\tcause\t" rest }
+        # from: is read as wt add reads it: backticks dropped, its first word
+        if (key == "from") { gsub(/`/, "", rest); sub(/^[[:space:]]+/, "", rest); sub(/[[:space:]].*/, "", rest); print tid "\tfrom\t" rest }
         if (rest ~ /^\[.*\]$/ && (key == "owns" || key == "entry_points")) {
           rest = substr(rest, 2, length(rest) - 2); n = split(rest, items, ","); for (i = 1; i <= n; i++) emit(key, items[i])
         }
@@ -1199,6 +1263,34 @@ JSON
         [ -z "$hit" ] || echo "plan-check: $tid owns the protected $p; protected files belong to no task" >> "$problems"
       done
     done
+    # A split task's finished work reaches the run only through its sub-tasks (from: in their sections,
+    # brought over by wt add), so every file it changed must be owned by exactly one of them.
+    while IFS= read -r from; do
+      [ -n "$from" ] || continue
+      subs="$(printf '%s\n' "$facts" | awk -F'\t' -v f="$from" '$2 == "from" && $3 == f { printf "%s%s", (n++ ? ", " : ""), $1 }')"
+      status="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$from.status" 2>/dev/null || true)"
+      if ! [[ "$from" =~ ^T[0-9]+$ ]] || [ "$status" != split ]; then
+        echo "plan-check: $subs has from: $from; write the id of a task the diff gate split (status split), as from: T<n>, or from: none" >> "$problems"; continue
+      fi
+      fbase="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$from.base_sha" 2>/dev/null || true)"; fbr="idleflow/$(active_id)/$from"
+      if [ -z "$fbase" ] || [ "$fbase" = null ] || ! "${G[@]}" rev-parse -q --verify "$fbase^{commit}" >/dev/null \
+         || ! "${G[@]}" rev-parse -q --verify "refs/heads/$fbr^{commit}" >/dev/null; then
+        echo "plan-check: $subs has from: $from, but $from's branch $fbr or its base sha is gone, so there is no work to bring over; write from: none" >> "$problems"; continue
+      fi
+      # each changed file goes to exactly one sub-task: none loses its work, two bring the same lines twice
+      changed="$(mktemp)"; owners="$(mktemp)"; outside="$(mktemp)"
+      split_files "$from" "$(active_id)" | tr '\0' '\n' > "$changed"
+      for sub in $(printf '%s\n' "$facts" | awk -F'\t' -v f="$from" '$2 == "from" && $3 == f { print $1 }'); do
+        g="[$(printf '%s\n' "$facts" | awk -F'\t' -v t="$sub" '$1 == t && $2 == "own" { print $3 }' | as_json)]"
+        split_files "$from" "$(active_id)" | idleflow_rt outside "$g" > "$outside" || { echo "plan-check: the glob matcher failed" >&2; rm -f "$tracked" "$problems" "$changed" "$owners" "$outside"; exit 2; }
+        awk -v s="$sub" 'FILENAME == ARGV[1] { x[$0] = 1; next } $0 != "" && !($0 in x) { print $0 "\t" s }' "$outside" "$changed" >> "$owners"
+      done
+      none="$(awk -F'\t' 'FILENAME == ARGV[1] { o[$1] = 1; next } $0 != "" && !($0 in o)' "$owners" "$changed" | paste -sd' ' -)"
+      [ -z "$none" ] || echo "plan-check: $from changed $none, which none of its sub-tasks ($subs) owns; give each file to one sub-task's owns:, or that finished work is lost" >> "$problems"
+      awk -F'\t' -v f="$from" '{ n[$1]++; o[$1] = o[$1] (n[$1] > 1 ? " and " : "") $2 }
+        END { for (p in n) if (n[p] > 1) print "plan-check: " p ", which " f " changed, is owned by " o[p] "; give it to one of them, or both bring the same lines" }' "$owners" | LC_ALL=C sort >> "$problems"
+      rm -f "$changed" "$owners" "$outside"
+    done < <(printf '%s\n' "$facts" | awk -F'\t' '$2 == "from" && $3 != "" && $3 != "none" && !seen[$3]++ { print $3 }')
     rm -f "$tracked"
     if [ -s "$problems" ]; then awk '!seen[$0]++' "$problems"; rm -f "$problems"; exit 1; fi
     rm -f "$problems"
