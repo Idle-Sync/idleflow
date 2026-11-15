@@ -116,13 +116,13 @@ Before the group's worktrees: the services check (step 0, "The services the test
 
 0. **Blocked tasks first.** For every task in the group whose `blocked_until:` (`bash "$RUN" plan-field <task-id> blocked_until`) is neither empty nor `none`, find the evidence it waits for in what the earlier groups left: their reports, review files, and the CI or verification output that names it. When it is not there yet, ask the human for it with AskUserQuestion; with no human present, stop with `needs-human` and say what the task waits for.
 
-   **CI evidence.** A field `ci <job> — …` waits for that CI job's result on what the earlier groups merged. The job's file in `.idleflow/runs/active/ci/` is that evidence when its `commit:` line names the run's branch as it is now (`git rev-parse HEAD`). Otherwise ask once: **Push and wait** / **I'll paste the evidence** / **Stop the run**. The question names the job and the branch `idleflow/<run id>/ci`, and says what a yes does:
+   **CI evidence.** A field `ci <job> — …` waits for that CI job's result on what the earlier groups merged. The job's file in `.idleflow/runs/active/ci/` is that evidence when its `commit:` line names the run's branch as it is now (`git rev-parse HEAD`). Otherwise run `bash "$RUN" ci plan "<job>"` and ask once: **Push and wait** / **I'll paste the evidence** / **Stop the run**. The question names the job and the branch `idleflow/<run id>/ci`, and says what a yes does:
    - it pushes the run's branch up to HEAD there, with any of the human's commits not pushed yet;
-   - when the push starts no workflow, the run starts the workflow that has the job by hand.
+   - when the push starts no workflow, the run starts by hand the workflow files `ci plan` lists, each named, and no other.
 
-   On **Push and wait**, run `bash "$RUN" ci push "<job>"`. It pushes to that branch and nowhere else, never to the default branch or one of the human's. Then run `bash "$RUN" ci wait "<job>"`, with a Bash timeout of at least 120 seconds, again while it exits 75.
+   On **Push and wait**, run `bash "$RUN" ci push "<job>" <commit>`, with the `commit:` line `ci plan` printed. It pushes to that branch and nowhere else, and refuses when HEAD has moved since (run `ci plan` and ask again), never to the default branch or one of the human's. Then run `bash "$RUN" ci wait "<job>"`, with a Bash timeout of at least 120 seconds, again while it exits 75.
    - Exit 0 prints the path of the job's file: its conclusion, its run and the last 200 lines of its log. That file is the evidence, whether the job passed or failed.
-   - Exit 3 (the job ended `cancelled`, `skipped` or another way that ran nothing) or exit 124 (no result within `CI_EVIDENCE_MINUTES`): ask **Try again** (`ci push` once more, then wait) / **Stop the run**. `ci push` exits 2 once `CI_EVIDENCE_TRIES` are used up: stop.
+   - Exit 3 (the job ended `cancelled`, `skipped` or another way that ran nothing) or exit 124 (no result within `CI_EVIDENCE_MINUTES`): ask **Try again** (`ci push` once more with the same commit, then wait) / **Stop the run**. `ci push` exits 2 once `CI_EVIDENCE_TRIES` are used up: stop.
    - Exit 1 (no `gh`, not signed in, no remote, the push refused): show its message and ask **I'll paste the evidence** / **Stop the run**.
 
    A stop here is `needs-human` with the job and what the task waited to learn from it. `finish` deletes the run's CI branch. With no human present, nothing is pushed.

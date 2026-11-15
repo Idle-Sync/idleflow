@@ -51,15 +51,17 @@
 #   run.sh merge <task-id>                -> merges the task branch into the current branch (no-ff); exit 3 on conflict, 4 otherwise
 #   run.sh ignore <pattern>               -> adds the pattern to the ignore file `ignore_in:` names, prints that file
 #   run.sh snapshot                       -> commits the repo-level docs the orchestrator writes (conventions, CLAUDE.md, prd, ...)
-#   run.sh ci push <job>                  -> evidence only a CI job can give, once the human approved the push: pushes the
+#   run.sh ci plan <job>                  -> what a push for that job would do, for the human to approve: the branch, the
+#                                            commit, and the workflows ci wait would start by hand when the push starts none
+#   run.sh ci push <job> <commit>         -> evidence only a CI job can give, once the human approved the push: pushes the
 #                                            run's merged state (HEAD) to its own branch idleflow/<run id>/ci, never another;
 #                                            again on the same commit, it is another try (exit 2 past CI_EVIDENCE_TRIES)
 #   run.sh ci wait <job>                  -> that job's result on the pushed commit, read with gh: writes ci/<job>.md (its
 #                                            conclusion and the last 200 lines of its log) and prints the path; exits 75 while the job
 #                                            has not finished after EXEC_WAIT_SECONDS, 3 when it ended cancelled, skipped or
 #                                            the like, 124 once CI_EVIDENCE_MINUTES passed since the push. With no run for the
-#                                            commit 2 minutes after it, it starts once each workflow that has the job and can
-#                                            be started by hand (workflow_dispatch); a try again passes over earlier runs
+#                                            commit 2 minutes after it, it starts once the workflows ci plan named; a try
+#                                            again passes over earlier runs
 #   run.sh finish [status]                -> logs the run to .idleflow/runs/log.jsonl, renames active/ to <id>/; deletes the
 #                                            run's CI branch when it pushed one
 #   run.sh loc                            -> prints hand-written code lines in the repo (DIFF_EXCLUDE applied)
@@ -1044,7 +1046,11 @@ run_has_tasks() { [ "$(idleflow_rt get "$ACTIVE/run.json" tasks 2>/dev/null || e
 # the job from the repository that branch went to. The branch, the remote and the repository are
 # worked out again on every call, never read back from run.json, which an agent can write. A job is named as GitHub shows it,
 # `selftest (windows, python)` for one leg of a matrix.
-ci_slug() { printf '%s' "$1" | tr -cs 'A-Za-z0-9' '-' | sed 's/^-//;s/-$//' | cut -c1-60; }
+ci_slug() { # readable, and unique to the name: `selftest (windows, python)` and `selftest windows python` differ
+  local s; s="$(printf '%s' "$1" | tr -cs 'A-Za-z0-9' '-' | sed 's/^-//;s/-$//' | cut -c1-50)"
+  [ -n "$s" ] || return 0
+  printf '%s-%s\n' "$s" "$(printf '%s' "$1" | git hash-object --stdin | cut -c1-6)"
+}
 ci_remote() { # the remote the run pushes to: origin, or the only one there is
   local remotes; remotes="$("${G[@]}" remote)"
   if grep -qx origin <<< "$remotes"; then echo origin; return 0; fi
@@ -1103,22 +1109,72 @@ ci_job() { # ci_job <job> <run id>...
     [ -z "$line" ] || { printf '%s\n' "$line" | head -n 1; return 0; }
   done
 }
-# A push that starts no workflow (one that runs only on pull requests or on main) is followed by a
-# start by hand of each workflow in the pushed commit that can be started so (workflow_dispatch, in
-# `on:`'s block or its line) and has the job: a `name:` that is not a step's (`- name:`), or a key,
-# for the name before a matrix's ` (...)`
-ci_dispatch() { # ci_dispatch <branch> <sha> <job>
-  local f text base="${3%% (*}" re n=0
-  re="$(printf '%s' "$base" | sed 's/[][\.*^$+?(){}|/]/\\&/g')"
+# Whether a workflow file has the job, as GitHub names a job: its `name:`, or its key under `jobs:`
+# when it has none. A job with a matrix is shown with its values after the name, `test (windows)`;
+# a name with an expression (`selftest (${{ matrix.os }})`) is shown with it filled in, so the text
+# before the expression must start the job's name. Any other name matches only exactly. Only the
+# keys directly under `jobs:` and their own `name:` count, never a step's.
+ci_has_job() { # ci_has_job <job> < workflow file
+  awk -v job="$1" -v q="'" '
+    function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
+    function unq(s) { s = trim(s); if (length(s) > 1 && (substr(s, 1, 1) == "\"" || substr(s, 1, 1) == q) && substr(s, length(s)) == substr(s, 1, 1)) s = substr(s, 2, length(s) - 2); return s }
+    # a CRLF blob, and a comment after a value, are read as the value alone
+    # (a quoted value keeps what is inside its quotes, a # there included, and loses what follows them)
+    {
+      sub(/\r$/, "")
+      if (match($0, /:[ \t]*"[^"]*"/) || match($0, ":[ \t]*" q "[^" q "]*" q)) $0 = substr($0, 1, RSTART + RLENGTH - 1)
+      else sub(/[ \t]+#.*$/, "")
+    }
+    /^[ \t]*(#|$)/ { next }
+    /^jobs:[ \t]*$/ { inj = 1; ki = -1; cur = ""; next }
+    inj && /^[^ \t]/ { inj = 0 }
+    !inj { next }
+    { match($0, /^[ \t]*/); ind = RLENGTH }
+    ki < 0 { ki = ind }
+    # every line at the jobs indent starts a job; one that is not a bare key (flow style) is not read
+    ind == ki { cur = ""; if ($0 ~ /^[ \t]*[A-Za-z0-9_-]+:[ \t]*$/) { cur = trim($0); sub(/:$/, "", cur); keys[cur] = 1; ni = -1; st = 0 } next }
+    ind < ki { cur = ""; next }
+    cur != "" {
+      if (ni < 0) ni = ind
+      if (ind == ni) {
+        st = ($0 ~ /^[ \t]*strategy:[ \t]*$/)
+        if ($0 ~ /^[ \t]*name:/) { v = $0; sub(/^[ \t]*name:/, "", v); name[cur] = unq(v) }
+      } else if (st && ind > ni && $0 ~ /^[ \t]*matrix:/) matrix[cur] = 1
+    }
+    END {
+      for (k in keys) {
+        n = (k in name) ? name[k] : k
+        if (index(n, "${{")) { pre = substr(n, 1, index(n, "${{") - 1); ok = (pre != "" && substr(job, 1, length(pre)) == pre) }
+        else if (k in matrix) ok = (substr(job, 1, length(n) + 2) == n " (")
+        else ok = (n == job)
+        if (ok) found = 1
+      }
+      exit !found
+    }'
+}
+# The workflows a start by hand would run, in that commit: each that can be started so
+# (workflow_dispatch, in `on:`'s block, its list or its line) and has the job. The human sees this
+# list before agreeing to the push (`ci plan`), and `ci wait` starts no other.
+ci_dispatch_files() { # ci_dispatch_files <sha> <job>
+  local f text
   while IFS= read -r f; do
     case "$f" in *.yml|*.yaml) ;; *) continue ;; esac
-    text="$("${G[@]}" show "$2:$f" 2>/dev/null)" || continue
-    grep -qE '^[[:space:]]*(-[[:space:]]+)?workflow_dispatch|^"?on"?:.*[^A-Za-z_]workflow_dispatch([^A-Za-z_]|$)' <<< "$text" || continue
-    if ! grep -qE "^[[:space:]]+name:[[:space:]]*[\"']?$re([[:space:]]*\\(|[\"']?[[:space:]]*$)|^[[:space:]]+$re:[[:space:]]*$" <<< "$text"; then continue; fi
+    text="$("${G[@]}" show "$1:$f" 2>/dev/null)" || continue
+    grep -qE '^[[:space:]]*(-[[:space:]]+)?workflow_dispatch[[:space:]]*(:|#|$)|^"?on"?:.*[^A-Za-z_]workflow_dispatch([^A-Za-z_]|$)' <<< "$text" || continue
+    ci_has_job "$2" <<< "$text" && echo "$f"
+  done < <("${G[@]}" ls-tree --name-only "$1" .github/workflows/ 2>/dev/null)
+  return 0
+}
+# A push that starts no workflow (one that runs only on pull requests or on main) is followed by a
+# start by hand of the workflows ci_dispatch_files names
+ci_dispatch() { # ci_dispatch <branch> <sha> <job>
+  local f n=0
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
     if ci_gh workflow run "${f##*/}" --ref "$1" >/dev/null; then
       echo "[idleflow] ci: started ${f##*/} on $1 by hand" >&2; n=$((n + 1))
     fi
-  done < <("${G[@]}" ls-tree --name-only "$2" .github/workflows/ 2>/dev/null)
+  done <<< "$(ci_dispatch_files "$2" "$3")"
   [ "$n" -gt 0 ] || echo "[idleflow] ci: no run on $1 yet, and no workflow with the job can be started by hand" >&2
 }
 ci_clean() { # ci_clean <run id>: deletes the run's CI branch once it pushed one; a failure is reported, never fatal
@@ -1767,8 +1823,18 @@ Task: $tid")
     ;;
   ci)
     sub="${1:-}"; job="${2:-}"; id="$(active_id)"
-    case "$sub" in push|wait) ;; *) echo "usage: run.sh ci push|wait <job>" >&2; exit 1 ;; esac
+    case "$sub" in plan|push|wait) ;; *) echo "usage: run.sh ci plan <job> | ci push <job> <commit> | ci wait <job>" >&2; exit 1 ;; esac
     [ -n "$job" ] || { echo "ci $sub: name the job, as GitHub shows it" >&2; exit 1; }
+    if [ "$sub" = plan ]; then
+      # what the human is asked about: the branch, and the workflows a start by hand would run
+      sha="$("${G[@]}" rev-parse -q --verify HEAD)" || { echo "ci plan: the run has no commit to push" >&2; exit 1; }
+      echo "branch: idleflow/$id/ci"
+      echo "commit: $sha"
+      files="$(ci_dispatch_files "$sha" "$job")"
+      if [ -n "$files" ]; then echo "started by hand when the push starts none:"; printf '%s\n' "$files" | sed 's/^/- /'
+      else echo "started by hand when the push starts none: none"; fi
+      exit 0
+    fi
     command -v gh >/dev/null 2>&1 || { echo "ci: gh (the GitHub CLI) is not installed, so no CI job can be read here" >&2; exit 1; }
     slug="$(ci_slug "$job")"; [ -n "$slug" ] || { echo "ci: '$job' is not a job name" >&2; exit 1; }
     key="ci.$slug"; branch="idleflow/$id/ci"; tries_max="${CI_EVIDENCE_TRIES:-2}"
@@ -1776,6 +1842,8 @@ Task: $tid")
     if [ "$sub" = push ]; then
       remote="$(ci_remote)" || exit 1
       sha="$("${G[@]}" rev-parse -q --verify HEAD)" || { echo "ci push: the run has no commit to push" >&2; exit 1; }
+      # the human approved what ci plan showed for one commit; a HEAD that moved since may start other workflows
+      [ "${3:-}" = "$sha" ] || { echo "ci push: HEAD is $sha, not the commit ci plan showed (${3:-none given}); run ci plan again and ask again" >&2; exit 1; }
       tries=1; skip=""
       if [ "$(ci_get "$key.sha")" = "$sha" ]; then
         tries=$(( $(ci_get "$key.tries") + 1 ))
@@ -1799,7 +1867,8 @@ Task: $tid")
       exit 0
     fi
     sha="$(ci_get "$key.sha")"
-    [ -n "$sha" ] || { echo "ci wait: nothing was pushed for $job; run.sh ci push \"$job\" first" >&2; exit 1; }
+    [ -n "$sha" ] || { echo "ci wait: nothing was pushed for $job; run.sh ci plan \"$job\", then ci push \"$job\" <its commit>, first" >&2; exit 1; }
+    "${G[@]}" merge-base --is-ancestor "$sha" HEAD 2>/dev/null || { echo "ci wait: the commit recorded for $job is not on the run's branch; push again" >&2; exit 1; }
     deadline="$(ci_get "$key.deadline")"; pushed="$(ci_get "$key.pushed")"; tries="$(ci_get "$key.tries")"
     # a round of gh calls takes some seconds, so the last one starts that much before EXEC_WAIT_SECONDS
     w=$(( ${EXEC_WAIT_SECONDS:-100} - 10 )); [ "$w" -ge 1 ] || w=1

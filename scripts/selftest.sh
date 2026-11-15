@@ -804,16 +804,23 @@ mkdir -p .github/workflows
 printf 'on: [push, workflow_dispatch]\njobs:\n  win:\n    name: selftest (windows, ${{ matrix.runtime }})\n' > .github/workflows/w.yml
 printf 'on: [pull_request]\njobs:\n  other:\n    name: selftest (windows, x)\n' > .github/workflows/pr-only.yml
 printf 'on:\n  workflow_dispatch:\njobs:\n  deploy:\n    name: deploy\n    steps:\n      - name: selftest notes\n        run: echo the selftest ran first\n      - uses: x/y@v1\n        name: selftest docs\n' > .github/workflows/deploy.yml
-printf 'on:\n  - push\n  - workflow_dispatch\njobs:\n  win2:\n    name: selftest (windows, y)\n' > .github/workflows/listed.yml
+printf 'on:\n  - push\n  - workflow_dispatch\njobs:\n  win2:\n    name: selftest (windows, ${{ matrix.r }})\n' > .github/workflows/listed.yml
+# a matrix job named by its key, and a release whose test job, with no matrix, feeds deploy
+printf 'on: [pull_request, workflow_dispatch]\njobs:\n  test:\n    strategy:\n      matrix:\n        os: [windows]\n    runs-on: x\n' > .github/workflows/matrix.yml
+printf 'on: workflow_dispatch\njobs:\n  test:\n    runs-on: x\n    steps:\n      - uses: x/y@v1\n        with:\n          matrix: a\n  deploy: # ships\n    strategy:\n      matrix:\n        os: [windows]\n    needs: test\n    runs-on: x\n' > .github/workflows/release.yml
 git add .github && commit -q -m "workflows"
 git init -q --bare "$scratch/ci-remote.git"
 git remote add origin git@gh-work:acme/widgets.git; git config url."$scratch/ci-remote.git".insteadOf git@gh-work:acme/widgets.git
 [ ! -f .idleflow/idleflow.conf ] || cp .idleflow/idleflow.conf "$scratch/conf.bak"
 printf 'EXEC_WAIT_SECONDS=11\n' >> .idleflow/idleflow.conf
-cirid="$(bash "$RUN" new ci-evidence 2>/dev/null)"; cijob="selftest (windows, python)"; cikey="ci.selftest-windows-python"
-ev=".idleflow/runs/active/ci/selftest-windows-python.md"
-check "ci wait before any push says to push first" 'gh_run ci wait "$cijob" 2> "$scratch/ci.err"; [ $? = 1 ] && has -F "run.sh ci push" "$scratch/ci.err"'
-out="$(gh_run ci push "$cijob" 2>&1)"; rc=$?
+cirid="$(bash "$RUN" new ci-evidence 2>/dev/null)"; cijob="selftest (windows, python)"
+cislug="selftest-windows-python-$(printf '%s' "$cijob" | git hash-object --stdin | cut -c1-6)"; cikey="ci.$cislug"
+ev=".idleflow/runs/active/ci/$cislug.md"
+check "ci plan names the branch and exactly the workflows a start by hand would run" 'p="$(gh_run ci plan "$cijob")" && echo "$p" | has -x "branch: idleflow/$cirid/ci" && [ "$(echo "$p" | grep "^- " | sort | tr "\n" " ")" = "- .github/workflows/listed.yml - .github/workflows/w.yml " ]'
+check "a job named test (windows) starts the matrix workflow, never a release whose test job has no matrix" '[ "$(gh_run ci plan "test (windows)" | grep "^- ")" = "- .github/workflows/matrix.yml" ] && [ "$(gh_run ci plan "test" | grep "^- ")" = "- .github/workflows/release.yml" ] && gh_run ci plan "tes" | has -x "started by hand when the push starts none: none"'
+check "ci wait before any push says to push first" 'gh_run ci wait "$cijob" 2> "$scratch/ci.err"; [ $? = 1 ] && has -F "run.sh ci plan" "$scratch/ci.err"'
+check "ci push refuses a commit other than HEAD, the one ci plan showed" 'gh_run ci push "$cijob" "$(git rev-parse HEAD~1)" 2> "$scratch/ci.err" >/dev/null; [ $? = 1 ] && has -F "not the commit ci plan showed" "$scratch/ci.err" && [ -z "$(git --git-dir="$scratch/ci-remote.git" for-each-ref)" ]'
+out="$(gh_run ci push "$cijob" "$(git rev-parse HEAD)" 2>&1)"; rc=$?
 cisha="$(git rev-parse HEAD)"
 check "ci push sends the run's HEAD to its own branch and nowhere else" '[ "$rc" = 0 ] && [ "$(git --git-dir="$scratch/ci-remote.git" for-each-ref --format="%(refname)")" = "refs/heads/idleflow/$cirid/ci" ] && [ "$(git --git-dir="$scratch/ci-remote.git" rev-parse "idleflow/$cirid/ci")" = "$cisha" ] && [ "$(bash "$RUN" get "$cikey.sha")" = "$cisha" ] && [ "$(bash "$RUN" get "$cikey.tries")" = 1 ]'
 gh_run ci wait "$cijob" 2> "$scratch/ci.err"; rc=$?
@@ -824,7 +831,7 @@ gh_run ci wait "$cijob" 2> "$scratch/ci.err"; rc=$?
 check "a run on the commit that does not list the job yet is waited for, not started again" '[ "$rc" = 75 ] && has -F "does not list the job yet" "$scratch/ci.err" && [ ! -e "$ghf/dispatched" ]'
 rm -f "$ghf/runs"
 gh_run ci wait "$cijob" 2> "$scratch/ci.err"; rc=$?
-check "with no run 2 minutes after the push, each workflow that has the job is started by hand, once" '[ "$rc" = 75 ] && [ "$(sort "$ghf/dispatched" | tr "\n" " ")" = "listed.yml w.yml " ] && has -F -- "workflow run w.yml --ref idleflow/$cirid/ci" "$ghf/calls" && { gh_run ci wait "$cijob" 2>/dev/null; true; } && [ "$(wc -l < "$ghf/dispatched" | tr -d " ")" = 2 ]'
+check "with no run 2 minutes after the push, each workflow that has the job is started by hand, once" '[ "$rc" = 75 ] && [ "$(sort "$ghf/dispatched" | tr "\n" " ")" = "listed.yml w.yml " ] && ! has -x release.yml "$ghf/dispatched" && has -F -- "workflow run w.yml --ref idleflow/$cirid/ci" "$ghf/calls" && { gh_run ci wait "$cijob" 2>/dev/null; true; } && [ "$(wc -l < "$ghf/dispatched" | tr -d " ")" = 2 ]'
 echo 42 > "$ghf/runs"; printf '42\t7\tin_progress\t\thttps://ci.example/runs/42\n' > "$ghf/jobs-42"
 gh_run ci wait "$cijob" 2> "$scratch/ci.err"; rc=$?
 check "ci wait exits 75 while the job runs, asking for it by its exact name" '[ "$rc" = 75 ] && has -F "is in_progress" "$scratch/ci.err" && has -F "select(.name == \"$cijob\")" "$ghf/calls"'
@@ -838,12 +845,14 @@ check "the log is fenced past its own backticks, with no terminal escapes, and m
 check "a failed job is the evidence: its conclusion, its run and the last 200 lines of its log, in a file ci wait names" '[ "$rc" = 0 ] && [ "$(echo "$out" | tail -n 1)" -ef "$ev" ] && has -x -- "- conclusion: failure" "$ev" && has -x -- "- commit: $cisha on idleflow/$cirid/ci" "$ev" && has -F "E0005 access denied" "$ev" && has -x -F "2026-01-01T00:00:00Z line 104" "$ev" && ! has -x -F "2026-01-01T00:00:00Z line 103" "$ev" && has -F "https://ci.example/runs/42" "$ev" && [ "$(bash "$RUN" get "$cikey.conclusion")" = failure ]'
 printf '42\t7\tin_progress\t\thttps://ci.example/runs/42\n' > "$ghf/jobs-42"; bash "$RUN" set "$cikey.deadline" "$(( $(date +%s) - 1 ))"
 check "ci wait exits 124 once CI_EVIDENCE_MINUTES passed with no result" 'gh_run ci wait "$cijob" 2> "$scratch/ci.err"; [ $? = 124 ] && has -F "is in_progress after CI_EVIDENCE_MINUTES" "$scratch/ci.err"'
-gh_run ci push "$cijob" >/dev/null 2>&1; t2=$?
+gh_run ci push "$cijob" "$(git rev-parse HEAD)" >/dev/null 2>&1; t2=$?
 gh_run ci wait "$cijob" 2> "$scratch/ci.err"; rc=$?
 check "another try on the same commit pushes the branch anew and passes over the run the first try saw" '[ "$t2" = 0 ] && [ "$(bash "$RUN" get "$cikey.tries")" = 2 ] && [ "$(bash "$RUN" get "$cikey.skip")" = 42 ] && [ "$rc" = 75 ] && has -F "is not started yet" "$scratch/ci.err" && [ ! -e "$ev" ] && [ "$(git --git-dir="$scratch/ci-remote.git" rev-parse "idleflow/$cirid/ci")" = "$cisha" ]'
 printf '42\n43\n' > "$ghf/runs"; printf '43\t7\tcompleted\tsuccess\thttps://ci.example/runs/43\n' > "$ghf/jobs-43"
 check "the new try reads its own run" 'gh_run ci wait "$cijob" >/dev/null 2>&1 && has -x -- "- conclusion: success" "$ev" && has -F "runs/43" "$ev"'
-check "a try past CI_EVIDENCE_TRIES is refused (exit 2)" 'gh_run ci push "$cijob" >/dev/null 2> "$scratch/ci.err"; [ $? = 2 ] && has -F "CI_EVIDENCE_TRIES" "$scratch/ci.err"'
+check "a try past CI_EVIDENCE_TRIES is refused (exit 2)" 'gh_run ci push "$cijob" "$(git rev-parse HEAD)" >/dev/null 2> "$scratch/ci.err"; [ $? = 2 ] && has -F "CI_EVIDENCE_TRIES" "$scratch/ci.err"'
+cijob2="selftest windows python"; cikey2="ci.selftest-windows-python-$(printf '%s' "$cijob2" | git hash-object --stdin | cut -c1-6)"
+check "a job whose name reads the same without punctuation keeps its own tries" 'gh_run ci push "$cijob2" "$(git rev-parse HEAD)" >/dev/null 2>&1 && [ "$cikey2" != "$cikey" ] && [ "$(bash "$RUN" get "$cikey2.tries")" = 1 ] && [ "$(bash "$RUN" get "$cikey.tries")" = 2 ]'
 git push -q origin HEAD:refs/heads/main; bash "$RUN" set ci_branch '"main"'; bash "$RUN" set ci_remote '"elsewhere"'
 bash "$RUN" finish "done" >/dev/null 2> "$scratch/ci.err"
 check "finish deletes the run's CI branch, the one it works out itself, and nothing run.json names" '[ "$(git --git-dir="$scratch/ci-remote.git" for-each-ref --format="%(refname)")" = refs/heads/main ] && has -F "deleted idleflow/$cirid/ci" "$scratch/ci.err"'
