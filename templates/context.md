@@ -17,6 +17,7 @@
 - `path/to/file.py` → `tests/test_file.py::test_x`, `tests/test_file.py::test_y`
 - `path/to/other.py` → none
 - Other tests using what changes: `tests/test_report.py` — builds a fake `Order`; `tests/fixtures/orders.py` — constructs `Order` | none
+- Code outside the tests that builds what changes: `apps/admin/src/orders/map.ts` — builds an `Order` from a row | none
 
 ## 5. Conventions observed
 - Errors: <style> (see `path:line`)
