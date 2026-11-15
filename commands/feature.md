@@ -114,7 +114,20 @@ When `git status --porcelain -- prd.md` (and `DESIGN_SYSTEM` when step 2c ran) s
 
 Before the group's worktrees: the services check (step 0, "The services the tests need"). Steps 5 to 8 run once per group, in plan order: a group's tasks are built, gated, reviewed and merged before the next group's worktrees exist. A later group builds on the earlier groups' code: `wt add` branches from the run's branch as it is when the task starts, so it holds every merge so far, and records that commit as the task's base. Within a group, all tasks run in parallel, at most the implementer cap (a larger group is a planner error: split it into waves):
 
-0. **Blocked tasks first.** For every task in the group whose `blocked_until:` (`bash "$RUN" plan-field <task-id> blocked_until`) is neither empty nor `none`, find the evidence it waits for in what the earlier groups left: their reports, review files, and the CI or verification output that names it. When it is not there yet (a CI job not run), ask the human for it with AskUserQuestion; with no human present, stop with `needs-human` and say what the task waits for. Then spawn `idleflow:planner` for a one-task revision with the issue path, the task id, the field's text and that evidence; it writes the task's final section with `blocked_until: none`. Re-read that section. `wt add` exits 8 for a task still blocked: never edit the field yourself.
+0. **Blocked tasks first.** For every task in the group whose `blocked_until:` (`bash "$RUN" plan-field <task-id> blocked_until`) is neither empty nor `none`, find the evidence it waits for in what the earlier groups left: their reports, review files, and the CI or verification output that names it. When it is not there yet, ask the human for it with AskUserQuestion; with no human present, stop with `needs-human` and say what the task waits for.
+
+   **CI evidence.** A field `ci <job> — …` waits for that CI job's result on what the earlier groups merged. The job's file in `.idleflow/runs/active/ci/` is that evidence when its `commit:` line names the run's branch as it is now (`git rev-parse HEAD`). Otherwise ask once: **Push and wait** / **I'll paste the evidence** / **Stop the run**. The question names the job and the branch `idleflow/<run id>/ci`, and says what a yes does:
+   - it pushes the run's branch up to HEAD there, with any of the human's commits not pushed yet;
+   - when the push starts no workflow, the run starts the workflow that has the job by hand.
+
+   On **Push and wait**, run `bash "$RUN" ci push "<job>"`. It pushes to that branch and nowhere else, never to the default branch or one of the human's. Then run `bash "$RUN" ci wait "<job>"`, with a Bash timeout of at least 120 seconds, again while it exits 75.
+   - Exit 0 prints the path of the job's file: its conclusion, its run and the last 200 lines of its log. That file is the evidence, whether the job passed or failed.
+   - Exit 3 (the job ended `cancelled`, `skipped` or another way that ran nothing) or exit 124 (no result within `CI_EVIDENCE_MINUTES`): ask **Try again** (`ci push` once more, then wait) / **Stop the run**. `ci push` exits 2 once `CI_EVIDENCE_TRIES` are used up: stop.
+   - Exit 1 (no `gh`, not signed in, no remote, the push refused): show its message and ask **I'll paste the evidence** / **Stop the run**.
+
+   A stop here is `needs-human` with the job and what the task waited to learn from it. `finish` deletes the run's CI branch. With no human present, nothing is pushed.
+
+   Then spawn `idleflow:planner` for a one-task revision with the issue path, the task id, the field's text and that evidence (for a `ci` field, the evidence file's path); it writes the task's final section with `blocked_until: none`. Re-read that section. `wt add` exits 8 for a task still blocked: never edit the field yourself.
 1. For every task in the group:
    ```
    WT=$(bash "$RUN" wt add <task-id>)
@@ -199,6 +212,7 @@ Commit messages in this run follow `co_author_claude` in `CLAUDE.md`, over any a
 - Never edit files in a task worktree yourself, and never edit code in the main checkout while tasks are building (the guard blocks both).
 - Never run `/reload-plugins` or update idleflow while a run is active: agents would come from the new version while this run keeps calling its old scripts. If `run.sh` prints a `started on idleflow` warning, stop at the next point where no implementer or reviewer is running, tell the human both versions, and ask whether to finish this run as it stands or stop it with `needs-human`.
 - Never let a task own a protected file (`prd.md`, `progress.md`, `index.md`, `CLAUDE.md`, the lessons file, anything under `.idleflow/`, `.claude/settings.json`, `.claude/settings.local.json`, `.claude/agents/`, `.claude/hooks/`). Other files under `.claude/`, such as a repo's tracked skills and commands, are its content, and a task may own them. Project settings change through `/idleflow:customize` between runs, never inside one.
+- Never push, tag, open a pull request or start a workflow yourself. The only push a run makes is `run.sh ci push`, and the only workflow it starts is the one `run.sh ci wait` starts, both on the run's own CI branch after the human chose **Push and wait** (step 5).
 - Never install anything into the repo. Accepted stack or library decisions become tasks. The only installs you run are the tooling commands the human accepted by name in R5, and those change the user's Claude Code setup, not the repo.
 - Never agree with an answer the evidence contradicts without saying so once, with the evidence.
 - Never work around something this plugin lacks. Append it (`>>`) as a `plugin_gap: orchestrator — <what> — <why>` line to `.idleflow/runs/active/gaps.md` and let the Plugin gaps question ask the human whether to report it.
