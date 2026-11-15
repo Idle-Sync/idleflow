@@ -988,6 +988,35 @@ bash "$RUN" own T11 '["src/fx","src/fx/**","src/ty.txt","src/zz"]'
 w11="$(bash "$RUN" wt add T11 HEAD 2> "$scratch/bring11.err")"
 check "a folder that became a file comes over, its folder removed first, and only the files changed on the base are left out" '[ -f "$w11/src/fx" ] && [ "$(cat "$w11/src/fx")" = fx1 ] && [ "$(cat "$w11/src/ty.txt")" = tyw ] && [ "$(cat "$w11/src/zz")" = zz1 ] && [ "$(bash "$RUN" get tasks.T11.brought.files)" = 2 ] && [ "$(bash "$RUN" get tasks.T11.brought.left_out)" = "[\"src/zz\",\"src/ty.txt\"]" ]'
 bash "$RUN" wt rm T11
+# one sub-task owns a name that became a folder, another the files under it: the whole patch brings
+# the first only the name's own entry, so the two never bring the same lines
+echo qx0 > src/qx && git add src/qx && commit -m "qx file"
+printf '%s\n' '## Tasks' '### T12: qx becomes a folder' 'owns: [src/qx, src/qx/**]' > .idleflow/runs/active/plan.md
+bash "$RUN" own T12 '["src/qx","src/qx/**"]'
+w12="$(bash "$RUN" wt add T12 HEAD 2>/dev/null)"
+git -C "$w12" rm -q src/qx && mkdir -p "$w12/src/qx" && echo q1 > "$w12/src/qx/a.txt"
+git -C "$w12" add -A src && git -C "$w12" -c user.name=t -c user.email=t@t commit -qm "T12: qx becomes a folder"
+bash "$RUN" set tasks.T12.status '"split"'; bash "$RUN" wt rm T12
+printf '%s\n' '## Tasks' '### T13: the name' 'from: T12' 'owns: [src/qx]' '### T14: what lies under it' 'from: T12' 'owns: [src/qx/**]' > .idleflow/runs/active/plan.md
+bash "$RUN" own T13 '["src/qx"]'
+w13="$(bash "$RUN" wt add T13 HEAD 2> "$scratch/bring13.err")"
+check "a sub-task that owns a name that became a folder brings only the name, not what lies under it" '[ ! -e "$w13/src/qx" ] && [ "$(git -C "$w13" diff --name-only HEAD^ HEAD)" = src/qx ] && [ "$(bash "$RUN" get tasks.T13.brought.files)" = 1 ] && [ "$(bash "$RUN" get tasks.T13.brought.left_out)" = "[]" ]'
+bash "$RUN" wt rm T13
+# the other way, beside a new file: the name that became a file cannot be written while the folder's
+# file, a sibling's, is still there; the failed attempt's own leftovers are cleaned, so the new file
+# still comes over and only the name is left out
+mkdir -p src/qy && echo y0 > src/qy/a.txt && git add src/qy && commit -m "qy folder"
+printf '%s\n' '## Tasks' '### T15: qy becomes a file' 'owns: [src/qy, src/qy/**, src/aanew]' > .idleflow/runs/active/plan.md
+bash "$RUN" own T15 '["src/qy","src/qy/**","src/aanew"]'
+w15="$(bash "$RUN" wt add T15 HEAD 2>/dev/null)"
+git -C "$w15" rm -rq src/qy && echo y1 > "$w15/src/qy" && echo new > "$w15/src/aanew"
+git -C "$w15" add -A src && git -C "$w15" -c user.name=t -c user.email=t@t commit -qm "T15: qy becomes a file"
+bash "$RUN" set tasks.T15.status '"split"'; bash "$RUN" wt rm T15
+printf '%s\n' '## Tasks' '### T16: the name and a new file' 'from: T15' 'owns: [src/qy, src/aanew]' '### T17: the old folder' 'from: T15' 'owns: [src/qy/**]' > .idleflow/runs/active/plan.md
+bash "$RUN" own T16 '["src/qy","src/aanew"]'
+w16="$(bash "$RUN" wt add T16 HEAD 2> "$scratch/bring16.err")"
+check "a failed attempt leaves nothing behind, so a new file still comes over beside a name that cannot" '[ "$(cat "$w16/src/aanew")" = new ] && [ -f "$w16/src/qy/a.txt" ] && [ -f "$w16/.idleflow-run/task-id" ] && [ "$(bash "$RUN" get tasks.T16.brought.files)" = 1 ] && [ "$(bash "$RUN" get tasks.T16.brought.left_out)" = "[\"src/qy\"]" ]'
+bash "$RUN" wt rm T16
 # a glob matcher that fails: one line says so, and brought records the error, not "changed none"
 printf '%s\n' '## Tasks' '### T9: from the type change' 'from: T8' 'owns: [src/tx, src/tx/**, src/ty.txt]' > .idleflow/runs/active/plan.md
 cp .idleflow/runs/active/ownership.json "$scratch/own.bak"
