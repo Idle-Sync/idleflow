@@ -881,7 +881,57 @@ printf 'preview_in: main\n' >> .idleflow/conventions.md
 check "under preview_in: main a task preview is refused" '! bash "$RUN" preview T2 start >/dev/null 2>&1 && [ ! -f .idleflow/runs/active/tasks/T2/preview.pid ]'
 sed -i.bak 's#^preview: .*#preview: pwd > "$IDLEFLOW_TMP/where"; sleep 30#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
 git add .idleflow/conventions.md && commit -q -m "preview from main"; bash "$RUN" approve preview >/dev/null
-bash "$RUN" wt rm T2; bash "$RUN" finish done >/dev/null; bash "$RUN" new previewmain >/dev/null 2>&1
+# a job still running and a task preview still serving end with the run, before its folder moves
+[ ! -f .idleflow/idleflow.conf ] || cp .idleflow/idleflow.conf "$scratch/conf.bak"
+printf 'EXEC_WAIT_SECONDS=1\n' >> .idleflow/idleflow.conf
+# a task preview still serving, as preview starts one: in a session of its own
+idleflow_rt detach "$PWD" /dev/null .idleflow/runs/active/tasks/T2/preview.pid "sleep 60"; tpid="$(cat .idleflow/runs/active/tasks/T2/preview.pid 2>/dev/null)"
+w3="$(bash "$RUN" wt add T3 2>/dev/null)"; bash "$RUN" exec T3 -- sh -c 'sleep 60 & echo "$!" > child.pid; wait' >/dev/null 2>&1
+prid="$(bash "$RUN" get id)"; logn="$(wc -l < .idleflow/runs/log.jsonl)"
+if [ "$(id -u)" != 0 ] && case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) false;; *) true;; esac; then
+  chmod a-w .idleflow/runs
+  bash "$RUN" finish "done" >/dev/null 2> "$scratch/fin.err"; rc=$?
+  chmod u+w .idleflow/runs
+  check "a finish that cannot move the run leaves it active, unlogged, and says so" '[ "$rc" = 1 ] && [ -f .idleflow/runs/active/run.json ] && [ "$(wc -l < .idleflow/runs/log.jsonl)" = "$logn" ] && has -F "so the run is still active" "$scratch/fin.err"'
+fi
+bash "$RUN" wt rm T2; bash "$RUN" finish "done" >/dev/null
+check "finish ends the run's jobs and task previews, then moves and logs the run" '[ -n "$tpid" ] && ! kill -0 "$tpid" 2>/dev/null && ! kill -0 "$(cat "$w3/child.pid")" 2>/dev/null && [ "$(idleflow_rt get ".idleflow/runs/$prid/run.json" status)" = done ] && [ ! -e .idleflow/runs/active ] && [ "$(wc -l < .idleflow/runs/log.jsonl)" = $(( logn + 1 )) ]'
+bash "$RUN" wt rm T3; rm -f .idleflow/idleflow.conf; [ ! -f "$scratch/conf.bak" ] || mv "$scratch/conf.bak" .idleflow/idleflow.conf
+# a leftover run whose job pid now names a process that started after it (pids are reused after a
+# reboot) is parked without signalling that process
+bash "$RUN" new leftover >/dev/null 2>&1; jl=".idleflow/runs/active/tasks/TL/jobs/1"; mkdir -p "$jl"
+sleep 60 & stranger=$!; echo "$stranger" > "$jl/pid"; touch -t "$(date -d @$(( $(date +%s) - 3600 )) +%Y%m%d%H%M 2>/dev/null || date -r $(( $(date +%s) - 3600 )) +%Y%m%d%H%M)" "$jl/pid"
+lrid="$(bash "$RUN" get id)"; bash "$RUN" new after-leftover >/dev/null 2>&1
+check "parking a leftover run never signals a process that only reuses its job's pid" 'kill -0 "$stranger" 2>/dev/null && [ -f ".idleflow/runs/$lrid/tasks/TL/jobs/1/ended" ]'
+kill "$stranger" 2>/dev/null; wait "$stranger" 2>/dev/null; bash "$RUN" finish "done" >/dev/null
+# a job's shell may start well after its started stamp (a large repo's bytecode sweep runs between):
+# finish still stops it, judged by when its pid file was written
+[ ! -f .idleflow/idleflow.conf ] || cp .idleflow/idleflow.conf "$scratch/conf.bak"
+printf 'EXEC_WAIT_SECONDS=1\n' >> .idleflow/idleflow.conf
+bash "$RUN" new late-start >/dev/null 2>&1; w4="$(bash "$RUN" wt add T4 2>/dev/null)"
+bash "$RUN" exec T4 -- sh -c 'sleep 60 & echo "$!" > child.pid; wait' >/dev/null 2> "$scratch/job.err"
+j4="$(sed -n 's/^\[idleflow\] job \([0-9]*\) of T4 started$/\1/p' "$scratch/job.err")"
+echo $(( $(date +%s) - 60 )) > ".idleflow/runs/active/tasks/T4/jobs/$j4/started"
+bash "$RUN" finish "done" >/dev/null 2>&1
+check "finish stops a job whose shell started long after its stamp" '[ -n "$j4" ] && ! kill -0 "$(cat "$w4/child.pid")" 2>/dev/null'
+bash "$RUN" wt rm T4; rm -f .idleflow/idleflow.conf; [ ! -f "$scratch/conf.bak" ] || mv "$scratch/conf.bak" .idleflow/idleflow.conf
+# a leftover run whose job pid names a later process does not stop a resume of another run
+bash "$RUN" new other-run >/dev/null 2>&1; orid="$(bash "$RUN" get id)"; bash "$RUN" finish needs-human >/dev/null 2>&1
+printf '## Tasks\n' > ".idleflow/runs/$orid/plan.md"
+bash "$RUN" new leftover2 >/dev/null 2>&1; lrid2="$(bash "$RUN" get id)"; jl=".idleflow/runs/active/tasks/TL/jobs/1"; mkdir -p "$jl"
+sleep 60 & stranger=$!; echo "$stranger" > "$jl/pid"; touch -t "$(date -d @$(( $(date +%s) - 3600 )) +%Y%m%d%H%M 2>/dev/null || date -r $(( $(date +%s) - 3600 )) +%Y%m%d%H%M)" "$jl/pid"
+bash "$RUN" resume "$orid" >/dev/null 2> "$scratch/resume.err"; rc=$?
+check "a resume parks a leftover run whose job pid names a later process, and never signals it" '[ "$rc" = 0 ] && ! has -F "may still be built" "$scratch/resume.err" && kill -0 "$stranger" 2>/dev/null && [ "$(idleflow_rt get ".idleflow/runs/$lrid2/run.json" status)" = abandoned ]'
+kill "$stranger" 2>/dev/null; wait "$stranger" 2>/dev/null; [ ! -f .idleflow/runs/active/run.json ] || bash "$RUN" finish "done" >/dev/null 2>&1
+# a preview pid that now leads an unrelated group of its own (a shell, a daemon) is never signalled
+bash "$RUN" new leftover3 >/dev/null 2>&1; mkdir -p .idleflow/runs/active/tasks/TP
+idleflow_rt detach "$PWD" /dev/null "$scratch/leader.pid" "sleep 60"; leader="$(cat "$scratch/leader.pid")"
+echo "$leader" > .idleflow/runs/active/tasks/TP/preview.pid
+touch -t "$(date -d @$(( $(date +%s) - 3600 )) +%Y%m%d%H%M 2>/dev/null || date -r $(( $(date +%s) - 3600 )) +%Y%m%d%H%M)" .idleflow/runs/active/tasks/TP/preview.pid
+bash "$RUN" finish "done" >/dev/null 2>&1
+check "finish never signals a group a stale preview pid now leads" 'kill -0 "$leader" 2>/dev/null'
+kill -- "-$leader" 2>/dev/null || kill "$leader" 2>/dev/null
+bash "$RUN" new previewmain >/dev/null 2>&1
 # another repo's live run holds PORT_BASE, so preview main takes the next port, under the owner main
 printf '{"id":"r1","tasks":{"T9":{"port":4402},"T8":{"port":4400}}}\n' > "$o/.idleflow/runs/active/run.json"
 printf '%s\tr1\tT8\n' "$o" > "$utmp/ports/4400"

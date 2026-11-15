@@ -55,7 +55,8 @@
 #   run.sh merge <task-id>                -> merges the task branch into the current branch (no-ff); exit 3 on conflict, 4 otherwise
 #   run.sh ignore <pattern>               -> adds the pattern to the ignore file `ignore_in:` names, prints that file
 #   run.sh snapshot                       -> commits the repo-level docs the orchestrator writes (conventions, CLAUDE.md, prd, ...)
-#   run.sh finish [status]                -> logs the run to .idleflow/runs/log.jsonl, renames active/ to <id>/
+#   run.sh finish [status]                -> ends the run's jobs and previews still running, renames active/ to <id>/, then
+#                                            logs the run to .idleflow/runs/log.jsonl; exit 1, still active, when it cannot move
 #   run.sh loc                            -> prints hand-written code lines in the repo (DIFF_EXCLUDE applied)
 #   run.sh conf                           -> prints resolved config values and the runtime in use
 #   run.sh path <name>                    -> where a record lives here: conventions, lessons, progress, index, sessions, time-log, runs
@@ -536,7 +537,8 @@ allocate_port() { # allocate_port <task-id>
 # each under its lock.
 release_ports() { # release_ports [<task-id>]
   local reg f mine fields=1,2; reg="$(port_registry)" || return 0
-  mine="$(printf '%s\t%s' "$REPO" "$(active_id)")"
+  # PORTS_RUN_ID: the run whose claims go, for a run finish has already moved away
+  mine="$(printf '%s\t%s' "$REPO" "${PORTS_RUN_ID:-$(active_id)}")"
   if [ -n "${1:-}" ]; then mine="$mine"$'\t'"$1"; fields=1-3; fi
   for f in "$reg"/*; do
     case "$f" in *.lock|*.takeover|*.new.*) continue;; esac
@@ -989,16 +991,101 @@ build_excl() {
 }
 
 # Move a leftover active/ aside under its own id so a new run can start.
+file_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0; }
+# Whose process a pid names now, against the moment its pid file was written (the process writes it,
+# or its starter does, right after it starts): `ours` when ps says it started by then, `later` when
+# ps says it started after (a pid kept from a run gone since a reboot is another process's by now),
+# `unknown` when ps cannot say (no such process, or no -o etime, as on Git Bash).
+pid_state() { # pid_state <pid> <pid file>
+  local e a b c d=0 h=0 m=0 s=0
+  e="$(ps -o etime= -p "$1" 2>/dev/null | tr -d ' ' || true)"
+  [ -n "$e" ] || { echo unknown; return 0; }
+  case "$e" in *-*) d="${e%%-*}"; e="${e#*-}";; esac
+  IFS=: read -r a b c <<< "$e"
+  if [ -n "$c" ]; then h="$a"; m="$b"; s="$c"; else m="$a"; s="$b"; fi
+  if [ $(( $(date +%s) - (10#$d * 86400 + 10#$h * 3600 + 10#$m * 60 + 10#$s) )) -le $(( $(file_mtime "$2") + 5 )) ]; then echo ours; else echo later; fi
+}
+# What a run started that still runs when it ends: its jobs and its previews. Each is ended before the
+# run's folder moves, since nothing else would end them, and Windows moves no folder while a process
+# holds a file in it open (their logs are there). A pid that now names a later process is never
+# signalled; for a job that is all that is left of it, so it is marked ended. One ps cannot judge is
+# signalled only with <trust>, for the run that is still the active one; otherwise it is named and
+# left as it is, so `stop` and `preview stop` still find it.
+stop_run_processes() { # stop_run_processes [trust]
+  local jd pf pid st n
+  for jd in "$ACTIVE"/tasks/*/jobs/*/; do
+    [ -d "$jd" ] || continue
+    jd="${jd%/}"; job_ended "$jd" && continue
+    pid="$(job_pid "$jd")"; [ -n "$pid" ] || continue
+    st="$(pid_state "$pid" "$jd/pid")"
+    case "$st" in
+      ours) stop_job "$jd" || true ;;
+      later) : > "$jd/ended" ;;
+      *) if [ -n "${1:-}" ]; then stop_job "$jd" || true; else echo "[idleflow] job $(basename "$jd") in $(native_path "$jd") may still run; nothing could tell, so it was left as it is" >&2; fi ;;
+    esac
+  done
+  for pf in "$ACTIVE"/tasks/*/preview.pid; do
+    [ -f "$pf" ] || continue
+    pid="$(cat "$pf")"
+    [[ "$pid" =~ ^[0-9]+$ ]] || { rm -f "$pf"; continue; }
+    st="$(pid_state "$pid" "$pf")"
+    if [ "$st" = ours ] || { [ "$st" = unknown ] && [ -n "${1:-}" ]; }; then
+      # the group, or the bare pid where there are no process groups (Git Bash)
+      kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+      n=0; while { kill -0 -- "-$pid" 2>/dev/null || kill -0 "$pid" 2>/dev/null; } && [ "$n" -lt 25 ]; do sleep 0.2; n=$((n + 1)); done
+      if kill -0 -- "-$pid" 2>/dev/null || kill -0 "$pid" 2>/dev/null; then
+        kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true; sleep 0.2
+      fi
+    fi
+    # a pid that names a later process is gone for the preview, and so is a group of that number: no
+    # pid is given out while a group of that id still has members, so such a group is the new one's
+    if [ "$st" != later ] && { kill -0 -- "-$pid" 2>/dev/null || kill -0 "$pid" 2>/dev/null; }; then
+      echo "[idleflow] the preview in $(native_path "${pf%/preview.pid}") may still serve; it was left as it is" >&2
+    else
+      rm -f "$pf"
+    fi
+  done
+  return 0
+}
+# A run another session may still be building: one of its jobs or previews still runs. A pid that
+# now names a later process counts as gone, and its stop is never suggested.
+refuse_if_busy() { # refuse_if_busy <what to say first>
+  local jd jn jt pf pt pid
+  for jd in "$ACTIVE"/tasks/*/jobs/*/; do
+    [ -d "$jd" ] || continue
+    jd="${jd%/}"; jn="${jd##*/}"; jt="${jd%/jobs/*}"; jt="${jt##*/}"
+    job_ended "$jd" && continue
+    pid="$(job_pid "$jd")"
+    [ -n "$pid" ] && [ "$(pid_state "$pid" "$jd/pid")" = later ] && continue
+    echo "$1 may still be built by another session: job $jn of $jt still runs. Wait for it, or end it with: bash \"$0\" stop $jt $jn" >&2; exit 1
+  done
+  for pf in "$ACTIVE"/tasks/*/preview.pid; do
+    [ -f "$pf" ] || continue
+    pt="${pf%/preview.pid}"; pt="${pt##*/}"; pid="$(cat "$pf")"
+    [[ "$pid" =~ ^[0-9]+$ ]] || continue
+    [ "$(pid_state "$pid" "$pf")" = later ] && continue
+    if kill -0 -- "-$pid" 2>/dev/null || kill -0 "$pid" 2>/dev/null; then
+      echo "$1 may still be built by another session: the preview of $pt still serves. End it with: bash \"$0\" preview $pt stop" >&2; exit 1
+    fi
+  done
+}
+# the move that ends a run's time as the active one; one that fails leaves the run active, as it was
+move_active() { # move_active <destination> <what failed, for the message>
+  rm -rf "${1:?}"
+  mv "$ACTIVE" "$1" && return 0
+  echo "$2: could not move .idleflow/runs/active to $(native_path "$1"), so the run is still active. A process may still hold a file in it (Windows moves no folder then); end it, then run this again" >&2
+  return 1
+}
 park_active() {
   [ -d "$ACTIVE" ] || return 0
   local old=""
   [ -f "$ACTIVE/run.json" ] && old="$(idleflow_rt get "$ACTIVE/run.json" id 2>/dev/null || true)"
   [ -n "$old" ] && [ "$old" != "null" ] || old="abandoned-$(date +%Y%m%d-%H%M%S)"
-  if [ -f "$ACTIVE/run.json" ]; then
-    idleflow_rt set "$ACTIVE/run.json" status '"abandoned"' || true
+  stop_run_processes
+  move_active "$RUNS/$old" "parking the unfinished run" || exit 1
+  if [ -f "$RUNS/$old/run.json" ]; then
+    idleflow_rt set "$RUNS/$old/run.json" status '"abandoned"' || true
   fi
-  rm -rf "${RUNS:?}/$old"
-  mv "$ACTIVE" "$RUNS/$old"
   echo "parked unfinished run as .idleflow/runs/$old" >&2
 }
 
@@ -1610,22 +1697,10 @@ Task: $tid")
         fi
       done
     done
-    # a run that is the active one may still be built by another session: its jobs and previews hold
-    # those worktrees, so a resume in place waits until none of them runs
-    if [ "$src" = "$ACTIVE" ]; then
-      for jd in "$ACTIVE"/tasks/*/jobs/*/; do
-        [ -d "$jd" ] || continue
-        jd="${jd%/}"; jn="${jd##*/}"; jt="${jd%/jobs/*}"; jt="${jt##*/}"
-        job_ended "$jd" || { echo "resume: run $rid may still be built by another session: job $jn of $jt still runs. Wait for it, or end it with: bash \"$0\" stop $jt $jn" >&2; exit 1; }
-      done
-      for pf in "$ACTIVE"/tasks/*/preview.pid; do
-        [ -f "$pf" ] || continue
-        pt="${pf%/preview.pid}"; pt="${pt##*/}"
-        if kill -0 -- "-$(cat "$pf")" 2>/dev/null || kill -0 "$(cat "$pf")" 2>/dev/null; then
-          echo "resume: run $rid may still be built by another session: the preview of $pt still serves. End it with: bash \"$0\" preview $pt stop" >&2; exit 1
-        fi
-      done
-    fi
+    # the active run may still be built by another session: its jobs and previews hold its worktrees,
+    # so a resume waits until none of them runs, whether it resumes that run or parks it for another
+    if [ "$src" = "$ACTIVE" ]; then refuse_if_busy "resume: run $rid"
+    elif [ -d "$ACTIVE" ]; then refuse_if_busy "resume: the active run, which resuming $rid would park,"; fi
     if [ "$src" != "$ACTIVE" ]; then park_active; mv "$src" "$ACTIVE"; fi
     # this idleflow carries the run on, so it is the version the run records
     idleflow_rt set "$ACTIVE/run.json" plugin_version "$(json_str "$(plugin_version)")"
@@ -1668,15 +1743,18 @@ Task: $tid")
     ;;
   finish)
     status="${1:-done}"; id="$(active_id)"
-    # the tasks' temp folders and port claims go with the run, and so does a preview of main still
-    # serving, since its port is given back here
-    mp="$ACTIVE/tasks/main/preview.pid"
-    if [ -f "$mp" ]; then pid="$(cat "$mp")"; kill -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true; rm -f "$mp"; fi
-    release_ports
-    if rt="$(run_tmp)"; then rm -rf "$rt"; fi
-    idleflow_rt finish "$ACTIVE/run.json" "$status" "$RUNS/log.jsonl"
-    rm -rf "${RUNS:?}/$id"
-    mv "$ACTIVE" "$RUNS/$id"
+    # the run's jobs and previews end with it, then its temp folders and port claims go. It is logged
+    # as finished only once its folder has moved, so a finish that cannot move it leaves no record
+    # and can be run again
+    stop_run_processes trust
+    rt="$(run_tmp)" || rt=""
+    move_active "$RUNS/$id" finish || exit 1
+    PORTS_RUN_ID="$id" release_ports
+    [ -z "$rt" ] || rm -rf "$rt"
+    if ! idleflow_rt finish "$RUNS/$id/run.json" "$status" "$RUNS/log.jsonl"; then
+      echo "finish: run $id moved to $(native_path "$RUNS/$id"), but recording its end failed; set its status there and add its line to $(native_path "$RUNS/log.jsonl") by hand" >&2
+      exit 1
+    fi
     echo "run $id finished: $status"
     ;;
   loc)
