@@ -633,6 +633,29 @@ bash "$RUN" exec TA -- sh -c 'sleep 60 & echo "$!" > child.pid; wait' >/dev/null
 job="$(sed -n 's/^\[idleflow\] job \([0-9]*\) of TA started$/\1/p' "$scratch/job.err")"
 bash "$RUN" stop TA "$job" >/dev/null
 check "stop ends the job and the processes it started" '! kill -0 "$(cat "$wa/child.pid")" 2>/dev/null && ! bash "$RUN" wait TA "$job" >/dev/null 2>&1'
+# a native program the job starts (a test runner's worker; on Git Bash, python.exe or node.exe is not a
+# Git Bash process) is stopped with it: it writes a heartbeat, which must change before the stop and not
+# after. It is the runtime in use, so each runtime's leg proves its own program, and it ends itself after
+# 60 s, so one that survives a failed stop does not outlive the suite. A failure prints all four readings.
+rt_bin="$(idleflow_rt_name)"; rt_bin="${rt_bin%% (*}"
+case "${rt_bin//\\//}" in
+  node|*/node|*/node.exe|node.exe)
+    beat_args=("$rt_bin" -e 'const f=require("fs");setInterval(()=>f.writeFileSync("beat",String(Date.now())),100);setTimeout(()=>process.exit(),60000)') ;;
+  *) beat_args=("$rt_bin" -c 'import time
+t0 = time.time()
+while time.time() - t0 < 60:
+    open("beat", "w").write(str(time.time())); time.sleep(0.1)') ;;
+esac
+rm -f "$wa/beat"
+bash "$RUN" exec TA -- sh -c '"$@" & wait' sh "${beat_args[@]}" >/dev/null 2> "$scratch/job.err"
+job="$(sed -n 's/^\[idleflow\] job \([0-9]*\) of TA started$/\1/p' "$scratch/job.err")"
+# a read can land while the file is being rewritten, and then it is empty
+b1=""; for _ in $(seq 1 40); do b1="$(cat "$wa/beat" 2>/dev/null)"; [ -n "$b1" ] && break; sleep 0.25; done
+sleep 1; b2="$(cat "$wa/beat" 2>/dev/null)"
+bash "$RUN" stop TA "$job" >/dev/null
+sleep 0.5; b3="$(cat "$wa/beat" 2>/dev/null)"; sleep 1; b4="$(cat "$wa/beat" 2>/dev/null)"
+check "stop ends a native program the job started" '[ -n "$b1" ] && [ "$b1" != "$b2" ] && [ "$b3" = "$b4" ]'
+rm -f "$wa/beat"
 # A job that outlives its limit, for the checks below of what happens after exec returns. Its number
 # comes from exec's "started" line, printed before anything else. Those checks need exec back before
 # the deadline (75): on a busy machine exec can return past a short limit, having stopped the job
