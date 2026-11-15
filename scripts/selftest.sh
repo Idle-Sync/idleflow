@@ -1373,6 +1373,7 @@ check "generated_docs: none keeps no file"    '[ "$(cd "$f" && bash "$RUN" docs)
 rm -rf "$f"
 
 echo "--- prompt contracts"
+check "a run without a gate tells its implementers and reviewers so" 'grep -q "and \`Repo gate: none\` when it has none (\`bash \"\$RUN\" get gate\` is empty; under \`gate_runs: once\`, the line that paragraph names)" "$HERE/../commands/feature.md" && grep -q "\`review-correct\` also gets \`Repo gate: <command>\` when the run has a gate and \`Repo gate: none\` when it has none" "$HERE/../commands/feature.md" && grep -q "write \`gate: none\` in the report and go by the task" "$HERE/../agents/implementer.md" && grep -q "write \`gate: none\` in the report and go by the task" "$HERE/../agents/implementer-hard.md" && grep -q "record \`- repo gate — none\` under \`checks_run:\`, never under \`unverified:\`" "$HERE/../agents/review-correct.md" && grep -q "or \`Repo gate: none (the full gate runs once, after the merge)\` when it is empty" "$HERE/../commands/feature.md"'
 researcher="$HERE/../agents/stack-researcher.md"
 advisor="$HERE/../agents/stack-advisor.md"
 setup="$HERE/../procedures/repo-setup.md"
