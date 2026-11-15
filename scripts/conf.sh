@@ -46,6 +46,7 @@ idleflow_conf_valid() {
     DEBATE_ROUNDS) _idleflow_number_in "$2" 1 2 ;;
     MAX_RETRIES) _idleflow_number_in "$2" 0 3 ;;
     SLOW_GATE_SECONDS) _idleflow_number_in "$2" 1 86400 ;;
+    SERVICES_START_SECONDS) _idleflow_number_in "$2" 1 300 ;;
     PORT_BASE) _idleflow_number_in "$2" 1024 65000 ;;
     EXEC_WAIT_SECONDS) _idleflow_number_in "$2" 1 110 ;;
     CI_EVIDENCE_MINUTES) _idleflow_number_in "$2" 1 720 ;;

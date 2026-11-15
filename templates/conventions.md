@@ -113,7 +113,7 @@ words). Internal ids (T2, R3, C1) are never shown on their own in any tone.
 ## Repo fit
 
 How idleflow fits a repo that already has its own rules. Unset or missing lines keep idleflow's
-defaults. A command here (`worktree_setup`, `gate`, `services`) runs only as committed, and only after each
+defaults. A command here (`worktree_setup`, `gate`, `services`, `services_start`) runs only as committed, and only after each
 person approved that exact text on their own clone (`run.sh approve <key>`, kept in local git
 config); a changed command is asked about again. `unset` means nobody has decided yet, so setup and
 the end of a run may propose one; `none` means the repo has decided to go without.
@@ -128,6 +128,7 @@ preview: unset
 preview_url: unset
 preview_in: worktree
 services: unset
+services_start: unset
 
 - `worktrees_in`: `sibling` puts task worktrees next to the repo (`<repo>__wt/<task>`); `inside` puts
   them in `.idleflow/worktrees/` (ignored), for projects that must not write outside their own folder.
@@ -155,6 +156,11 @@ services: unset
   the main checkout before the gate's baseline and before each group's build and review, so a service
   that is down stops the run with a question instead of reaching an agent as a failed test. It checks;
   it never starts anything. Same approval rule as `gate`.
+- `services_start`: one shell command that starts those services and returns once they are starting
+  (`docker compose up -d db cache`, `pg_ctl -D .pg -l .pg/log start`), never one that stays in the
+  foreground. When the check fails, the run asks before running it, runs it once from the main checkout,
+  then checks again for up to `SERVICES_START_SECONDS`. The run never stops what it started, since other
+  sessions on the machine may be using it; its final message says what it started. Same approval rule as `gate`.
 - `preview_in`: `worktree` serves each task's worktree before review; `main` is for an app that runs only
   from the main checkout (a dev stack whose containers mount it): the screens are then checked once,
   from the main checkout, after the last merge, and the plan writes a browser criterion as

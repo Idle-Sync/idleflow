@@ -256,7 +256,7 @@ check "the kill guard gives up on a run of 99999 '(' within its time" "[ $kg_rc 
 check "the kill guard is a Bash hook" 'grep -q "kill-guard.sh" "$HERE/../hooks/hooks.json" && idleflow_rt get "$HERE/../hooks/hooks.json" hooks.PreToolUse | has "\"matcher\":\"Bash\""'
 check "every agent that runs commands has the process rule" '( for a in "$HERE"/../agents/*.md; do case "$a" in */classifier.md) continue;; esac; grep -q "Never end processes by name or pattern" "$a" || exit 1; done )'
 check "debate round 2 runs red first, then cost answers it" 'grep -q "a second miss stops the run), \`idleflow:cost-critic\` → \`debate/round-2-cost.md\`, with the round-1 inputs, \`round-1-red.md\` and \`round-2-red.md\`" "$HERE/../commands/feature.md" && grep -q "round-1 and round-2 files (round 2 runs after the red team" "$HERE/../agents/cost-critic.md" && grep -q "round 2 runs before the cost critic" "$HERE/../agents/red-team.md" && ! grep -q "Round 2, both in parallel" "$HERE/../commands/feature.md" && grep -q "cuts their round-2 file objected to" "$HERE/../agents/cost-critic.md" && ! grep -q "drop any the cost critic answered" "$HERE/../agents/red-team.md" && grep -q "drop any finding made moot by a cut you did not object to" "$HERE/../agents/red-team.md"'
-check "tests that use changed code reach the plan's ownership" 'grep -q "grep the whole test tree" "$HERE/../agents/explorer.md" && grep -q "Other tests using what changes" "$HERE/../templates/context.md" && grep -q "each test, fake or fixture context.md §4 lists as using a symbol the task alters goes in that task" "$HERE/../agents/planner.md"'
+check "tests that use changed code reach the plan's ownership" 'grep -q "grep the whole test tree" "$HERE/../agents/explorer.md" && grep -q "Other tests using what changes" "$HERE/../templates/context.md" && grep -q "each test, fake or fixture context.md §4 lists as using a symbol the task alters goes in that task" "$HERE/../agents/planner.md" && grep -q "every app'"'"'s and package'"'"'s in a monorepo" "$HERE/../agents/explorer.md" && grep -q "Then grep every app'"'"'s and package'"'"'s code outside the tests the same way for each type the change may alter" "$HERE/../agents/explorer.md" && grep -q "the §4 lists of tests and code that use or build what changes" "$HERE/../agents/explorer.md" && grep -q "^- Code outside the tests that builds what changes:" "$HERE/../templates/context.md" && grep -q "and so does each file §4 lists as building a value of a type the task alters" "$HERE/../agents/planner.md" && grep -q "grep every app and package, tests and code alike, for values of that type" "$HERE/../agents/planner.md" && grep -q "even when §4 lists some" "$HERE/../agents/planner.md" && grep -q "and put each file found in that task'"'"'s \`owns:\`" "$HERE/../agents/planner.md"'
 check "the session template and CLAUDE.md block follow a relocated sessions folder" 'grep -q "path progress|index|sessions\`)" "$HERE/../commands/feature.md" && grep -q "the sessions folder," "$HERE/../agents/retro.md" && grep -q "\`TEMPLATE.md\` in the sessions folder your prompt names" "$HERE/../agents/retro.md" && ! grep -q "fill \`docs/sessions/TEMPLATE.md\`" "$HERE/../agents/retro.md" && grep -q "repo-relative paths \`bash \"\$RUN\" path --relative progress|index|sessions\`" "$HERE/../procedures/repo-setup.md" && grep -q "the sessions folder (\`bash \"\$RUN\" path sessions\`), \`.idleflow/conventions.md\`" "$HERE/../commands/feature.md"'
 check "only Claude Code configuration under .claude/ is protected, and the planner knows the list" 'for f in agents/planner.md commands/feature.md; do grep -q "\`.claude/settings.json\`, \`.claude/settings.local.json\`, \`.claude/agents/\`" "$HERE/../$f" || exit 1; done && ! grep -q "under \`.idleflow/\` or \`.claude/\`" "$HERE/../commands/feature.md" && grep -q "tracked skills and commands" "$HERE/../agents/planner.md"'
 check "doc-keeper's Bash write ban leaves its gaps.md append allowed" 'grep -q "never change a doc or any other tracked file through Bash" "$HERE/../agents/doc-keeper.md" && grep -q "The one write Bash may make is the single-line append to the run.s \`gaps.md\`" "$HERE/../agents/doc-keeper.md" && ! grep -q "never write a file through Bash" "$HERE/../agents/doc-keeper.md"'
@@ -774,12 +774,38 @@ out="$(bash "$RUN" services 2>&1)"; rc=$?
 check "a service that is down stops with exit 1 and says how to check again" '[ "$rc" = 1 ] && echo "$out" | has "repo services: the check failed (exit 1)" && echo "$out" | has "services$"'
 touch .service-up
 check "services that are up pass, and the check runs from the main checkout" '[ "$(bash "$RUN" services 2>/dev/null)" = "repo services: up" ] && grep -qx db-up .idleflow/runs/active/services.log'
-rm -f .service-up; bash "$RUN" finish "done" >/dev/null; git config --local --unset idleflow.approved-services
+rm -f .service-up; bash "$RUN" finish "done" >/dev/null
+# the human's Start them: the approved services_start runs once, then the check again while they come up
+svc_start='test -z "${SVC_FAIL:-}" && touch "$MAIN/.service-up"'
+printf 'services_start: %s\n' "$svc_start" >> .idleflow/conventions.md
+git add .idleflow/conventions.md && commit -q -m "services start"
+[ ! -f .idleflow/idleflow.conf ] || cp .idleflow/idleflow.conf "$scratch/conf.bak"
+printf 'SERVICES_START_SECONDS=1\n' >> .idleflow/idleflow.conf
+bash "$RUN" new services-start >/dev/null 2>&1
+check "an unapproved services_start never runs (exit 7)" 'bash "$RUN" services start >/dev/null 2>&1; [ $? = 7 ] && [ ! -e .service-up ] && [ -z "$(bash "$RUN" get services_started 2>/dev/null)" ]'
+bash "$RUN" approve services_start >/dev/null
+out="$(bash "$RUN" services start 2>&1)"; rc=$?
+check "services start runs the approved command from the main checkout, checks again, and records what it ran" '[ "$rc" = 0 ] && [ -f .service-up ] && [ "$(echo "$out" | tail -n 1)" = "repo services: up" ] && [ "$(bash "$RUN" get services_started)" = "$svc_start" ]'
+rm -f .service-up; mkdir .service-up
+out="$(bash "$RUN" services start 2>&1)"; rc=$?
+check "services still down after services_start are unavailable here (exit 1)" '[ "$rc" = 1 ] && echo "$out" | has -F "still down 1 s after services_start" && echo "$out" | has -F "unavailable here"'
+rmdir .service-up
+bash "$RUN" set services_started '""'
+out="$(SVC_FAIL=1 bash "$RUN" services start 2>&1)"; rc=$?
+check "a services_start that fails is unavailable here too, and is recorded as run" '[ "$rc" = 1 ] && echo "$out" | has -F "services_start failed (exit 1)" && [ ! -e .service-up ] && [ "$(bash "$RUN" get services_started)" = "$svc_start" ]'
+touch .service-up
+check "services refuses an argument it does not know, and runs nothing" 'bash "$RUN" services stop >/dev/null 2> "$scratch/svc.err"; [ $? = 1 ] && has -F "usage: run.sh services [start]" "$scratch/svc.err"'
+rm -f .service-up
+bash "$RUN" skip services_start >/dev/null
+check "a run without services_start says to start them by hand" 'bash "$RUN" services start 2> "$scratch/svc.err" >/dev/null; [ $? = 1 ] && has -F "has no services_start command" "$scratch/svc.err"'
+bash "$RUN" finish "done" >/dev/null
+rm -f .idleflow/idleflow.conf; [ ! -f "$scratch/conf.bak" ] || mv "$scratch/conf.bak" .idleflow/idleflow.conf
+git config --local --unset idleflow.approved-services; git config --local --unset idleflow.approved-services-start
 cp "$d-svc.bak" .idleflow/conventions.md && rm -f "$d-svc.bak"; git add .idleflow/conventions.md && commit -q -m "no services"
 bash "$RUN" new services-none >/dev/null 2>&1
 check "a repo without a services check passes with none" '[ "$(bash "$RUN" services)" = "repo services: none" ]'
 bash "$RUN" finish "done" >/dev/null
-check "the run checks services before the baseline, each build and review, and the gate after merge" 'grep -q "^\*\*The services the tests need.\*\* When" "$HERE/../commands/feature.md" && grep -q "before the gate and verification after the last merge (step 8)" "$HERE/../commands/feature.md" && grep -q "run the services check (step 0), then \`bash \"\$RUN\" repo-gate main\`" "$HERE/../commands/feature.md" && grep -q "^services: unset$" "$HERE/../templates/conventions.md"'
+check "the run checks services before the baseline, each build and review, and the gate after merge" 'grep -q "^\*\*The services the tests need.\*\* When" "$HERE/../commands/feature.md" && grep -q "before the gate and verification after the last merge (step 8)" "$HERE/../commands/feature.md" && grep -q "run the services check (step 0), then \`bash \"\$RUN\" repo-gate main\`" "$HERE/../commands/feature.md" && grep -q "^services: unset$" "$HERE/../templates/conventions.md" && grep -q "^services_start: unset$" "$HERE/../templates/conventions.md" && grep -q "the question also offers \*\*Start them\*\*, first: \`bash \"\$RUN\" services start\`" "$HERE/../commands/feature.md" && grep -q "never stop what \`services start\` started" "$HERE/../commands/feature.md" && grep -q "When \`services_started\` was not empty, one line" "$HERE/../commands/feature.md" && grep -q "what \`bash \"\$RUN\" get services_started\` prints (step 0" "$HERE/../commands/feature.md" && grep -q "every message that ends the run says the run ran it" "$HERE/../commands/feature.md" && grep -q "^SERVICES_START_SECONDS=60$" "$HERE/../config/idleflow.conf" && grep -q "^| \`services_start: <command>\` |" "$HERE/../README.md"'
 
 echo "--- CI evidence for a blocked task"
 # gh is a fake that answers from files, as gh would after its --jq filter: the run ids, each run's
@@ -936,7 +962,57 @@ printf 'preview_in: main\n' >> .idleflow/conventions.md
 check "under preview_in: main a task preview is refused" '! bash "$RUN" preview T2 start >/dev/null 2>&1 && [ ! -f .idleflow/runs/active/tasks/T2/preview.pid ]'
 sed -i.bak 's#^preview: .*#preview: pwd > "$IDLEFLOW_TMP/where"; sleep 30#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
 git add .idleflow/conventions.md && commit -q -m "preview from main"; bash "$RUN" approve preview >/dev/null
-bash "$RUN" wt rm T2; bash "$RUN" finish done >/dev/null; bash "$RUN" new previewmain >/dev/null 2>&1
+# a job still running and a task preview still serving end with the run, before its folder moves
+[ ! -f .idleflow/idleflow.conf ] || cp .idleflow/idleflow.conf "$scratch/conf.bak"
+printf 'EXEC_WAIT_SECONDS=1\n' >> .idleflow/idleflow.conf
+# a task preview still serving, as preview starts one: in a session of its own
+idleflow_rt detach "$PWD" /dev/null .idleflow/runs/active/tasks/T2/preview.pid "sleep 60"; tpid="$(cat .idleflow/runs/active/tasks/T2/preview.pid 2>/dev/null)"
+w3="$(bash "$RUN" wt add T3 2>/dev/null)"; bash "$RUN" exec T3 -- sh -c 'sleep 60 & echo "$!" > child.pid; wait' >/dev/null 2>&1
+prid="$(bash "$RUN" get id)"; logn="$(wc -l < .idleflow/runs/log.jsonl)"
+if [ "$(id -u)" != 0 ] && case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) false;; *) true;; esac; then
+  chmod a-w .idleflow/runs
+  bash "$RUN" finish "done" >/dev/null 2> "$scratch/fin.err"; rc=$?
+  chmod u+w .idleflow/runs
+  check "a finish that cannot move the run leaves it active, unlogged, and says so" '[ "$rc" = 1 ] && [ -f .idleflow/runs/active/run.json ] && [ "$(wc -l < .idleflow/runs/log.jsonl)" = "$logn" ] && has -F "so the run is still active" "$scratch/fin.err"'
+fi
+bash "$RUN" wt rm T2; bash "$RUN" finish "done" >/dev/null
+check "finish ends the run's jobs and task previews, then moves and logs the run" '[ -n "$tpid" ] && ! kill -0 "$tpid" 2>/dev/null && ! kill -0 "$(cat "$w3/child.pid")" 2>/dev/null && [ "$(idleflow_rt get ".idleflow/runs/$prid/run.json" status)" = done ] && [ ! -e .idleflow/runs/active ] && [ "$(wc -l < .idleflow/runs/log.jsonl)" = $(( logn + 1 )) ]'
+bash "$RUN" wt rm T3; rm -f .idleflow/idleflow.conf; [ ! -f "$scratch/conf.bak" ] || mv "$scratch/conf.bak" .idleflow/idleflow.conf
+# a leftover run whose job pid now names a process that started after it (pids are reused after a
+# reboot) is parked without signalling that process
+bash "$RUN" new leftover >/dev/null 2>&1; jl=".idleflow/runs/active/tasks/TL/jobs/1"; mkdir -p "$jl"
+sleep 60 & stranger=$!; echo "$stranger" > "$jl/pid"; touch -t "$(date -d @$(( $(date +%s) - 3600 )) +%Y%m%d%H%M 2>/dev/null || date -r $(( $(date +%s) - 3600 )) +%Y%m%d%H%M)" "$jl/pid"
+lrid="$(bash "$RUN" get id)"; bash "$RUN" new after-leftover >/dev/null 2>&1
+check "parking a leftover run never signals a process that only reuses its job's pid" 'kill -0 "$stranger" 2>/dev/null && [ -f ".idleflow/runs/$lrid/tasks/TL/jobs/1/ended" ]'
+kill "$stranger" 2>/dev/null; wait "$stranger" 2>/dev/null; bash "$RUN" finish "done" >/dev/null
+# a job's shell may start well after its started stamp (a large repo's bytecode sweep runs between):
+# finish still stops it, judged by when its pid file was written
+[ ! -f .idleflow/idleflow.conf ] || cp .idleflow/idleflow.conf "$scratch/conf.bak"
+printf 'EXEC_WAIT_SECONDS=1\n' >> .idleflow/idleflow.conf
+bash "$RUN" new late-start >/dev/null 2>&1; w4="$(bash "$RUN" wt add T4 2>/dev/null)"
+bash "$RUN" exec T4 -- sh -c 'sleep 60 & echo "$!" > child.pid; wait' >/dev/null 2> "$scratch/job.err"
+j4="$(sed -n 's/^\[idleflow\] job \([0-9]*\) of T4 started$/\1/p' "$scratch/job.err")"
+echo $(( $(date +%s) - 60 )) > ".idleflow/runs/active/tasks/T4/jobs/$j4/started"
+bash "$RUN" finish "done" >/dev/null 2>&1
+check "finish stops a job whose shell started long after its stamp" '[ -n "$j4" ] && ! kill -0 "$(cat "$w4/child.pid")" 2>/dev/null'
+bash "$RUN" wt rm T4; rm -f .idleflow/idleflow.conf; [ ! -f "$scratch/conf.bak" ] || mv "$scratch/conf.bak" .idleflow/idleflow.conf
+# a leftover run whose job pid names a later process does not stop a resume of another run
+bash "$RUN" new other-run >/dev/null 2>&1; orid="$(bash "$RUN" get id)"; bash "$RUN" finish needs-human >/dev/null 2>&1
+printf '## Tasks\n' > ".idleflow/runs/$orid/plan.md"
+bash "$RUN" new leftover2 >/dev/null 2>&1; lrid2="$(bash "$RUN" get id)"; jl=".idleflow/runs/active/tasks/TL/jobs/1"; mkdir -p "$jl"
+sleep 60 & stranger=$!; echo "$stranger" > "$jl/pid"; touch -t "$(date -d @$(( $(date +%s) - 3600 )) +%Y%m%d%H%M 2>/dev/null || date -r $(( $(date +%s) - 3600 )) +%Y%m%d%H%M)" "$jl/pid"
+bash "$RUN" resume "$orid" >/dev/null 2> "$scratch/resume.err"; rc=$?
+check "a resume parks a leftover run whose job pid names a later process, and never signals it" '[ "$rc" = 0 ] && ! has -F "may still be built" "$scratch/resume.err" && kill -0 "$stranger" 2>/dev/null && [ "$(idleflow_rt get ".idleflow/runs/$lrid2/run.json" status)" = abandoned ]'
+kill "$stranger" 2>/dev/null; wait "$stranger" 2>/dev/null; [ ! -f .idleflow/runs/active/run.json ] || bash "$RUN" finish "done" >/dev/null 2>&1
+# a preview pid that now leads an unrelated group of its own (a shell, a daemon) is never signalled
+bash "$RUN" new leftover3 >/dev/null 2>&1; mkdir -p .idleflow/runs/active/tasks/TP
+idleflow_rt detach "$PWD" /dev/null "$scratch/leader.pid" "sleep 60"; leader="$(cat "$scratch/leader.pid")"
+echo "$leader" > .idleflow/runs/active/tasks/TP/preview.pid
+touch -t "$(date -d @$(( $(date +%s) - 3600 )) +%Y%m%d%H%M 2>/dev/null || date -r $(( $(date +%s) - 3600 )) +%Y%m%d%H%M)" .idleflow/runs/active/tasks/TP/preview.pid
+bash "$RUN" finish "done" >/dev/null 2>&1
+check "finish never signals a group a stale preview pid now leads" 'kill -0 "$leader" 2>/dev/null'
+kill -- "-$leader" 2>/dev/null || kill "$leader" 2>/dev/null
+bash "$RUN" new previewmain >/dev/null 2>&1
 # another repo's live run holds PORT_BASE, so preview main takes the next port, under the owner main
 printf '{"id":"r1","tasks":{"T9":{"port":4402},"T8":{"port":4400}}}\n' > "$o/.idleflow/runs/active/run.json"
 printf '%s\tr1\tT8\n' "$o" > "$utmp/ports/4400"
@@ -1428,6 +1504,7 @@ check "generated_docs: none keeps no file"    '[ "$(cd "$f" && bash "$RUN" docs)
 rm -rf "$f"
 
 echo "--- prompt contracts"
+check "a run without a gate tells its implementers and reviewers so" 'grep -q "and \`Repo gate: none\` when it has none (\`bash \"\$RUN\" get gate\` is empty; under \`gate_runs: once\`, the line that paragraph names)" "$HERE/../commands/feature.md" && grep -q "\`review-correct\` also gets \`Repo gate: <command>\` when the run has a gate and \`Repo gate: none\` when it has none" "$HERE/../commands/feature.md" && grep -q "write \`gate: none\` in the report and go by the task" "$HERE/../agents/implementer.md" && grep -q "write \`gate: none\` in the report and go by the task" "$HERE/../agents/implementer-hard.md" && grep -q "record \`- repo gate — none\` under \`checks_run:\`, never under \`unverified:\`" "$HERE/../agents/review-correct.md" && grep -q "or \`Repo gate: none (the full gate runs once, after the merge)\` when it is empty" "$HERE/../commands/feature.md"'
 researcher="$HERE/../agents/stack-researcher.md"
 advisor="$HERE/../agents/stack-advisor.md"
 setup="$HERE/../procedures/repo-setup.md"
