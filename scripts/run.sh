@@ -5,6 +5,9 @@
 #   run.sh new <slug>                     -> creates .idleflow/runs/active/ for a new run, prints its <id>
 #   run.sh services                       -> runs the approved `services:` check (the database, cache or queue the
 #                                            repo's tests need); exit 1 and its last lines when one is down, 7 unapproved
+#   run.sh services start                 -> runs the approved `services_start:` command once, from the main checkout, then
+#                                            the check again for up to SERVICES_START_SECONDS while they come up; exit 1 when
+#                                            they are still down (unavailable here), 7 unapproved. Records what it ran
 #   run.sh resume <run-id>                -> makes a stopped run active again from its locked plan: its merged tasks
 #                                            stay merged, every other task starts afresh from the branch as it is now
 #   run.sh wt add <task-id> [base-ref]    -> creates the task's worktree and branch, records its base sha, runs the approved
@@ -15,7 +18,8 @@
 #   run.sh wt rm <task-id>                -> removes the worktree (keeps the branch); works with or without an active run
 #   run.sh wt list                        -> lists idleflow worktrees
 #   run.sh own <task-id> '<globs json>'   -> registers file ownership for the guard hook
-#   run.sh skip <key>                     -> this run goes without a repo command (gate, gate_quick, worktree_setup, preview, services)
+#   run.sh skip <key>                     -> this run goes without a repo command (gate, gate_quick, worktree_setup, preview, services,
+#                                            services_start)
 #   run.sh unowned <task-id>              -> paths the task's commits change (base..HEAD, what merges) that its globs,
 #                                            .idleflow-run/** and shared_files do not cover; matched as the guard matches
 #   run.sh exec <task-id> [--limit <s>] -- <command...> -> runs a command in the task's worktree with its own port
@@ -383,7 +387,7 @@ gen_runs() { # the last ten idleflow runs merged here, newest first: merge commi
 gen_settings() {
   local k v
   for k in mode docs lessons_in progress_file index_file index_rewrite sessions_dir session_names time_log shared_files generated_docs \
-           worktrees_in worktree_setup commit_format gate gate_quick gate_runs preview preview_url preview_in services language tone; do
+           worktrees_in worktree_setup commit_format gate gate_quick gate_runs preview preview_url preview_in services services_start language tone; do
     v="$(conventions_value "$k")"; [ -n "$v" ] && echo "- \`$k\`: $(md_code "$v")"
   done
   [ -f "$PROJECT_CONF" ] && bash "$0" custom list 2>/dev/null | grep -v '^instructions:\|^replaced:' | sed 's/^/- `/; s/=/`: /'
@@ -414,7 +418,7 @@ wt_path() {
 
 # Repo commands come from whoever pushed the repo: they run only as committed at HEAD, and only once
 # this person approved that exact text (a hash in local git config; any change asks again).
-REPO_COMMANDS="worktree_setup gate gate_quick preview services"
+REPO_COMMANDS="worktree_setup gate gate_quick preview services services_start"
 repo_command() { # the committed value of a command key, empty when unset
   local v
   v="$({ "${G[@]}" show "HEAD:.idleflow/conventions.md" 2>/dev/null || true; } | sed -n "s/^$1: *//p" | head -1 | tr -d '\r' | sed 's/ *$//')"
@@ -1925,11 +1929,39 @@ Task: $tid")
   services)
     # The services the repo's tests need (a database, a cache, a queue), checked before agents run tests,
     # so a service that is down is a question for the human and never a test failure an agent reads.
+    case "${1:-}" in ""|start) ;; *) echo "usage: run.sh services [start]" >&2; exit 1;; esac
     active_id >/dev/null
     cmd="$(idleflow_rt get "$ACTIVE/run.json" services 2>/dev/null || true)"
     case "$cmd" in ""|null) echo "repo services: none"; exit 0;; esac
     command_approved services "$cmd" || { echo "services is not approved on this clone; nothing ran. The command is: $cmd" >&2; exit 7; }
     log="$ACTIVE/services.log"; rc=0
+    if [ "${1:-}" = start ]; then
+      # The human's yes starts them, once, from the main checkout. Nothing here ever stops them:
+      # other sessions on this machine may be using what it started.
+      start="$(idleflow_rt get "$ACTIVE/run.json" services_start 2>/dev/null || true)"
+      case "$start" in ""|null) echo "services start: the repo has no services_start command; start them by hand, then check again: bash \"$0\" services" >&2; exit 1;; esac
+      command_approved services_start "$start" || { echo "services_start is not approved on this clone; nothing ran. The command is: $start" >&2; exit 7; }
+      slog="$ACTIVE/services-start.log"; src=0
+      # recorded first: a start stopped part way (by the Bash tool's time limit) may still have started some
+      idleflow_rt set "$ACTIVE/run.json" services_started "$(json_str "$start")"
+      ( cd "$REPO" && without_agent_markers && MAIN="$REPO" bash -c "$start" ) < /dev/null > "$slog" 2>&1 || src=$?
+      if [ "$src" != 0 ]; then
+        tail -n 20 "$slog"
+        echo "repo services: services_start failed (exit $src), so they are unavailable here; its output is in $(native_path "$slog")" >&2
+        exit 1
+      fi
+      # a service started in the background takes a moment to accept connections
+      until_t=$(( $(date +%s) + ${SERVICES_START_SECONDS:-60} ))
+      while :; do
+        rc=0; ( cd "$REPO" && without_agent_markers && MAIN="$REPO" bash -c "$cmd" ) > "$log" 2>&1 || rc=$?
+        if [ "$rc" = 0 ]; then echo "repo services: up"; exit 0; fi
+        [ "$(date +%s)" -lt "$until_t" ] || break
+        sleep 2
+      done
+      tail -n 20 "$log"
+      echo "repo services: still down ${SERVICES_START_SECONDS:-60} s after services_start (the check exits $rc), so they are unavailable here" >&2
+      exit 1
+    fi
     ( cd "$REPO" && without_agent_markers && MAIN="$REPO" bash -c "$cmd" ) > "$log" 2>&1 || rc=$?
     if [ "$rc" = 0 ]; then echo "repo services: up"; exit 0; fi
     tail -n 20 "$log"
@@ -2295,7 +2327,7 @@ Task: $tid")
     fi
     ;;
   conf)
-    for v in DIFF_LIMIT DIFF_SLACK MAX_IMPLEMENTERS SIZE_M_IMPLEMENTERS DEBATE_ROUNDS MAX_RETRIES SIZE_S_MAX SIZE_M_MAX SIZE_S_OVERRUN LARGE_REPO_LOC STEP_DEBATE STEP_STACK STEP_LIBRARIES STEP_TOOLING STEP_DOC_KEEPER STEP_MUTATION STEP_DESIGN STEP_DESIGN_OPTIONS SLOW_GATE_SECONDS PORT_BASE; do
+    for v in DIFF_LIMIT DIFF_SLACK MAX_IMPLEMENTERS SIZE_M_IMPLEMENTERS DEBATE_ROUNDS MAX_RETRIES SIZE_S_MAX SIZE_M_MAX SIZE_S_OVERRUN LARGE_REPO_LOC STEP_DEBATE STEP_STACK STEP_LIBRARIES STEP_TOOLING STEP_DOC_KEEPER STEP_MUTATION STEP_DESIGN STEP_DESIGN_OPTIONS SLOW_GATE_SECONDS SERVICES_START_SECONDS PORT_BASE; do
       echo "$v=${!v:-}"
     done
     echo "RUNTIME=$(idleflow_rt_name)"

@@ -774,12 +774,38 @@ out="$(bash "$RUN" services 2>&1)"; rc=$?
 check "a service that is down stops with exit 1 and says how to check again" '[ "$rc" = 1 ] && echo "$out" | has "repo services: the check failed (exit 1)" && echo "$out" | has "services$"'
 touch .service-up
 check "services that are up pass, and the check runs from the main checkout" '[ "$(bash "$RUN" services 2>/dev/null)" = "repo services: up" ] && grep -qx db-up .idleflow/runs/active/services.log'
-rm -f .service-up; bash "$RUN" finish "done" >/dev/null; git config --local --unset idleflow.approved-services
+rm -f .service-up; bash "$RUN" finish "done" >/dev/null
+# the human's Start them: the approved services_start runs once, then the check again while they come up
+svc_start='test -z "${SVC_FAIL:-}" && touch "$MAIN/.service-up"'
+printf 'services_start: %s\n' "$svc_start" >> .idleflow/conventions.md
+git add .idleflow/conventions.md && commit -q -m "services start"
+[ ! -f .idleflow/idleflow.conf ] || cp .idleflow/idleflow.conf "$scratch/conf.bak"
+printf 'SERVICES_START_SECONDS=1\n' >> .idleflow/idleflow.conf
+bash "$RUN" new services-start >/dev/null 2>&1
+check "an unapproved services_start never runs (exit 7)" 'bash "$RUN" services start >/dev/null 2>&1; [ $? = 7 ] && [ ! -e .service-up ] && [ -z "$(bash "$RUN" get services_started 2>/dev/null)" ]'
+bash "$RUN" approve services_start >/dev/null
+out="$(bash "$RUN" services start 2>&1)"; rc=$?
+check "services start runs the approved command from the main checkout, checks again, and records what it ran" '[ "$rc" = 0 ] && [ -f .service-up ] && [ "$(echo "$out" | tail -n 1)" = "repo services: up" ] && [ "$(bash "$RUN" get services_started)" = "$svc_start" ]'
+rm -f .service-up; mkdir .service-up
+out="$(bash "$RUN" services start 2>&1)"; rc=$?
+check "services still down after services_start are unavailable here (exit 1)" '[ "$rc" = 1 ] && echo "$out" | has -F "still down 1 s after services_start" && echo "$out" | has -F "unavailable here"'
+rmdir .service-up
+bash "$RUN" set services_started '""'
+out="$(SVC_FAIL=1 bash "$RUN" services start 2>&1)"; rc=$?
+check "a services_start that fails is unavailable here too, and is recorded as run" '[ "$rc" = 1 ] && echo "$out" | has -F "services_start failed (exit 1)" && [ ! -e .service-up ] && [ "$(bash "$RUN" get services_started)" = "$svc_start" ]'
+touch .service-up
+check "services refuses an argument it does not know, and runs nothing" 'bash "$RUN" services stop >/dev/null 2> "$scratch/svc.err"; [ $? = 1 ] && has -F "usage: run.sh services [start]" "$scratch/svc.err"'
+rm -f .service-up
+bash "$RUN" skip services_start >/dev/null
+check "a run without services_start says to start them by hand" 'bash "$RUN" services start 2> "$scratch/svc.err" >/dev/null; [ $? = 1 ] && has -F "has no services_start command" "$scratch/svc.err"'
+bash "$RUN" finish "done" >/dev/null
+rm -f .idleflow/idleflow.conf; [ ! -f "$scratch/conf.bak" ] || mv "$scratch/conf.bak" .idleflow/idleflow.conf
+git config --local --unset idleflow.approved-services; git config --local --unset idleflow.approved-services-start
 cp "$d-svc.bak" .idleflow/conventions.md && rm -f "$d-svc.bak"; git add .idleflow/conventions.md && commit -q -m "no services"
 bash "$RUN" new services-none >/dev/null 2>&1
 check "a repo without a services check passes with none" '[ "$(bash "$RUN" services)" = "repo services: none" ]'
 bash "$RUN" finish "done" >/dev/null
-check "the run checks services before the baseline, each build and review, and the gate after merge" 'grep -q "^\*\*The services the tests need.\*\* When" "$HERE/../commands/feature.md" && grep -q "before the gate and verification after the last merge (step 8)" "$HERE/../commands/feature.md" && grep -q "run the services check (step 0), then \`bash \"\$RUN\" repo-gate main\`" "$HERE/../commands/feature.md" && grep -q "^services: unset$" "$HERE/../templates/conventions.md"'
+check "the run checks services before the baseline, each build and review, and the gate after merge" 'grep -q "^\*\*The services the tests need.\*\* When" "$HERE/../commands/feature.md" && grep -q "before the gate and verification after the last merge (step 8)" "$HERE/../commands/feature.md" && grep -q "run the services check (step 0), then \`bash \"\$RUN\" repo-gate main\`" "$HERE/../commands/feature.md" && grep -q "^services: unset$" "$HERE/../templates/conventions.md" && grep -q "^services_start: unset$" "$HERE/../templates/conventions.md" && grep -q "the question also offers \*\*Start them\*\*, first: \`bash \"\$RUN\" services start\`" "$HERE/../commands/feature.md" && grep -q "never stop what \`services start\` started" "$HERE/../commands/feature.md" && grep -q "When \`services_started\` was not empty, one line" "$HERE/../commands/feature.md" && grep -q "what \`bash \"\$RUN\" get services_started\` prints (step 0" "$HERE/../commands/feature.md" && grep -q "every message that ends the run says the run ran it" "$HERE/../commands/feature.md" && grep -q "^SERVICES_START_SECONDS=60$" "$HERE/../config/idleflow.conf" && grep -q "^| \`services_start: <command>\` |" "$HERE/../README.md"'
 
 echo "--- the repo's gate"
 git add -u && commit -q -m "tidy before the gate"
