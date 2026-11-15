@@ -17,8 +17,13 @@ _IDLEFLOW_CONF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # passes it on to every process git starts, and commit, merge and worktree run the repo's own
 # hooks, which keep the repo's settings. The function is not exported, so commands the repo runs
 # (the gate, worktree_setup) are not affected either.
+# The real git, called by its path: under bash 3.2 (macOS) a failing `command git` inside a function
+# exits a `set -e` script even where the caller tests it (`if git ...`, `git ... || ...`).
+_IDLEFLOW_GIT="$(type -P git || true)"
 git() {
   local i=1 sub=""
+  [ -n "$_IDLEFLOW_GIT" ] || _IDLEFLOW_GIT="$(type -P git || true)"
+  [ -n "$_IDLEFLOW_GIT" ] || { echo "git: command not found" >&2; return 127; }
   while [ "$i" -le "$#" ]; do
     case "${!i}" in
       -C|-c) i=$((i + 2));;
@@ -27,8 +32,8 @@ git() {
     esac
   done
   case "$sub" in
-    diff|ls-files|status|log|show|grep) command git -c core.quotePath=false "$@";;
-    *) command git "$@";;
+    diff|ls-files|status|log|show|grep) "$_IDLEFLOW_GIT" -c core.quotePath=false "$@";;
+    *) "$_IDLEFLOW_GIT" "$@";;
   esac
 }
 
