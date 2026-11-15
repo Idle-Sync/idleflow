@@ -326,9 +326,12 @@ def orchestrator_file(rel):
 
 def cmd_detach(cwd, log, pidfile, command):
     # A new session: a caller that exits (a command substitution, a hook) must not take the server with it.
+    # bash is looked up on PATH: on Windows, Popen's own search tries System32 first, where WSL's bash is,
+    # not Git Bash's (node's spawn searches PATH only)
+    import shutil
     import subprocess
     with open(log, "w", encoding="utf-8") as out:
-        proc = subprocess.Popen(["bash", "-c", command], cwd=cwd, stdin=subprocess.DEVNULL,
+        proc = subprocess.Popen([shutil.which("bash") or "bash", "-c", command], cwd=cwd, stdin=subprocess.DEVNULL,
                                 stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
     with open(pidfile, "w", encoding="utf-8") as f:
         f.write(str(proc.pid))
@@ -928,10 +931,11 @@ def cmd_clip(n, text):
 
 def main(argv):
     # -I (isolated mode) ignores PYTHONUTF8, so on Windows stdout/stderr would be cp1252
-    # and a BLOCKED message with a non-ASCII filename would come out garbled.
+    # and a BLOCKED message with a non-ASCII filename would come out garbled. Lines end in \n
+    # there too: Windows' \r\n would reach bash, which strips only a value's last one.
     for stream in (sys.stdout, sys.stderr):
         try:
-            stream.reconfigure(encoding="utf-8", errors="replace")
+            stream.reconfigure(encoding="utf-8", errors="replace", newline="\n")
         except Exception:
             pass
     if not argv:

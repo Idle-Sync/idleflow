@@ -1803,6 +1803,9 @@ Task: $tid")
       [ -n "$f" ] && [ -f "$f" ] || continue
       : > "$tmp_doc"; name=""
       while IFS= read -r line || [ -n "$line" ]; do
+        # a checkout with core.autocrlf (Git for Windows' default) has CRLF lines; they are compared
+        # and written without the \r, and git puts it back on checkout
+        line="${line%$'\r'}"
         if [ -z "$name" ] && [[ "$line" =~ $DOC_START_RE ]]; then
           name="${BASH_REMATCH[1]}"; : > "$tmp_block"; printf '%s\n' "$line" >> "$tmp_doc"; continue
         fi
@@ -1817,7 +1820,7 @@ Task: $tid")
         printf '%s\n' "$line" >> "$tmp_doc"
       done < "$f"
       [ -z "$name" ] || { echo "docs: $f: block '$name' has no end marker; file left as it is" >&2; continue; }
-      cmp -s "$tmp_doc" "$f" && continue
+      tr -d '\r' < "$f" | cmp -s "$tmp_doc" - && continue
       if [ "$mode" = --check ]; then stale+=("$f"); else cat "$tmp_doc" > "$f"; changed+=("$f"); fi
     done <<< "$files"
     rm -f "$tmp_doc" "$tmp_block"
@@ -2059,9 +2062,13 @@ Task: $tid")
     mkdir -p "$ACTIVE/tasks/$tid"
     echo "preview ($tid): $cmd" >&2
     ptmp="$(task_tmp "$tid")" || exit 1; mkdir -p "$ptmp"
+    # the pid is written by the server's own shell, so it is one kill understands everywhere (on Git
+    # Bash a runtime's pid is a Windows one), as for exec's jobs
+    rm -f "$pidf"; printf -v pq '%q' "$pidf"
     ( without_agent_markers; clear_bytecode "$dir"
       MAIN="$REPO" IDLEFLOW_TASK="$tid" IDLEFLOW_PORT="$port" IDLEFLOW_TMP="$ptmp" TMPDIR="$ptmp" \
-        idleflow_rt detach "$dir" "$ACTIVE/tasks/$tid/preview.log" "$pidf" "$cmd" )
+        idleflow_rt detach "$dir" "$ACTIVE/tasks/$tid/preview.log" "$pidf.runtime" "echo \$\$ > $pq.tmp && mv $pq.tmp $pq; $cmd" )
+    n=0; while [ ! -f "$pidf" ] && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
     printf '%s\n' "$url" > "$ACTIVE/tasks/$tid/preview.url"
     echo "preview $tid: serving at $url (log: $(native_path "$ACTIVE/tasks/$tid/preview.log"); stop with: run.sh preview $tid stop)"
     ;;
