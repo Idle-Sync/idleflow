@@ -11,7 +11,7 @@ title: "idea: "
 <what you want idleflow to do>
 
 ## Expected
-<what changes for the person using it>
+<what changes for the human using it>
 
 ## Evidence
 - idleflow <version>, runtime <python or node>, OS <Linux, macOS or Windows>

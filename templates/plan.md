@@ -27,7 +27,7 @@ blocked_until: none           # or: revision — <what it waits to learn, from w
 model: sonnet | opus
 tests_first: true | false     # true when context.md §4 shows no tests for the entry points
 mutation: true | false        # the implementer proves the tests catch deliberate faults in the code this task changes, in files it owns (see STEP_MUTATION)
-ui: true | false              # touches what a person sees; gets the design spec and the design reviewer
+ui: true | false              # touches what an end user sees; gets the design spec and the design reviewer
 cause: none                   # for a bug: source <file>:<function> | with <task-id> | symptom — <why the source cannot be fixed>
 from: none                    # for a sub-task of a split: the split task's id (T<n>)
 estimate_lines: <N>           # hand-written code lines, added+deleted

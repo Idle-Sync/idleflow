@@ -22,7 +22,7 @@ claude plugin validate --strict commands
 ```
 
 It never runs the scripts, so also run `bash scripts/selftest.sh` three times, with `IDLEFLOW_RUNTIME`
-unset, `=node` and `=python` (the unset run is what users get), and a full local install loop before pushing:
+unset, `=node` and `=python` (the unset run is what humans get), and a full local install loop before pushing:
 
 ```
 claude plugin marketplace add ./
@@ -40,7 +40,7 @@ gh repo create Idle-Sync/idleflow --public --source . --push
 git tag v<version> && git push --tags   # the version in plugin.json
 ```
 
-A private repo works too; users then need read access to install.
+A private repo works too; humans then need read access to install.
 
 ## 3. Install on any machine
 
@@ -59,20 +59,20 @@ In a session: `/plugin marketplace add Idle-Sync/idleflow` → `/plugin install 
 
 ## 4. Releasing an update
 
-Users stay on the `version` in `plugin.json` until it changes. Pushing new commits without a bump
+Humans stay on the `version` in `plugin.json` until it changes. Pushing new commits without a bump
 reports "already at the latest version" on their side. So every release is:
 
 1. Bump `version` in **both** `.claude-plugin/plugin.json` and the plugin entry in `marketplace.json`.
 2. Commit, tag (`v0.2.0`), push with tags.
 
-Users update with:
+Humans update with:
 
 ```
 claude plugin marketplace update idlesync
 claude plugin update idleflow@idlesync
 ```
 
-Auto-update is off by default for third-party marketplaces; users can turn it on under
+Auto-update is off by default for third-party marketplaces; humans can turn it on under
 `/plugin` → Marketplaces. To pin, add the marketplace with a ref: `Idle-Sync/idleflow#v0.1.0`.
 (Per-plugin `ref`/`sha` only applies to `github`/`url`/`git-subdir` sources, not `./`, so pinning
 is at the marketplace level for this layout.)

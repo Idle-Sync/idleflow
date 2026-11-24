@@ -44,7 +44,7 @@
 #                                            one of its sub-tasks; prints one line per problem and exits 1, or exits 0
 #   run.sh extract <task-id>              -> the task's plan extract: the plan's Stack & style constraints and Interfaces
 #                                            sections, then the task's own ### <task-id>: section
-#   run.sh report <task-id>               -> copies the task's .idleflow-run/result.md into the run dir as report.md, prints its path
+#   run.sh report <task-id>               -> copies the task's .idleflow-run/result.md into the run folder as report.md, prints its path
 #   run.sh keep [--move] <run file>       -> sets a run file's current version aside as <name>.<n>.<ext> (n past the highest), prints
 #                                            that path; copies (plan.md before a revision) or, with --move, moves (a review)
 #   run.sh gate <task-id> [limit]         -> runs diff-gate against the task's own base, writes tasks/<id>/gate.json, prints it;
@@ -84,13 +84,18 @@
 #   run.sh repo-gate <base|main|task> [--quick] -> runs the approved gate (or gate_quick) there, times it; 1 failed, 7 unapproved
 #   run.sh preview <task-id|main> start|stop -> serves the app from that worktree, or with preview_in: main from the main
 #                                            checkout after the merge, for screenshots (approved command, localhost only)
+#   run.sh vocab [--file <vocabulary>] [--all | <file>...] -> one term per concept: every "never write" word of the
+#                                            vocabulary file (vocabulary.md at the repo root by default) in the given
+#                                            Markdown files, or with --all in every tracked one of the checkout
+#                                            it runs in; exit 1 with one "<file>:<line>: <word> → <use>" line
+#                                            per hit, 2 when the vocabulary bans nothing or cannot be read
 #   run.sh commands                       -> the repo's commands (worktree_setup, gate, ..., services) as committed, approved or unapproved here
-#   run.sh approve <key>                  -> records this person's approval of that exact committed command (local git config)
+#   run.sh approve <key>                  -> records this human's approval of that exact committed command (local git config)
 #   run.sh agent <name>                   -> how to spawn that agent here: agent, model, extra instructions, contract
 #   run.sh custom list                    -> this repo's customizations (.idleflow/idleflow.conf, agent instructions, replaced agents)
 #   run.sh custom set <KEY> <value>       -> validates and writes one setting to .idleflow/idleflow.conf
 #   run.sh custom unset <KEY>             -> removes it, so the plugin default applies again
-#   run.sh custom report [ask|always|never] -> this person's consent to report customizations (local git config, never committed)
+#   run.sh custom report [ask|always|never] -> this human's consent to report customizations (local git config, never committed)
 #   run.sh custom replace <agent>         -> copies the built-in agent to .claude/agents/idleflow-<agent>.md for the project to edit
 #   run.sh custom merge <agent>           -> merges changes the built-in agent got since it was copied into the replacement
 #   run.sh custom restore <agent>         -> back to the built-in agent: removes its replacement, instructions and model
@@ -464,7 +469,7 @@ user_tmp() {
   local u; u="$(tmp_root)/idleflow-$(id -u)"
   [ -e "$u" ] || [ -L "$u" ] || mkdir -m 700 "$u" 2>/dev/null || true
   if [ -L "$u" ] || [ ! -d "$u" ] || ! owned_by_me "$u"; then
-    echo "run.sh: $u is not a folder this user owns; remove it, or set IDLEFLOW_TMP_ROOT to another root" >&2; return 1
+    echo "run.sh: $u is not a folder this OS user owns; remove it, or set IDLEFLOW_TMP_ROOT to another root" >&2; return 1
   fi
   chmod 700 "$u" 2>/dev/null || true
   echo "$u"
@@ -1294,6 +1299,56 @@ ci_clean() { # ci_clean <run id>: deletes the run's CI branch once it pushed one
   else
     echo "[idleflow] ci: could not delete $branch on $remote; delete it by hand: git push $remote --delete $branch" >&2
   fi
+}
+
+# One term per concept, because agents and people find things by exact text. A vocabulary file is a
+# Markdown table, `| use | means | never write |`, with the words of the last column separated by
+# commas. A hit is a "never write" word, any case, as a whole word, in a line outside fenced code
+# and inline code, on a line without `<!-- vocab: allow -->` (a quote of a banned phrase). Where a
+# word is part of a term the file says to use, written with spaces or hyphens and maybe with a
+# plural "s" (a banned "user" in "end user", "end-user" or "end users"), it is that term.
+vocab_check() { # vocab_check <vocabulary file> <file>...
+  awk -v vocab="$1" '
+    function trim(x) { gsub(/^[ \t`*]+/, "", x); gsub(/[ \t`*]+$/, "", x); return x }
+    function word(ch) { return ch ~ /[a-z0-9_]/ }
+    function blank(n,   b) { b = ""; while (n-- > 0) b = b " "; return b }
+    # every whole-word place of t in x, blanked
+    function mask(x, t,   out, i, rest, before) {
+      out = ""; rest = x
+      while ((i = index(rest, t)) > 0) {
+        before = (i > 1) ? substr(rest, i - 1, 1) : substr(out, length(out), 1)
+        if (!word(before) && !word(substr(rest, i + length(t), 1))) out = out substr(rest, 1, i - 1) blank(length(t))
+        else out = out substr(rest, 1, i - 1 + length(t))
+        rest = substr(rest, i + length(t))
+      }
+      return out rest
+    }
+    BEGIN {
+      while ((r = (getline line < vocab)) > 0) {
+        sub(/\r$/, "", line)
+        if (line !~ /^[ \t]*\|/) continue
+        split(line, c, "|"); u = trim(c[2])
+        if (u == "" || tolower(u) == "use" || u ~ /^:?-+:?$/) continue
+        nuse++; use[nuse] = tolower(u)
+        m = split(c[4], w, ",")
+        for (i = 1; i <= m; i++) { t = tolower(trim(w[i])); if (t != "" && t !~ /^[-—]+$/) { nbad++; bad[nbad] = t; to[nbad] = u } }
+      }
+      close(vocab)
+      # a vocabulary that cannot be read, or bans nothing, would pass every file
+      if (r < 0 || nbad == 0) { print "vocab: " vocab " has no \"never write\" words (or cannot be read)" > "/dev/stderr"; failed = 1; exit 2 }
+    }
+    FNR == 1 { fence = "" }
+    { sub(/\r$/, "") }
+    fence != "" { if ($0 ~ "^[ \t]*" fence) fence = ""; next }
+    /^[ \t]*(```|~~~)/ { match($0, /(```|~~~)/); fence = substr($0, RSTART, 3); next }
+    /<!-- vocab: allow -->/ { next }
+    {
+      x = tolower($0)
+      while (match(x, /`[^`]*`/)) x = substr(x, 1, RSTART - 1) blank(RLENGTH) substr(x, RSTART + RLENGTH)
+      for (i = 1; i <= nuse; i++) { h = use[i]; gsub(/ /, "-", h); x = mask(x, use[i] "s"); x = mask(x, use[i]); x = mask(x, h "s"); x = mask(x, h) }
+      for (i = 1; i <= nbad; i++) if (mask(x, bad[i]) != x) { print FILENAME ":" FNR ": " bad[i] " → " to[i]; hits++ }
+    }
+    END { if (failed) exit 2; exit hits > 0 }' "${@:2}"
 }
 
 cmd="${1:-}"; shift || true
@@ -2220,9 +2275,9 @@ Task: $tid")
       dir="$REPO/$(sessions_rel)"
       [ -d "$dir" ] || dir="$REPO/docs/sessions"
       people="$({ "${G[@]}" log --format='%ae' 2>/dev/null || true; } | sort -u | grep -c . || true)"
-      if ls "$dir"/*/ 2>/dev/null | grep -E '^s_[0-9]{4}\.md$' >/dev/null; then say session_names per-person "notes in ${dir#"$REPO"/} are already in one folder per person"
+      if ls "$dir"/*/ 2>/dev/null | grep -E '^s_[0-9]{4}\.md$' >/dev/null; then say session_names per-person "notes in ${dir#"$REPO"/} are already in one folder per human"
       elif ls "$dir" 2>/dev/null | grep -E '^s_[0-9]{4}\.md$' >/dev/null; then
-        if [ "${people:-1}" -gt 1 ]; then say session_names per-person "notes are numbered s_NNNN.md and $people people commit here; a folder per person keeps the numbering without collisions"
+        if [ "${people:-1}" -gt 1 ]; then say session_names per-person "notes are numbered s_NNNN.md and $people people commit here; a folder per human keeps the numbering without collisions"
         else say session_names numbered "$(ls "$dir" | grep -cE '^s_[0-9]{4}\.md$') notes in ${dir#"$REPO"/} are numbered s_NNNN.md"; fi
       fi
     fi
@@ -2439,6 +2494,26 @@ Task: $tid")
         idleflow_rt detach "$dir" "$ACTIVE/tasks/$tid/preview.log" "$pidf" "$cmd" )
     printf '%s\n' "$url" > "$ACTIVE/tasks/$tid/preview.url"
     echo "preview $tid: serving at $url (log: $(native_path "$ACTIVE/tasks/$tid/preview.log"); stop with: run.sh preview $tid stop)"
+    ;;
+  vocab)
+    # the checkout it is run in, a task worktree included, never the main checkout behind it
+    top="$(git rev-parse --show-toplevel)"
+    vf="$top/vocabulary.md"
+    if [ "${1:-}" = --file ]; then vf="${2:?vocabulary file}"; shift 2; fi
+    [ -f "$vf" ] || { echo "vocab: no vocabulary file at $(native_path "$vf")" >&2; exit 1; }
+    vf="$(cd "$(dirname "$vf")" && pwd -P)/$(basename "$vf")"
+    files=()
+    if [ "${1:-}" = --all ]; then
+      cd "$top"
+      while IFS= read -r -d '' f; do
+        [ -f "$f" ] && [ "$(pwd -P)/$f" != "$vf" ] && files+=("$f")
+      done < <(git ls-files -z -- '*.md')
+    else
+      files=("$@")
+    fi
+    [ "${#files[@]}" -gt 0 ] || exit 0
+    rc=0; vocab_check "$vf" "${files[@]}" || rc=$?
+    exit "$rc"
     ;;
   commands)
     # every repo command with its committed text and whether this person approved it
