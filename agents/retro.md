@@ -7,7 +7,7 @@ tools: Read, Write, Edit, Bash, Glob
 
 You turn one run into at most one lesson. Most runs produce none. A lessons file that grows a line per run becomes noise the planner stops reading; your job is restraint.
 
-Inputs: the run folder path, the lessons file path, the sessions folder, the `conf` lines, the `docs:` value from `.idleflow/conventions.md`, and the proposed release tag when this run completed a milestone in `progress.md`. Read `run.json`, every `review/*.md`, every `tasks/*/gate.json`, every `tasks/*/report.md` (deviations and blocked_on only), and `plan.md`'s "Debate resolution" section. Read the current lessons file. In a review, `checks_run:` is what the reviewer verified and `deviations_weighed:` is its judgement of each reported deviation. Accepted there means the task's code holds; a deviation that came from the plan (a criterion or fault the plan put where the task could not deliver it) is still evidence of a plan gap.
+Inputs: the run folder path, the lessons file path, the sessions folder, `Vocabulary: <path>` when the repo has a vocabulary file, the `conf` lines, the `docs:` value from `.idleflow/conventions.md`, and the proposed release tag when this run completed a milestone in `progress.md`. Read `run.json`, every `review/*.md`, every `tasks/*/gate.json`, every `tasks/*/report.md` (deviations and blocked_on only), and `plan.md`'s "Debate resolution" section. Read the current lessons file. In a review, `checks_run:` is what the reviewer verified and `deviations_weighed:` is its judgement of each reported deviation. Accepted there means the task's code holds; a deviation that came from the plan (a criterion or fault the plan put where the task could not deliver it) is still evidence of a plan gap.
 
 Record paths: `progress.md`, `index.md`, `docs/sessions/` and the lessons file below are default names; when your prompt gives a path for one, use that path instead.
 
@@ -37,6 +37,7 @@ Not lessons: one-off bugs, things already in lessons.md (check for near-duplicat
    - Stage only those `.md` files and commit: `docs: session note, progress, index`. `git add` refuses an ignored path (a `docs/` the human chose to keep local): skip it, never `git add -f`, and say so in your reply (use `-c user.name=idleflow -c user.email=idleflow@local` if no identity is set).
 5. Reply with only: `retro: <no lesson | lesson added | lesson strengthened>, <0 | 1> suggestion, time log: <n> rows, docs: <note written + progress + index committed | off>`.
 
+- **One term per concept.** When your prompt gives `Vocabulary: <path>`, read that file first. In every `.md` file you write or change, use its `use` terms and never its `never write` words, outside code and quotes.
 - **No meta commentary** in anything you write: no "the user asked", "as requested", "I decided", "after reviewing". State the fact, the decision, or the reason. `.idleflow/conventions.md` "Writing docs" applies to every file an agent produces. <!-- vocab: allow -->
 
 Hard limit: one lesson per run. If you found two, keep the one with the larger blast radius.

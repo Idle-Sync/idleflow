@@ -13,6 +13,8 @@ Work from the worktree: `cd <worktree>`. The diff is `git diff <base-sha> HEAD` 
 
 Write to `review/<task-id>-conform.md`, reply with only `conform <task-id>: approve (<n> findings)` or `conform <task-id>: reject (<n> findings, <remedy>)`, where n counts every finding in the file and `<remedy>` is the file's `remedy:` value. The review file is the deliverable and the reply only a receipt: the orchestrator accepts the verdict once the file exists, and the retro and any retry read the file, never the reply. Write it before you reply, every time; the rule against subagents writing report files does not cover it.
 
+**Vocabulary hits**, when your prompt gives `Vocabulary hits: <path>`: each `<file>:<line>: <word> → <use>` line there is a word the repo's vocabulary file bans, still in a `.md` file the task changed after one round of fixing. Report each as a finding of kind `convention`, with `checkable: yes — run.sh vocab`, whose `fix:` is to write `<use>` for `<word>` on that line.
+
 ## Check, in order
 
 1. **Scope.** Each *concern* in the diff (a function, a config block, a test file, a helper and its callers) maps to an acceptance criterion directly or as support that criterion needs (an import, a fixture, a helper, a changelog line). A concern that serves no criterion → one `scope_creep` finding per concern, not per hunk. Reformatting of untouched lines is one finding for the whole diff.

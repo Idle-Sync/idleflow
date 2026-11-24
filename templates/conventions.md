@@ -78,6 +78,7 @@ a repo that already keeps these somewhere points idleflow at them instead of get
 
 progress_file: progress.md
 index_file: index.md
+vocabulary_file: vocabulary.md
 index_rewrite: yes
 sessions_dir: docs/sessions
 session_names: time-author
@@ -85,7 +86,8 @@ time_log: .idleflow/time-log.md
 shared_files: none
 generated_docs: unset
 
-- `progress_file`, `index_file`, `sessions_dir`, `time_log`: relative paths inside the repo.
+- `progress_file`, `index_file`, `vocabulary_file`, `sessions_dir`, `time_log`: relative paths inside
+  the repo. The vocabulary file holds one term per concept for the repo's docs (`run.sh vocab`).
 - `generated_docs`: the Markdown files whose generated blocks `run.sh docs` keeps, space-separated,
   or `none`. Unset means every tracked Markdown file with a block, plus the index, the progress file
   and `CLAUDE.md` even when they are kept out of git. Name the files when the repo also holds
