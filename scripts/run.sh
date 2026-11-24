@@ -74,9 +74,10 @@
 #                                            still running, renames active/ to <id>/, then logs the run to
 #                                            .idleflow/runs/log.jsonl; exit 1, still active, when it cannot move
 #   run.sh loc                            -> prints hand-written code lines in the repo (DIFF_EXCLUDE applied)
+#   run.sh ui                             -> `yes <file>` when the repo has a UI (the file that shows it), else `no`
 #   run.sh conf                           -> prints resolved config values and the runtime in use
-#   run.sh path <name>                    -> where a record lives here: conventions, lessons, progress, index, sessions, time-log, runs
-#   run.sh path --relative <name>         -> the same, relative to the repo root: progress, index, sessions, time-log
+#   run.sh path <name>                    -> where a record lives here: conventions, lessons, progress, index, sessions, time-log, design-system, runs
+#   run.sh path --relative <name>         -> the same, relative to the repo root: progress, index, sessions, time-log, design-system
 #   run.sh migrate                        -> moves files a pre-.idleflow/ version kept under .claude/ and commits the move
 #   run.sh doctor                         -> checks the repo's idleflow setup, one "ok|warn|fail|suggest <check>: <detail> | fix: <how>" line each
 #   run.sh update-check                   -> prints one line when a newer idleflow is tagged on GitHub, nothing otherwise
@@ -225,6 +226,24 @@ index_rel() { record_path index_file index.md; }
 vocabulary_rel() { record_path vocabulary_file vocabulary.md; }
 sessions_rel() { record_path sessions_dir docs/sessions; }
 time_log_rel() { record_path time_log .idleflow/time-log.md; }
+# The design system file, for a repo with something people look at: with the project docs when they
+# are on, else beside the conventions.
+design_system_rel() { if [ "$(conventions_value docs)" = yes ]; then echo docs/design-system.md; else echo .idleflow/design-system.md; fi; }
+# The tracked file that shows the repo has a UI (a screen, page, stylesheet, view or game scene) or
+# nothing: what decides whether it keeps a design system file. A UI framework's or game engine's project
+# file counts wherever it sits; it is looked for apart from DIFF_EXCLUDE, which drops some of their types.
+# UI source files count outside vendored paths (DIFF_EXCLUDE) and outside tests, fixtures, docs and
+# coverage reports, which hold pages no end user sees.
+ui_evidence() {
+  local f
+  f="$("${G[@]}" ls-files -- ':(glob)**/tailwind.config.*' ':(glob)**/project.godot' ':(glob)**/ProjectSettings/ProjectVersion.txt' 2>/dev/null | sed -n 1p)"
+  if [ -n "$f" ]; then echo "$f"; return 0; fi
+  build_excl
+  local ui=() ext
+  for ext in css scss sass less styl vue svelte astro jsx tsx html htm xaml storyboard xib tscn unity prefab uasset umap; do ui+=(":(glob)**/*.$ext"); done
+  for f in test tests __tests__ spec fixtures docs htmlcov coverage; do ui+=(":(glob,exclude)**/$f/**"); done
+  "${G[@]}" ls-files -- "${ui[@]}" ${EXCL[@]+"${EXCL[@]}"} 2>/dev/null | sed -n 1p
+}
 # Files every task may add its own lines to (a changelog, an index the repo's checks require rows
 # in); parallel tasks cannot own one file, so these sit outside ownership and merge by union.
 shared_files() {
@@ -1851,10 +1870,10 @@ JSON
     active_id >/dev/null
     for tid in "$@"; do
       [ "$tid" = merged ] || check_task_id "$tid"
-      for kind in correct conform design security; do
+      for kind in correct conform design api security; do
         name="$tid-$kind.md"; f="$ACTIVE/review/$name"
         [ -f "$f" ] || continue
-        tr -d '\r' < "$f" | R="review/$name" T="$tid" awk '/^### [FDS][0-9]+\. / { sub(/^### /, ""); print ENVIRON["T"] ": " $0 " (" ENVIRON["R"] ")" }'
+        tr -d '\r' < "$f" | R="review/$name" T="$tid" awk '/^### [FDPS][0-9]+\. / { sub(/^### /, ""); print ENVIRON["T"] ": " $0 " (" ENVIRON["R"] ")" }'
       done
     done
     ;;
@@ -2012,7 +2031,7 @@ Task: $tid")
         "${G[@]}" branch -q -m "$br" "$kept"
       fi
       # its reviews, report and gate result were of the build that is gone
-      for rel in "review/$tid-correct.md" "review/$tid-conform.md" "review/$tid-design.md" "review/$tid-security.md" "tasks/$tid/report.md" "tasks/$tid/gate.json"; do
+      for rel in "review/$tid-correct.md" "review/$tid-conform.md" "review/$tid-design.md" "review/$tid-api.md" "review/$tid-security.md" "tasks/$tid/report.md" "tasks/$tid/gate.json"; do
         [ ! -f "$ACTIVE/$rel" ] || bash "$0" keep --move "$rel" >/dev/null
       done
       idleflow_rt set "$ACTIVE/run.json" "tasks.$tid" '{}'
@@ -2182,6 +2201,11 @@ Task: $tid")
     fi
     echo "run $id finished: $status"
     ;;
+  ui)
+    # `yes <file>` when the repo has a UI, the file that shows it; `no` otherwise. Read-only.
+    f="$(ui_evidence)"
+    if [ -n "$f" ]; then echo "yes $f"; else echo no; fi
+    ;;
   loc)
     # Hand-written code lines in the repo: tracked files minus DIFF_EXCLUDE. Docs don't count.
     build_excl
@@ -2192,12 +2216,12 @@ Task: $tid")
     if [ "${1:-}" = "--relative" ]; then
       # The repo-relative form, for text that is committed and read in other clones.
       case "${2:-}" in
-        progress) progress_rel;; index) index_rel;; vocabulary) vocabulary_rel;; sessions) sessions_rel;; time-log) time_log_rel;;
-        *) echo "path --relative: ${2:-no name given}: use progress, index, vocabulary, sessions or time-log" >&2; exit 1;;
+        progress) progress_rel;; index) index_rel;; vocabulary) vocabulary_rel;; sessions) sessions_rel;; time-log) time_log_rel;; design-system) design_system_rel;;
+        *) echo "path --relative: ${2:-no name given}: use progress, index, vocabulary, sessions, time-log or design-system" >&2; exit 1;;
       esac
       exit 0
     fi
-    case "${1:?conventions|lessons|progress|index|vocabulary|sessions|time-log|runs}" in
+    case "${1:?conventions|lessons|progress|index|vocabulary|sessions|time-log|design-system|runs}" in
       conventions) native_path "$CONVENTIONS";;
       lessons) native_path "$(lessons_path)";;
       progress) native_path "$REPO/$(progress_rel)";;
@@ -2205,6 +2229,7 @@ Task: $tid")
       vocabulary) native_path "$REPO/$(vocabulary_rel)";;
       sessions) native_path "$REPO/$(sessions_rel)";;
       time-log) native_path "$REPO/$(time_log_rel)";;
+      design-system) native_path "$REPO/$(design_system_rel)";;
       runs) native_path "$RUNS";;
       *) echo "unknown path name: $1" >&2; exit 1;;
     esac
@@ -2872,6 +2897,13 @@ Task: $tid")
       for f in prd.md "$(progress_rel)" "$(index_rel)" "$(vocabulary_rel)"; do [ -f "$REPO/$f" ] || gone+=("$f"); done
       grep -q '<!-- idleflow start -->' "$REPO/CLAUDE.md" 2>/dev/null || gone+=("CLAUDE.md block")
       if [ "${#gone[@]}" -gt 0 ]; then check_line warn docs "missing: ${gone[*]}" "/idleflow:setup"; else check_line ok docs "prd.md, $(progress_rel), $(index_rel), $(vocabulary_rel) and the CLAUDE.md block are present"; fi
+    fi
+
+    # only a repo with a UI keeps a design system file, so a backend or tool repo gets no line
+    ui_file="$(ui_evidence)"
+    if [ -n "$ui_file" ]; then
+      if [ -f "$REPO/$(design_system_rel)" ]; then check_line ok design "$(design_system_rel)"
+      else check_line warn design "the repo has a UI ($ui_file) and no design system file ($(design_system_rel))" "/idleflow:setup"; fi
     fi
     ;;
   conf)

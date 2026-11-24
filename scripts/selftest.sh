@@ -357,9 +357,11 @@ printf '### D1. A hyphenated task id   severity: minor\n' > .idleflow/runs/activ
 f="$(bash "$RUN" findings T1)"
 check "findings lists the current reviews' findings only" '[ "$(echo "$f" | wc -l | tr -d " ")" = 2 ] && echo "$f" | has -x "T1: F2. A leak on the error path   severity: major (review/T1-correct.md)" && ! echo "$f" | has "F9\|Not this task\|Nor this one"'
 check "findings reads a hyphenated task id's current review" '[ "$(bash "$RUN" findings T1-2)" = "T1-2: D1. A hyphenated task id   severity: minor (review/T1-2-design.md)" ]'
+printf '### P1. A list with no pagination   severity: major\n' > .idleflow/runs/active/review/T1-2-api.md
+check "findings reads the API reviewer's findings" 'bash "$RUN" findings T1-2 | has -xF "T1-2: P1. A list with no pagination   severity: major (review/T1-2-api.md)"'
 printf '### S1. A query built from outside input   severity: high\n' > .idleflow/runs/active/review/T1-2-security.md
 check "findings reads the security reviewer's findings" 'bash "$RUN" findings T1-2 | has -xF "T1-2: S1. A query built from outside input   severity: high (review/T1-2-security.md)"'
-rm .idleflow/runs/active/review/T1-correct.md .idleflow/runs/active/review/T1-correct.1.md .idleflow/runs/active/review/T10-conform.md .idleflow/runs/active/review/T1-ui-conform.md .idleflow/runs/active/review/T1-2-design.md .idleflow/runs/active/review/T1-2-security.md
+rm .idleflow/runs/active/review/T1-correct.md .idleflow/runs/active/review/T1-correct.1.md .idleflow/runs/active/review/T10-conform.md .idleflow/runs/active/review/T1-ui-conform.md .idleflow/runs/active/review/T1-2-design.md .idleflow/runs/active/review/T1-2-api.md .idleflow/runs/active/review/T1-2-security.md
 
 echo "--- merge, then a second group gates against its own base"
 check "merge refuses an unapproved task" 'bash "$RUN" merge T1 >/dev/null 2>&1; [ $? -eq 4 ]'
@@ -460,6 +462,27 @@ check "doctor passes the new layout"      'echo "$doc" | has "^ok layout" && ech
 check "doctor names unanswered settings"  'echo "$doc" | has "^warn conventions: not answered yet: ignore_in docs"'
 check "update-check is silent offline"    '[ -z "$(bash "$RUN" update-check)" ]'
 check "migrate again is a no-op"          '[ "$(bash "$RUN" migrate)" = "migrate: nothing to move" ]'
+
+echo "--- a design system file only for a repo with a UI"
+cp .idleflow/conventions.md "$d-conv-ds.bak"
+check "a repo with no UI has no design line in the doctor" '[ "$(bash "$RUN" ui)" = no ] && ! bash "$RUN" doctor | has "^[a-z]* design:"'
+printf 'body { margin: 0 }\n' > site.css && git add site.css
+check "a tracked stylesheet is a UI, and the doctor asks for its design system file" '[ "$(bash "$RUN" ui)" = "yes site.css" ] && bash "$RUN" doctor | has -F "warn design: the repo has a UI (site.css) and no design system file (.idleflow/design-system.md) | fix: /idleflow:setup"'
+printf '# x\n' > .idleflow/design-system.md
+check "the doctor passes a UI repo that has its design system file" 'bash "$RUN" doctor | has -F "ok design: .idleflow/design-system.md"'
+if grep -q '^docs:' .idleflow/conventions.md; then sed -i.bak 's#^docs: .*#docs: yes#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak; else echo 'docs: yes' >> .idleflow/conventions.md; fi
+check "with project docs on, the design system file lives with them" '[ "$(bash "$RUN" path --relative design-system)" = docs/design-system.md ] && [ "$(bash "$RUN" path design-system)" = "$(native "$(git rev-parse --show-toplevel)")/docs/design-system.md" ]'
+git rm -q --cached site.css && rm -f site.css .idleflow/design-system.md && cp "$d-conv-ds.bak" .idleflow/conventions.md
+mkdir -p dist tests/fixtures docs/_templates ProjectSettings
+printf 'a{}\n' > dist/app.css; printf '<p>x</p>\n' > tests/fixtures/page.html; printf '<p>x</p>\n' > docs/_templates/layout.html
+git add -f dist/app.css tests/fixtures/page.html docs/_templates/layout.html
+check "built output, test fixtures and doc templates are not a UI" '[ "$(bash "$RUN" ui)" = no ]'
+printf 'm_EditorVersion: 6\n' > ProjectSettings/ProjectVersion.txt && git add ProjectSettings/ProjectVersion.txt
+check "a game engine's project file is a UI, though its type is left out of the diff" '[ "$(bash "$RUN" ui)" = "yes ProjectSettings/ProjectVersion.txt" ]'
+git rm -q --cached dist/app.css tests/fixtures/page.html docs/_templates/layout.html ProjectSettings/ProjectVersion.txt
+rm -f dist/app.css tests/fixtures/page.html docs/_templates/layout.html ProjectSettings/ProjectVersion.txt; rmdir dist tests/fixtures tests docs/_templates docs ProjectSettings 2>/dev/null || true
+check "init and setup make the design system file only for a project people look at" 'grep -q "^## 5b. Design system (Opus), for a project people look at" "$HERE/../commands/init.md" && grep -q "gets no design system file" "$HERE/../commands/init.md" && grep -q "^## 5b. Design system, for a repo with a UI" "$HERE/../commands/setup.md" && grep -qF "the \`design\` line is \`ok\` or absent" "$HERE/../commands/setup.md" && grep -qF "bash \"\$RUN\" ui\` prints \`yes <file>\`" "$HERE/../commands/setup.md" && grep -q "^## System mode" "$HERE/../agents/designer.md" && grep -qF "\`DESIGN_SYSTEM\` is the path \`bash \"\$RUN\" path design-system\` prints." "$HERE/../commands/feature.md"'
+check "the design system template has every section the designer fills" '[ "$(grep -cE "^## (Direction|Type|Colour roles|Space and layout|Shape and depth|Motion|Components|Libraries|Looks this project avoids|Game)\$" "$HERE/../templates/design-system.md")" = 10 ]'
 
 echo "--- records where the repo keeps them"
 cp .idleflow/conventions.md "$d-conv.bak"
@@ -1338,6 +1361,7 @@ bash "$RUN" set tasks.T1.status '"approved"'; bash "$RUN" merge T1 >/dev/null 2>
 wr2="$(bash "$RUN" wt add T2 2>/dev/null)"; ( cd "$wr2" && echo r2 >> src/keep.py && git add src/keep.py && commit -m "keep r2" )
 t2_sha="$(git -C "$wr2" rev-parse HEAD)"; bash "$RUN" set tasks.T2.status '"approved"'
 printf 'verdict: approve\n' > .idleflow/runs/active/review/T2-correct.md
+printf 'verdict: approve\n' > .idleflow/runs/active/review/T2-api.md
 printf 'verdict: approve\n' > .idleflow/runs/active/review/T2-security.md
 echo "- a test — fails — \"x\" — T2 base job 1" > .idleflow/runs/active/known-failures.md
 bash "$RUN" wt rm T1; bash "$RUN" finish needs-human >/dev/null
@@ -1361,7 +1385,7 @@ out="$(bash "$RUN" resume "$rid" 2>&1)"
 check "resume makes the stopped run active again and parks the one in its way" '[ "$(bash "$RUN" get id)" = "$rid" ] && [ "$(bash "$RUN" get status)" = building ] && [ "$(bash "$RUN" get resumed_from)" = needs-human ] && [ -n "$(ls -d .idleflow/runs/*-something-else 2>/dev/null)" ]'
 check "resume keeps what merged and starts the rest again" 'echo "$out" | has "merged: T1; to build again: T2;" && [ -n "$(bash "$RUN" get tasks.T1.t_merge)" ] && [ "$(bash "$RUN" get tasks.T2)" = "{}" ] && grep -q "^r1$" src/keep.py && [ ! -d "$wr2" ]'
 check "resume keeps the old commits of a reset task on a branch of their own" '[ "$(git rev-parse "idleflow/$rid/T2-before-resume")" = "$t2_sha" ] && ! git show-ref -q --verify "refs/heads/idleflow/$rid/T2"'
-check "resume moves the review of the old build aside and takes the base failures again" '[ ! -f .idleflow/runs/active/review/T2-correct.md ] && [ -f .idleflow/runs/active/review/T2-correct.1.md ] && [ ! -f .idleflow/runs/active/review/T2-security.md ] && [ -f .idleflow/runs/active/review/T2-security.1.md ] && [ "$(bash "$RUN" get gate_base)" = null ] && [ ! -f .idleflow/runs/active/known-failures.md ] && [ -f .idleflow/runs/active/known-failures.1.md ]'
+check "resume moves the review of the old build aside and takes the base failures again" '[ ! -f .idleflow/runs/active/review/T2-correct.md ] && [ -f .idleflow/runs/active/review/T2-correct.1.md ] && [ ! -f .idleflow/runs/active/review/T2-api.md ] && [ -f .idleflow/runs/active/review/T2-api.1.md ] && [ ! -f .idleflow/runs/active/review/T2-security.md ] && [ -f .idleflow/runs/active/review/T2-security.1.md ] && [ "$(bash "$RUN" get gate_base)" = null ] && [ ! -f .idleflow/runs/active/known-failures.md ] && [ -f .idleflow/runs/active/known-failures.1.md ]'
 wr2b="$(bash "$RUN" wt add T2 2>/dev/null)"
 # a job another session still runs: a job folder with a live process and no exit code yet
 sleep 30 & busy=$!; jb=".idleflow/runs/active/tasks/T2/jobs/99"; mkdir -p "$jb"; echo "$busy" > "$jb/pid"
@@ -1664,6 +1688,8 @@ yaml_unsafe() { # the frontmatter lines of the given files whose unquoted value 
 check "every command, agent and issue form frontmatter is valid YAML" '[ -z "$(yaml_unsafe "$HERE"/../commands/*.md "$HERE"/../agents/*.md "$HERE"/../.github/ISSUE_TEMPLATE/*.md)" ] && [ -n "$(printf "%s\n" "---" "description: Usage: x" "a: \"open" "b: ends:" "c: #lost" "---" > "$scratch/yaml-bad.md"; yaml_unsafe "$scratch/yaml-bad.md" | wc -l | grep -x " *4")" ]'
 check "a change to a file git ignores is planned by hand after merge" 'grep -q "^## By hand after merge$" "$HERE/../templates/plan.md" && grep -q "A file git ignores (\`.gitignore\`, \`.git/info/exclude\`) belongs to no task either" "$HERE/../agents/planner.md" && grep -q "Then the plan.s \"By hand after merge\" lines" "$HERE/../commands/feature.md" && grep -q "each line of the plan.s \"By hand after merge\"" "$HERE/../agents/retro.md"'
 check "the designer and design reviewer exist" '[ -f "$HERE/../agents/designer.md" ] && [ -f "$HERE/../agents/review-design.md" ] && grep -q "\"ui\"" "$HERE/../agents/classifier.md" && grep -q "^### 2c. Design" "$HERE/../commands/feature.md"'
+check "the API reviewer exists and reviews every task the plan marks api" '[ -f "$HERE/../agents/review-api.md" ] && [ -f "$HERE/../procedures/api-design.md" ] && grep -q "^api: true | false" "$HERE/../templates/plan.md" && grep -q "^4b. \*\*API marking.\*\*" "$HERE/../agents/planner.md" && grep -qF "An \`api: true\` task at any size also gets \`idleflow:review-api\`" "$HERE/../commands/feature.md" && grep -qF "review/<id>-api.md" "$HERE/../commands/feature.md"'
+check "the API reviewer follows the API's own conventions before any guide" 'grep -q "^## 1. The API.s own conventions come first" "$HERE/../procedures/api-design.md" && grep -q "^## 4. Outside callers" "$HERE/../procedures/api-design.md" && grep -q "^callers: " "$HERE/../agents/review-api.md" && grep -q "^conventions: " "$HERE/../agents/review-api.md"'
 check "the security reviewer exists and reviews every task the plan marks security" '[ -f "$HERE/../agents/review-security.md" ] && [ -f "$HERE/../procedures/security-review.md" ] && grep -q "^security: true | false" "$HERE/../templates/plan.md" && grep -q "^6b. \*\*Security marking.\*\*" "$HERE/../agents/planner.md" && grep -qF "A task marked \`security: true\` is also \`model: opus\`." "$HERE/../agents/planner.md" && grep -qF "\`accepted risk: <the weakness> — <why>\`" "$HERE/../agents/planner.md" && grep -qF "A \`security: true\` task at any size also gets \`idleflow:review-security\`" "$HERE/../commands/feature.md" && grep -qF "\`\${CLAUDE_PLUGIN_ROOT}/procedures/security-review.md\`, the output path \`review/<id>-security.md\` and \`Run commands with:" "$HERE/../commands/feature.md"'
 check "a security finding needs a trace, a CWE id and the repo's own control" 'grep -q "^## 2. The repo.s own security architecture is the convention" "$HERE/../procedures/security-review.md" && grep -q "^trace: " "$HERE/../agents/review-security.md" && grep -q "^cwe: " "$HERE/../agents/review-security.md" && grep -q "^control: " "$HERE/../agents/review-security.md" && grep -q "^accepted: " "$HERE/../agents/review-security.md" && grep -qF "a \`medium\` finding whose \`accepted:\` is \`no\`" "$HERE/../agents/review-security.md"'
 check "requirements no screen shows reach the plan" 'grep -q "^- \`design.md\` at the output path: the screens for this run, \"Not on a screen\"" "$HERE/../agents/designer.md" && grep -q "Each line under \"Not on a screen\" becomes acceptance of the task that builds its surface" "$HERE/../agents/planner.md" && grep -q "listed under \"Not on a screen\"" "$HERE/../procedures/design.md"'

@@ -31,8 +31,11 @@ For work an end user sees (the classifier reports `ui: true`, or `STEP_DESIGN=on
 - **`idleflow:designer`** reads idleflow's own design handbook (`procedures/design.md`) and reference data
   (`procedures/design-data.md`: type pairings, scales, colour recipes, contrast formula, motion values,
   checklists by screen type). It writes or extends the repo's lasting design system (`docs/design-system.md`,
-  or `.idleflow/design-system.md` without docs): a direction, tokens with measured contrast for light and dark,
-  components. For this run it writes `design.md`: a spec per screen with layout, hierarchy, every state,
+  or `.idleflow/design-system.md` without docs), in the sections of `templates/design-system.md`: a direction,
+  tokens with measured contrast for light and dark, components, the looks the project avoids. Only a project
+  with screens people see, a frontend or a game, keeps one: `/idleflow:init` has the human pick its direction,
+  `/idleflow:setup` records it from the UI the code already has (`run.sh ui` says whether there is one), and
+  the doctor reports a UI repo without it. For this run it writes `design.md`: a spec per screen with layout, hierarchy, every state,
   motion and accessibility, plus the issue's requirements that no screen shows (an API payload, CLI output),
   which the plan gives to the tasks that build those surfaces. Token work becomes the plan's first task.
 - **Directions to choose from.** On a greenfield run, or in a repo with no design system yet, the designer first
@@ -46,6 +49,10 @@ For work an end user sees (the classifier reports `ui: true`, or `STEP_DESIGN=on
   command, renders the changed screens at 390 and 1440 px and reviews the images. For an app that runs
   only from the main checkout (`preview_in: main`), it checks the merged screens, and each
   `verify: browser after merge` criterion, once after the last merge (`run.sh preview main`).
+- **`idleflow:review-api`** reviews every `api` task (an HTTP, GraphQL or RPC operation, a library's public
+  symbol, a CLI used from scripts, or an event or webhook payload) for the developers who call it, against the API's own
+  conventions first and the principles the published guides agree on (`procedures/api-design.md`); the
+  compatibility checks run only when the API already has outside callers.
 - **`idleflow:review-security`** reviews every `security` task against the repo's own security controls and
   the practice the published guidance agrees on (`procedures/security-review.md`): each finding traces where
   outside data enters and where it is used, is rated with the OWASP Risk Rating and carries its CWE id, and
@@ -76,6 +83,7 @@ For work an end user sees (the classifier reports `ui: true`, or `STEP_DESIGN=on
 | Tests | `tests_first: true` forced wherever entry points have no tests | planner §3, conformance reviewer §4 |
 | Mutation sweep | implementers break their own change on purpose; a fault no test catches needs a test or a reason | `STEP_MUTATION`, plan `mutation:`, implementer, correctness reviewer |
 | Design | designer before planning and a design reviewer on `ui` tasks; a lasting design system per repo | `STEP_DESIGN`, `STEP_DESIGN_OPTIONS`, `agents/designer.md`, `agents/review-design.md`, `procedures/design.md` |
+| API review | an API reviewer on `api` tasks: the API's own conventions first, compatibility only once it has callers | plan `api:`, `agents/review-api.md`, `procedures/api-design.md` |
 | Security review | a security reviewer on `security` tasks: the repo's own controls first, a traced source and use for every finding, OWASP risk rating with CWE ids | plan `security:`, `agents/review-security.md`, `procedures/security-review.md` |
 | Placeholders | code that cannot do its job yet fails loudly; a plausible default is a blocking finding | implementer, correctness reviewer |
 | Checkable findings | each review finding says whether a deterministic check would have caught it; repeats become a lesson | reviewers, `agents/retro.md` |
@@ -189,6 +197,7 @@ prompt diffs are shown before every post.
 .claude-plugin/marketplace.json lets the repo itself be added as a marketplace
 commands/feature.md             the orchestrator — the run procedure lives here
 procedures/design.md            idleflow's design handbook; design-data.md beside it holds the reference values
+procedures/api-design.md        the API reviewer's principles; the cited research is docs/research/api-dx.md
 procedures/security-review.md   the security reviewer's rules; the cited research is docs/research/security-review.md
 procedures/talking.md           how every command talks to the human: plain language, language and tone settings
 procedures/repo-setup.md        setup steps R1–R6 shared by feature and init (mode, docs, stack, libraries, tooling, snapshot)
@@ -206,7 +215,7 @@ agents/                         one file per role; frontmatter sets the model
 hooks/hooks.json                PreToolUse → ownership-guard
 scripts/run.sh                  run lifecycle: new / wt / own / get / set / inc / report / keep / gate / merge / snapshot / finish / loc /
                                 conf, plus path / migrate / doctor / update-check / detect / repo-gate / commands / approve /
-                                reword / findings / session-name / behind / team-install / custom / agent / vocab (`bash scripts/run.sh` lists them)
+                                reword / findings / session-name / behind / team-install / custom / agent / vocab / ui (`bash scripts/run.sh` lists them)
 scripts/diff-gate.sh            counts hand-written code lines vs base, emits JSON verdict
 scripts/ownership-guard.sh      the hook; blocks edits outside a task's globs
 scripts/rt.sh                   picks Python or Node, whichever is installed
@@ -218,7 +227,7 @@ scripts/shellcheck-new.sh       fails only on shellcheck findings a change adds 
 .github/workflows/checks.yml    CI: selftest on both runtimes, plugin validate, new shellcheck findings
 config/idleflow.conf            every number the workflow uses
 templates/                      plan.md, context.md, lessons.md, conventions.md, prd.md, progress.md, install-note.md,
-                                index.md, session.md, time-log.md, CLAUDE.md, vocabulary.md
+                                index.md, session.md, time-log.md, CLAUDE.md, vocabulary.md, design-system.md
 setup.md                        global install, written for Claude Code to execute
 PUBLISHING.md                   validate, push to GitHub, install elsewhere, release updates
 ISSUES.md                       how every idleflow issue is written: kinds, title, four headings; the form and plugin-feedback use it
@@ -251,6 +260,7 @@ on `.`, `agents` and `commands`, and `shellcheck-new.sh` against the base on eve
 .idleflow/conventions.md             commit this: style rules, readability mode, stack decisions
 prd.md  progress.md  index.md      repo root, when docs are on; humans and the retro both edit them
 vocabulary.md                      repo root, when docs are on; one term per concept, kept by humans
+docs/design-system.md              a repo with a UI only (.idleflow/ without docs); the designer keeps it
 CLAUDE.md                          the idleflow block: start-of-session doc grounding, end-of-session notes
 docs/research/<capability>.md      library and stack research with sources
 docs/sessions/s_<time>-<author>.md one note per run or session, named so teammates never collide; ignored or committed, asked once
