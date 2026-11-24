@@ -2599,10 +2599,11 @@ Task: $tid")
     case "${1:-}" in
       --all|--task|--since)
         mode="$1"; cd "$top"
+        # every case pattern below opens with a left paren, and no comment goes inside the
+        # process substitution: bash 3.2 parses its body again and would end it early
         while IFS= read -r -d '' f; do
           [ -f "$f" ] && [ "$(pwd -P)/$f" != "$vf" ] && files+=("$f")
         done < <(case "$mode" in
-          # each pattern opens with (: bash 3.2 ends a <( ) at a pattern's bare )
           (--all) git ls-files -z -- '*.md' ;;
           (--task|--since) git diff -z --name-only --no-renames --diff-filter=d "$base" HEAD -- '*.md' ;;
         esac) ;;
