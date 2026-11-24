@@ -26,7 +26,7 @@ Pushback applies throughout, as in `procedures/repo-setup.md`.
 2. `bash "$RUN" migrate` (stop on a non-zero exit, showing its message) and `bash "$RUN" update-check` (repeat its line once).
 3. If `.idleflow/runs/active/` exists, say a run is in progress and stop: setup changes the files that run reads.
 4. `bash "$RUN" loc`. At 0 the folder has no code: say `No code here yet: /idleflow:init is for new projects.` and stop.
-5. `bash "$RUN" doctor`. If no line is `fail`, the `conventions`, `lessons` and `docs` lines are `ok` and no line is `suggest fit`, the repo is already set up: say `idleflow is already set up here.`, then read `${CLAUDE_PLUGIN_ROOT}/commands/doctor.md` and follow it. Otherwise continue; each step below runs only for what is still unanswered or missing, so a repo `/idleflow:init` set up gets only its gaps filled.
+5. `bash "$RUN" doctor`. If no line is `fail`, the `conventions`, `lessons` and `docs` lines are `ok`, the `design` line is `ok` or absent and no line is `suggest fit`, the repo is already set up: say `idleflow is already set up here.`, then read `${CLAUDE_PLUGIN_ROOT}/commands/doctor.md` and follow it. Otherwise continue; each step below runs only for what is still unanswered or missing, so a repo `/idleflow:init` set up gets only its gaps filled.
 
 `ID=$(bash "$RUN" new setup)`. When it refuses because a run left active may still be built by another session, show its message and stop; run `new --park` only when the human says that run is over. `LESSONS=$(bash "$RUN" path lessons)`. Tell the human: `Setting up idleflow in <repo name>. Mapping the code first.`
 
@@ -69,6 +69,10 @@ Run **R5** when nothing is under "Tooling" yet (setup counts as size L for its c
 3. `prd.md`, when it is still the template: ask **Write it now** (three questions in one AskUserQuestion call: what the project is for and who uses it, what must be true by the next milestone, what is out of scope; then spawn `idleflow:planner` in PRD mode with `.idleflow/runs/active/brainstorm.md` holding the answers verbatim plus `context.md` §1–§2 as a summary, `.idleflow/conventions.md` and `templates/prd.md`; there is no market research for an existing project) / **Later** (the first feature run's planner reads it from the issue). The planner also writes the milestones into `progress.md`. Never write a PRD from the code alone: the code says what exists, not where the project is going.
 4. `progress.md`: first "Log" entry under `<!-- progress start -->`: `## <date> — idleflow set up (run <ID>)`, three to five bullets: readability mode, docs and lessons location, stack recorded (N tools), tooling (N installed), next.
 
+## 5b. Design system, for a repo with a UI
+
+When `bash "$RUN" ui` prints `yes <file>` and no file exists at `bash "$RUN" path design-system`: the repo has screens and no record of how they look, so every run would design from defaults. A repo whose `ui` is `no` (an API, a backend, a CLI, a library) gets no design system file. Spawn `idleflow:designer` in `System mode` with that path, `${CLAUDE_PLUGIN_ROOT}/templates/design-system.md`, `.idleflow/conventions.md`, `.idleflow/runs/active/context.md`, `prd.md` when it is written, the paths of `procedures/design.md` and `design-data.md`, and `game` when `context.md` says the project is a game. No `Chosen direction`: the file records the UI the code already has. Repeat its one-line reply. R6 commits it.
+
 ## 6. Commit and finish
 
 **Team.** Unless `.claude/settings.json` already names `idleflow@idlesync`, ask once: **Recommend idleflow to everyone who opens this repo (Recommended when others work here)** — `bash "$RUN" team-install` adds it to the committed `.claude/settings.json` (Claude Code then loads it for a teammate once they trust the folder) and adds an install note to `CLAUDE.md` for sessions that have not loaded it; cons: it changes the team's Claude Code settings file, so say that in review. **Just me for now** — nothing changes; `/idleflow:doctor` suggests it once a second human commits. On yes, commit those two files alone: `chore: recommend idleflow to the team`.
@@ -77,7 +81,7 @@ Run **R6** (snapshot): it commits `.idleflow/`, `CLAUDE.md`, the project docs an
 
 **Plugin gaps** as in `commands/feature.md` step 9, then `bash "$RUN" finish done`.
 
-Final message, nothing more: one line each for readability mode, docs (and where lessons live), stack recorded, tooling installed (and the restart it needs, if any); the commit; `Next: /idleflow:feature "<the first item from prd.md or progress.md Next, or: describe the change>"`. Then ask: **Start a feature now** / **End the session** (read `${CLAUDE_PLUGIN_ROOT}/commands/endsession.md` and follow it; this answer is its yes) / **Stop here**.
+Final message, nothing more: one line each for readability mode, docs (and where lessons live), the design system file when step 5b wrote it, stack recorded, tooling installed (and the restart it needs, if any); the commit; `Next: /idleflow:feature "<the first item from prd.md or progress.md Next, or: describe the change>"`. Then ask: **Start a feature now** / **End the session** (read `${CLAUDE_PLUGIN_ROOT}/commands/endsession.md` and follow it; this answer is its yes) / **Stop here**.
 
 ## Rules you never break
 

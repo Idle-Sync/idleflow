@@ -33,7 +33,7 @@ If there is no git repo: `git init -q`. Then `ID=$(bash "$RUN" new init)` (it wo
 Ask with AskUserQuestion in rounds of at most four questions. Every question has three or four concrete options plus the free-text "Other" the tool adds. Skip a round whose answers are already clear from the idea or an earlier answer. Write every answer, as given, into `.idleflow/runs/active/brainstorm.md` under the round's heading as you go.
 
 Round A — what and for whom
-- What are we building, in one sentence? (options: a web app, a CLI or developer tool, a mobile app, a library or API, a data or ML pipeline)
+- What are we building, in one sentence? (options: a web app, a mobile or desktop app, a game, a CLI or developer tool, a library or API, a data or ML pipeline)
 - Who uses it first? (options: just me, a small team I know, the public, businesses)
 - The one job it must do on day one: what does an end user do, and what do they see when it worked?
 - What exists today that people use instead? (options: nothing, a spreadsheet or manual process, a named product, a mix)
@@ -85,10 +85,17 @@ Spawn `idleflow:planner` in **PRD mode** with: `brainstorm.md`, `docs/market-res
 
 Show the human the PRD's "Must do (v1)" and "Two-year shape" sections and the "Milestones" section of `progress.md` (paste only those). Ask: **Approve** / **Change something** (free text; send it back to the planner once with the change) / **Approve with notes** (append the notes under "Open questions"). Loop on "Change something" at most twice, then ask the human to edit `prd.md` by hand and say when done.
 
+## 5b. Design system (Opus), for a project people look at
+
+Only when the brainstorm says the project has screens people see: a website or web app, a mobile or desktop app, or a game. An API, a backend service, a CLI, a library, a script or a pipeline gets no design system file; skip this step for them, and for a project with both, the file covers its frontend only. `DESIGN_SYSTEM` is the path `bash "$RUN" path design-system` prints.
+
+1. **Directions.** Spawn `idleflow:designer` in `Options mode` with `greenfield`, `brainstorm.md` as the issue, `prd.md`, `.idleflow/conventions.md`, the `DESIGN_SYSTEM` path and `templates/design-system.md`, the options folder `.idleflow/runs/active/design-options/`, the paths of `procedures/design.md` and `design-data.md`, and `game` when the project is a game. The human picks, rejects or asks again exactly as `commands/feature.md` step 2c **Directions first** says, the rejected-set record included.
+2. **The file.** Spawn `idleflow:designer` in `System mode` with the `DESIGN_SYSTEM` path and its template, `.idleflow/conventions.md`, `prd.md`, the two procedure paths, `game` when it applies, the options folder, and the chosen `direction.md` as `Chosen direction`. Repeat its one-line reply, and give the human the path to read.
+
 ## 6. Scaffold the docs and rules
 
 1. Run **R2** steps 1 and 2 (`progress.md`, `index.md`, the vocabulary file, `docs/sessions/TEMPLATE.md`, `CLAUDE.md`). Fill `co_author_claude:` and `releases:` in `CLAUDE.md` from step 3, `<Project name>` from the brainstorm. Leave the "Commands" block empty: it is generated, and `bash "$RUN" docs` fills it from the lockfile and scripts once the first feature run has created them (that run regenerates it after its merge).
-2. `index.md`: list what exists now (`prd.md`, `progress.md`, `CLAUDE.md`, `.idleflow/`, `docs/`), nothing imagined.
+2. `index.md`: list what exists now (`prd.md`, `progress.md`, `CLAUDE.md`, the design system file when step 5b wrote it, `.idleflow/`, `docs/`), nothing imagined.
 3. `progress.md` (its "Milestones" section is already written): first "Log" entry: `## <date> — project initialised (run <ID>)` with: brainstorm done, market research verdict, N stack decisions, N library decisions, N tooling items, PRD approved, next: milestone 1 from `progress.md` "Milestones".
 4. The note at `$(bash "$RUN" session-name)` from the template: what this session decided, the files it created, next = milestone 1.
 5. On the **Team** answer "Recommend", `bash "$RUN" team-install`.

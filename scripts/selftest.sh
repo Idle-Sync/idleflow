@@ -459,6 +459,27 @@ check "doctor names unanswered settings"  'echo "$doc" | has "^warn conventions:
 check "update-check is silent offline"    '[ -z "$(bash "$RUN" update-check)" ]'
 check "migrate again is a no-op"          '[ "$(bash "$RUN" migrate)" = "migrate: nothing to move" ]'
 
+echo "--- a design system file only for a repo with a UI"
+cp .idleflow/conventions.md "$d-conv-ds.bak"
+check "a repo with no UI has no design line in the doctor" '[ "$(bash "$RUN" ui)" = no ] && ! bash "$RUN" doctor | has "^[a-z]* design:"'
+printf 'body { margin: 0 }\n' > site.css && git add site.css
+check "a tracked stylesheet is a UI, and the doctor asks for its design system file" '[ "$(bash "$RUN" ui)" = "yes site.css" ] && bash "$RUN" doctor | has -F "warn design: the repo has a UI (site.css) and no design system file (.idleflow/design-system.md) | fix: /idleflow:setup"'
+printf '# x\n' > .idleflow/design-system.md
+check "the doctor passes a UI repo that has its design system file" 'bash "$RUN" doctor | has -F "ok design: .idleflow/design-system.md"'
+if grep -q '^docs:' .idleflow/conventions.md; then sed -i.bak 's#^docs: .*#docs: yes#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak; else echo 'docs: yes' >> .idleflow/conventions.md; fi
+check "with project docs on, the design system file lives with them" '[ "$(bash "$RUN" path --relative design-system)" = docs/design-system.md ] && [ "$(bash "$RUN" path design-system)" = "$(native "$(git rev-parse --show-toplevel)")/docs/design-system.md" ]'
+git rm -q --cached site.css && rm -f site.css .idleflow/design-system.md && cp "$d-conv-ds.bak" .idleflow/conventions.md
+mkdir -p dist tests/fixtures docs/_templates ProjectSettings
+printf 'a{}\n' > dist/app.css; printf '<p>x</p>\n' > tests/fixtures/page.html; printf '<p>x</p>\n' > docs/_templates/layout.html
+git add -f dist/app.css tests/fixtures/page.html docs/_templates/layout.html
+check "built output, test fixtures and doc templates are not a UI" '[ "$(bash "$RUN" ui)" = no ]'
+printf 'm_EditorVersion: 6\n' > ProjectSettings/ProjectVersion.txt && git add ProjectSettings/ProjectVersion.txt
+check "a game engine's project file is a UI, though its type is left out of the diff" '[ "$(bash "$RUN" ui)" = "yes ProjectSettings/ProjectVersion.txt" ]'
+git rm -q --cached dist/app.css tests/fixtures/page.html docs/_templates/layout.html ProjectSettings/ProjectVersion.txt
+rm -f dist/app.css tests/fixtures/page.html docs/_templates/layout.html ProjectSettings/ProjectVersion.txt; rmdir dist tests/fixtures tests docs/_templates docs ProjectSettings 2>/dev/null || true
+check "init and setup make the design system file only for a project people look at" 'grep -q "^## 5b. Design system (Opus), for a project people look at" "$HERE/../commands/init.md" && grep -q "gets no design system file" "$HERE/../commands/init.md" && grep -q "^## 5b. Design system, for a repo with a UI" "$HERE/../commands/setup.md" && grep -qF "the \`design\` line is \`ok\` or absent" "$HERE/../commands/setup.md" && grep -qF "bash \"\$RUN\" ui\` prints \`yes <file>\`" "$HERE/../commands/setup.md" && grep -q "^## System mode" "$HERE/../agents/designer.md" && grep -qF "\`DESIGN_SYSTEM\` is the path \`bash \"\$RUN\" path design-system\` prints." "$HERE/../commands/feature.md"'
+check "the design system template has every section the designer fills" '[ "$(grep -cE "^## (Direction|Type|Colour roles|Space and layout|Shape and depth|Motion|Components|Libraries|Looks this project avoids|Game)\$" "$HERE/../templates/design-system.md")" = 10 ]'
+
 echo "--- records where the repo keeps them"
 cp .idleflow/conventions.md "$d-conv.bak"
 check "the vocabulary file is vocabulary.md at the repo root by default" '[ "$(bash "$RUN" path --relative vocabulary)" = vocabulary.md ]'
