@@ -2,13 +2,14 @@
 # Run lifecycle helper. Called by the orchestrator (the /idleflow:* commands).
 # Everything is plain git + files so a run can be inspected or resumed by hand.
 #
-#   run.sh new <slug>                     -> creates .idleflow/runs/active/ for a new run, prints its <id>
+#   run.sh new [--park] <slug>            -> creates .idleflow/runs/active/ for a new run, prints its <id>; refuses while
+#                                            a job or preview of the run it would park still runs (--park: park anyway)
 #   run.sh services                       -> runs the approved `services:` check (the database, cache or queue the
 #                                            repo's tests need); exit 1 and its last lines when one is down, 7 unapproved
 #   run.sh services start                 -> runs the approved `services_start:` command once, from the main checkout, then
 #                                            the check again for up to SERVICES_START_SECONDS while they come up; exit 1 when
 #                                            they are still down (unavailable here), 7 unapproved. Records what it ran
-#   run.sh resume <run-id>                -> makes a stopped run active again from its locked plan: its merged tasks
+#   run.sh resume [--park] <run-id>       -> makes a stopped run active again from its locked plan: its merged tasks
 #                                            stay merged, every other task starts afresh from the branch as it is now
 #   run.sh wt add <task-id> [base-ref]    -> creates the task's worktree and branch, records its base sha, runs the approved
 #                                            worktree_setup there (exit 6: setup failed, 7: not approved, 8: the plan
@@ -1081,20 +1082,20 @@ stop_preview() { # stop_preview <pid file> [trust]
 }
 # A run another session may still be building: one of its jobs or previews still runs. A pid that
 # now names a later process counts as gone, and its stop is never suggested.
-refuse_if_busy() { # refuse_if_busy <what to say first>
+refuse_if_busy() { # refuse_if_busy <what to say first> [what else to say]
   local jd jn jt pf pt
   for jd in "$ACTIVE"/tasks/*/jobs/*/; do
     [ -d "$jd" ] || continue
     jd="${jd%/}"; jn="${jd##*/}"; jt="${jd%/jobs/*}"; jt="${jt##*/}"
     job_ended "$jd" && continue
     [ -n "$(job_pid "$jd")" ] && ! group_alive "$jd" && continue
-    echo "$1 may still be built by another session: job $jn of $jt still runs. Wait for it, or end it with: bash \"$0\" stop $jt $jn" >&2; exit 1
+    echo "$1 may still be built by another session: job $jn of $jt still runs. Wait for it, or end it with: bash \"$0\" stop $jt $jn${2:+. $2}" >&2; exit 1
   done
   for pf in "$ACTIVE"/tasks/*/preview.pid; do
     [ -f "$pf" ] || continue
     pt="${pf%/preview.pid}"; pt="${pt##*/}"
     if preview_alive "$pf"; then
-      echo "$1 may still be built by another session: the preview of $pt still serves. End it with: bash \"$0\" preview $pt stop" >&2; exit 1
+      echo "$1 may still be built by another session: the preview of $pt still serves. End it with: bash \"$0\" preview $pt stop${2:+. $2}" >&2; exit 1
     fi
   done
 }
@@ -1105,8 +1106,13 @@ move_active() { # move_active <destination> <what failed, for the message>
   echo "$2: could not move .idleflow/runs/active to $(native_path "$1"), so the run is still active. A process may still hold a file in it (Windows moves no folder then); end it, then run this again" >&2
   return 1
 }
-park_active() {
+# Parking ends what is left of the run's jobs and previews, so a run another session may still be
+# building is refused first, whoever parks it. <anyway> skips that, for a run the human knows is over
+# whose pids ps cannot judge (Git Bash), or that now name other processes; its jobs and previews are
+# then judged as finish judges them, and one nothing can tell about is left as it is.
+park_active() { # park_active <what to say first> [<anyway> [<how to park anyway>]]
   [ -d "$ACTIVE" ] || return 0
+  [ -n "${2:-}" ] || refuse_if_busy "$1" "${3:-}"
   local old=""
   [ -f "$ACTIVE/run.json" ] && old="$(idleflow_rt get "$ACTIVE/run.json" id 2>/dev/null || true)"
   [ -n "$old" ] && [ "$old" != "null" ] || old="abandoned-$(date +%Y%m%d-%H%M%S)"
@@ -1299,11 +1305,12 @@ ci_clean() { # ci_clean <run id>: deletes the run's CI branch once it pushed one
 cmd="${1:-}"; shift || true
 case "$cmd" in
   new)
+    park=""; if [ "${1:-}" = --park ]; then park=1; shift; fi
     slug="${1:?slug}"
     safe="$(echo "$slug" | tr -cs 'a-zA-Z0-9' '-' | sed 's/^-//;s/-$//' | cut -c1-40)"
     id="$(date +%Y%m%d-%H%M%S)-$safe"
     mkdir -p "$RUNS"
-    park_active
+    park_active "new: the active run, which a new run would park," "$park" "If that run is over and its pids now name other processes (ps cannot tell on Git Bash), park it anyway: bash \"$0\" new --park <slug>"
     mkdir -p "$ACTIVE"/{tasks,debate,review}
     # Both work on an unborn branch (fresh `git init`, no commits yet): base falls back to HEAD, sha to "".
     base="$("${G[@]}" symbolic-ref --short -q HEAD || echo HEAD)"
@@ -1831,6 +1838,7 @@ Task: $tid")
     if [ -f "$ACTIVE/run.json" ] && ! run_has_tasks; then conventions_to_run; fi
     ;;
   resume)
+    park=""; if [ "${1:-}" = --park ]; then park=1; shift; fi
     # A run that stopped before it finished done (needs-human, a time limit, a run a later `new` parked)
     # goes on from its locked plan. What it merged is on the branch and stays merged; every other task
     # starts afresh from the branch as it is now. Everything that can refuse is checked before anything
@@ -1880,8 +1888,7 @@ Task: $tid")
     # the active run may still be built by another session: its jobs and previews hold its worktrees,
     # so a resume waits until none of them runs, whether it resumes that run or parks it for another
     if [ "$src" = "$ACTIVE" ]; then refuse_if_busy "resume: run $rid"
-    elif [ -d "$ACTIVE" ]; then refuse_if_busy "resume: the active run, which resuming $rid would park,"; fi
-    if [ "$src" != "$ACTIVE" ]; then park_active; mv "$src" "$ACTIVE"; fi
+    else park_active "resume: the active run, which resuming $rid would park," "$park" "If that run is over and its pids now name other processes (ps cannot tell on Git Bash), park it anyway: bash \"$0\" resume --park $rid"; mv "$src" "$ACTIVE"; fi
     # this idleflow carries the run on, so it is the version the run records
     idleflow_rt set "$ACTIVE/run.json" plugin_version "$(json_str "$(plugin_version)")"
     merged=""; again=""; split=""
