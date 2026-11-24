@@ -123,7 +123,7 @@ Before the group's worktrees: the services check (step 0, "The services the test
    On **Push and wait**, run `bash "$RUN" ci push "<job>" <commit>`, with the `commit:` line `ci plan` printed. It pushes to that branch and nowhere else, and refuses when HEAD has moved since (run `ci plan` and ask again), never to the default branch or one of the human's. Then run `bash "$RUN" ci wait "<job>"`, with a Bash timeout of at least 120 seconds, again while it exits 75.
    - Exit 0 prints the path of the job's file: its conclusion, its run and the last 200 lines of its log. That file is the evidence, whether the job passed or failed.
    - Exit 3 (the job ended `cancelled`, `skipped` or another way that ran nothing) or exit 124 (no result within `CI_EVIDENCE_MINUTES`): ask **Try again** (`ci push` once more with the same commit, then wait) / **Stop the run**. `ci push` exits 2 once `CI_EVIDENCE_TRIES` are used up: stop.
-   - Exit 1 (no `gh`, not signed in, no remote, the push refused): show its message and ask **I'll paste the evidence** / **Stop the run**.
+   - Exit 1 (no `gh`, not signed in, no remote, the push refused): show its message and ask **I'll paste the evidence** / **Stop the run**. When the message says the CI branch on the remote is gone or holds another commit than the one recorded for the job, run `ci plan` again and ask **Push and wait** again instead.
 
    A stop here is `needs-human` with the job and what the task waited to learn from it. `finish` deletes the run's CI branch. With no human present, nothing is pushed.
 
