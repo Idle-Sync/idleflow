@@ -1004,6 +1004,21 @@ sleep 60 & stranger=$!; echo "$stranger" > "$jl/pid"; touch -t "$(date -d @$(( $
 lrid="$(bash "$RUN" get id)"; bash "$RUN" new after-leftover >/dev/null 2>&1
 check "parking a leftover run never signals a process that only reuses its job's pid" 'kill -0 "$stranger" 2>/dev/null && [ -f ".idleflow/runs/$lrid/tasks/TL/jobs/1/ended" ]'
 kill "$stranger" 2>/dev/null; wait "$stranger" 2>/dev/null; bash "$RUN" finish "done" >/dev/null
+# new and resume park a run only once nothing of it still runs, since parking ends its jobs: another
+# session may still be building it. --park parks it anyway, for a run the human knows is over
+bash "$RUN" new busy >/dev/null 2>&1; brid="$(bash "$RUN" get id)"; jb=".idleflow/runs/active/tasks/TB/jobs/1"; mkdir -p "$jb"
+idleflow_rt detach "$PWD" /dev/null "$jb/pid" "sleep 60"; live="$(cat "$jb/pid")"
+nruns="$(find .idleflow/runs -mindepth 1 -maxdepth 1 | wc -l)"; out="$(bash "$RUN" new after-busy 2>&1)"; rc=$?
+check "new refuses while a job of the run it would park still runs, and moves nothing" '[ "$rc" = 1 ] && [ "$(find .idleflow/runs -mindepth 1 -maxdepth 1 | wc -l)" = "$nruns" ] && [ "$(bash "$RUN" get id)" = "$brid" ] && has -F "new: the active run, which a new run would park, may still be built by another session: job 1 of TB still runs" <<< "$out" && has -F "new --park <slug>" <<< "$out" && kill -0 "$live" 2>/dev/null'
+nid="$(bash "$RUN" new --park after-busy 2>/dev/null)"
+check "new --park parks it anyway and ends its job" '[ -n "$nid" ] && [ "$(bash "$RUN" get id)" = "$nid" ] && [ "$(idleflow_rt get ".idleflow/runs/$brid/run.json" status)" = abandoned ] && ! kill -0 "$live" 2>/dev/null'
+printf '## Tasks\n' > ".idleflow/runs/$brid/plan.md"; jb=".idleflow/runs/active/tasks/TB/jobs/1"; mkdir -p "$jb"
+idleflow_rt detach "$PWD" /dev/null "$jb/pid" "sleep 60"; live="$(cat "$jb/pid")"
+nruns="$(find .idleflow/runs -mindepth 1 -maxdepth 1 | wc -l)"; out="$(bash "$RUN" resume "$brid" 2>&1)"; rc=$?
+check "resume refuses while a job of the run it would park still runs, and moves nothing" '[ "$rc" = 1 ] && [ "$(find .idleflow/runs -mindepth 1 -maxdepth 1 | wc -l)" = "$nruns" ] && [ "$(bash "$RUN" get id)" = "$nid" ] && [ -d ".idleflow/runs/$brid" ] && has -F "resume: the active run, which resuming $brid would park, may still be built by another session: job 1 of TB still runs" <<< "$out" && has -F "resume --park $brid" <<< "$out" && kill -0 "$live" 2>/dev/null'
+bash "$RUN" resume --park "$brid" >/dev/null 2>&1; rc=$?
+check "resume --park parks it anyway and resumes" '[ "$rc" = 0 ] && [ "$(bash "$RUN" get id)" = "$brid" ] && [ "$(idleflow_rt get ".idleflow/runs/$nid/run.json" status)" = abandoned ] && ! kill -0 "$live" 2>/dev/null'
+bash "$RUN" finish "done" >/dev/null 2>&1
 # a job's shell may start well after its started stamp (a large repo's bytecode sweep runs between):
 # finish still stops it, judged by when its pid file was written
 [ ! -f .idleflow/idleflow.conf ] || cp .idleflow/idleflow.conf "$scratch/conf.bak"
