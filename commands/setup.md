@@ -28,7 +28,7 @@ Pushback applies throughout, as in `procedures/repo-setup.md`.
 4. `bash "$RUN" loc`. At 0 the folder has no code: say `No code here yet: /idleflow:init is for new projects.` and stop.
 5. `bash "$RUN" doctor`. If no line is `fail`, the `conventions`, `lessons` and `docs` lines are `ok` and no line is `suggest fit`, the repo is already set up: say `idleflow is already set up here.`, then read `${CLAUDE_PLUGIN_ROOT}/commands/doctor.md` and follow it. Otherwise continue; each step below runs only for what is still unanswered or missing, so a repo `/idleflow:init` set up gets only its gaps filled.
 
-`ID=$(bash "$RUN" new setup)`. `LESSONS=$(bash "$RUN" path lessons)`. Tell the human: `Setting up idleflow in <repo name>. Mapping the code first.`
+`ID=$(bash "$RUN" new setup)`. When it refuses because a run left active may still be built by another session, show its message and stop; run `new --park` only when the human says that run is over. `LESSONS=$(bash "$RUN" path lessons)`. Tell the human: `Setting up idleflow in <repo name>. Mapping the code first.`
 
 ## 1. Map the code (Sonnet)
 
