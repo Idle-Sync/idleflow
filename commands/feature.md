@@ -46,7 +46,9 @@ bash "$RUN" conf                     # note every value; you pass them to agents
 ID=$(bash "$RUN" new "<short-slug-from-issue>")
 LESSONS=$(bash "$RUN" path lessons)  # .idleflow/lessons.md, or docs/lessons.md under lessons_in: docs
 ```
+
 `new` parks a run left active, and refuses, changing nothing, while another session may still be building it (one of its jobs or previews still runs): show its message and stop. Run `new --park` only when the human says that run is over.
+
 **Repo commands**, asked right after R6 in step 2: setup (R1–R5) can add or change them and R6 commits them, and none of them runs before that. `bash "$RUN" commands` lists the commands this repo's conventions name (`worktree_setup`, `gate`, `gate_quick`, `preview`, `services`, `services_start`) as committed. For each `unapproved` line, show the human the exact command and ask: **Approve it** (`bash "$RUN" approve <key>`; it is stored for this person in local git config and asked again whenever the command changes) / **Run without it this time** (`bash "$RUN" skip <key>`, so this run skips it). Never approve on the human's behalf.
 
 **The repo's gate.** When `bash "$RUN" get gate` is not empty (an approved `gate:` in conventions "Repo fit"), it is this repo's definition of done. Its baseline runs at the end of step 2, after R6, on the commit the tasks branch from: `bash "$RUN" repo-gate base`. Exit 1 → show its tail and ask: **Proceed; these failures already exist** (`bash "$RUN" set baseline_red true`, and append `- the repo gate — fails on the base — <path of repo-gate-base.log>` to `.idleflow/runs/active/known-failures.md`; every later gate judges only failures the base did not have) / **Stop** (`bash "$RUN" finish needs-human`). Exit 7 → it was not approved; ask as above. A `slow:` line on stderr means the gate took longer than `SLOW_GATE_SECONDS`: tell the human once, and suggest `/idleflow:doctor` after the run (never change settings mid-run).

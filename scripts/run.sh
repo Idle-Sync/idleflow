@@ -1108,8 +1108,9 @@ move_active() { # move_active <destination> <what failed, for the message>
 }
 # Parking ends what is left of the run's jobs and previews, so a run another session may still be
 # building is refused first, whoever parks it. <anyway> skips that, for a run the human knows is over
-# whose pids ps cannot judge (Git Bash), or that now name other processes; its jobs and previews are
-# then judged as finish judges them, and one nothing can tell about is left as it is.
+# where ps cannot judge its pids (Git Bash): a pid that names a later process already counts as gone.
+# Its jobs and previews are then judged as finish judges them, and one nothing can tell about is
+# left as it is.
 park_active() { # park_active <what to say first> [<anyway> [<how to park anyway>]]
   [ -d "$ACTIVE" ] || return 0
   [ -n "${2:-}" ] || refuse_if_busy "$1" "${3:-}"
@@ -1310,7 +1311,7 @@ case "$cmd" in
     safe="$(echo "$slug" | tr -cs 'a-zA-Z0-9' '-' | sed 's/^-//;s/-$//' | cut -c1-40)"
     id="$(date +%Y%m%d-%H%M%S)-$safe"
     mkdir -p "$RUNS"
-    park_active "new: the active run, which a new run would park," "$park" "If that run is over and its pids now name other processes (ps cannot tell on Git Bash), park it anyway: bash \"$0\" new --park <slug>"
+    park_active "new: the active run, which a new run would park," "$park" "If that run is over (where ps cannot tell whose a pid is, as on Git Bash), park it anyway: bash \"$0\" new --park <slug>"
     mkdir -p "$ACTIVE"/{tasks,debate,review}
     # Both work on an unborn branch (fresh `git init`, no commits yet): base falls back to HEAD, sha to "".
     base="$("${G[@]}" symbolic-ref --short -q HEAD || echo HEAD)"
@@ -1888,7 +1889,7 @@ Task: $tid")
     # the active run may still be built by another session: its jobs and previews hold its worktrees,
     # so a resume waits until none of them runs, whether it resumes that run or parks it for another
     if [ "$src" = "$ACTIVE" ]; then refuse_if_busy "resume: run $rid"
-    else park_active "resume: the active run, which resuming $rid would park," "$park" "If that run is over and its pids now name other processes (ps cannot tell on Git Bash), park it anyway: bash \"$0\" resume --park $rid"; mv "$src" "$ACTIVE"; fi
+    else park_active "resume: the active run, which resuming $rid would park," "$park" "If that run is over (where ps cannot tell whose a pid is, as on Git Bash), park it anyway: bash \"$0\" resume --park $rid"; mv "$src" "$ACTIVE"; fi
     # this idleflow carries the run on, so it is the version the run records
     idleflow_rt set "$ACTIVE/run.json" plugin_version "$(json_str "$(plugin_version)")"
     merged=""; again=""; split=""
