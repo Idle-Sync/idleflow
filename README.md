@@ -53,6 +53,10 @@ For work an end user sees (the classifier reports `ui: true`, or `STEP_DESIGN=on
   symbol, a CLI used from scripts, or an event or webhook payload) for the developers who call it, against the API's own
   conventions first and the principles the published guides agree on (`procedures/api-design.md`); the
   compatibility checks run only when the API already has outside callers.
+- **`idleflow:review-security`** reviews every `security` task against the repo's own security controls and
+  the practice the published guidance agrees on (`procedures/security-review.md`): each finding traces where
+  outside data enters and where it is used, is rated with the OWASP Risk Rating and carries its CWE id, and
+  only what the diff introduced counts.
 
 ## What it adds over plain Claude Code
 
@@ -80,6 +84,7 @@ For work an end user sees (the classifier reports `ui: true`, or `STEP_DESIGN=on
 | Mutation sweep | implementers break their own change on purpose; a fault no test catches needs a test or a reason | `STEP_MUTATION`, plan `mutation:`, implementer, correctness reviewer |
 | Design | designer before planning and a design reviewer on `ui` tasks; a lasting design system per repo | `STEP_DESIGN`, `STEP_DESIGN_OPTIONS`, `agents/designer.md`, `agents/review-design.md`, `procedures/design.md` |
 | API review | an API reviewer on `api` tasks: the API's own conventions first, compatibility only once it has callers | plan `api:`, `agents/review-api.md`, `procedures/api-design.md` |
+| Security review | a security reviewer on `security` tasks: the repo's own controls first, a traced source and use for every finding, OWASP risk rating with CWE ids | plan `security:`, `agents/review-security.md`, `procedures/security-review.md` |
 | Placeholders | code that cannot do its job yet fails loudly; a plausible default is a blocking finding | implementer, correctness reviewer |
 | Checkable findings | each review finding says whether a deterministic check would have caught it; repeats become a lesson | reviewers, `agents/retro.md` |
 | Known base failures | a failure already on the commit a task started from is shown there with `run.sh exec --base`, never argued; the gate's baseline and every task's proven ones go into the run's `known-failures.md`, which later implementers and the correctness reviewer get, with or without a gate | step 5 of `commands/feature.md`, `agents/implementer.md` |
@@ -193,6 +198,7 @@ prompt diffs are shown before every post.
 commands/feature.md             the orchestrator — the run procedure lives here
 procedures/design.md            idleflow's design handbook; design-data.md beside it holds the reference values
 procedures/api-design.md        the API reviewer's principles; the cited research is docs/research/api-dx.md
+procedures/security-review.md   the security reviewer's rules; the cited research is docs/research/security-review.md
 procedures/talking.md           how every command talks to the human: plain language, language, tone and explanation settings
 procedures/repo-setup.md        setup steps R1–R6 shared by feature and init (mode, docs, stack, libraries, tooling, snapshot)
 commands/fix.md                 same, bug-biased
