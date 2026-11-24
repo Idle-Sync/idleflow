@@ -642,6 +642,13 @@ job_ended() { # job_ended <job dir>: the command ended and nothing of it is left
 write_status() { # write_status <job dir> <code>
   echo "$2" > "$1/status.tmp.$$" && mv -f "$1/status.tmp.$$" "$1/status"
 }
+# A job whose group is gone with no exit code ended without one (its shell was killed, or died with
+# the machine), unless a stop holds its lock: that stop writes the code (124 at the limit, 143 by
+# hand), and a 1 written first would hide it.
+ended_without_code() { # ended_without_code <job dir>: 0 when it wrote the status
+  if [ -f "$1/status" ] || [ -d "$1/stopping" ]; then return 1; fi
+  write_status "$1" 1
+}
 stop_job() { # stop_job <job dir>: TERM to the whole group, KILL after 5 s; 143 if the command had not ended
   local pid n=0
   job_ended "$1" && return 0
@@ -649,7 +656,7 @@ stop_job() { # stop_job <job dir>: TERM to the whole group, KILL after 5 s; 143 
   # nothing of it is left (its shell died without an exit code, and its pid may name another process
   # by now): it ended, as a wait would report it, and nothing is signalled
   if ! group_alive "$1"; then
-    [ -f "$1/status" ] || write_status "$1" 1
+    ended_without_code "$1" || true
     : > "$1/ended"; return 0
   fi
   signal_job "$1" TERM
@@ -711,8 +718,7 @@ await_job() { # await_job <task-id> <job> [watch [<group> <deadline>]]: the comm
   while [ ! -f "$d/status" ] && [ "$(date +%s)" -lt "$end" ]; do
     [ -d "$d" ] || gone_job "$1" "$2" "$group" "$deadline" "${3:-}"
     if ! group_alive "$d"; then
-      # a group another process is stopping is not one that ended without an exit code
-      sleep 0.2; [ -f "$d/status" ] || [ -d "$d/stopping" ] || { write_status "$d" 1; echo "[idleflow] job $2 of $1 ended without an exit code" >&2; }
+      sleep 0.2; ! ended_without_code "$d" || echo "[idleflow] job $2 of $1 ended without an exit code" >&2
       break
     fi
     sleep 0.2
@@ -732,6 +738,9 @@ await_job() { # await_job <task-id> <job> [watch [<group> <deadline>]]: the comm
         if [ -n "$left" ] || [ -f "$d/stopped" ]; then
           [ -z "$left" ] || : > "$d/survived"
           : > "$d/limit-stopped"; write_status "$d" 124
+        elif [ ! -f "$d/status" ]; then
+          # its group was gone, with no exit code, before this stop: the lock kept the 1 for it to write
+          write_status "$d" 1
         fi
         : > "$d/stop-done"
         break
