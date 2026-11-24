@@ -682,7 +682,10 @@ mv .idleflow/runs/active "$scratch/moved-active"
 for _ in $(seq 1 $(( (lim + 30) * 4 ))); do
   { [ -n "$watcher" ] && kill -0 "$watcher" 2>/dev/null; } || kill -0 "$(cat "$wa/child4.pid")" 2>/dev/null || break; sleep 0.25
 done
-check "a watcher whose run folder moved away stops the job at its limit and ends" '[ "$exec_rc" = 75 ] && [ -n "$job" ] && ! kill -0 "$(cat "$wa/child4.pid")" 2>/dev/null && { [ -z "$watcher" ] || ! kill -0 "$watcher" 2>/dev/null; }'
+# which of the two still runs, so a failure says so
+child_runs=no; ! kill -0 "$(cat "$wa/child4.pid")" 2>/dev/null || child_runs=yes
+watcher_runs=no; { [ -z "$watcher" ] || ! kill -0 "$watcher" 2>/dev/null; } || watcher_runs=yes
+check "a watcher whose run folder moved away stops the job at its limit and ends" '[ "$exec_rc" = 75 ] && [ -n "$job" ] && [ "$child_runs" = no ] && [ "$watcher_runs" = no ]'
 mv "$scratch/moved-active" .idleflow/runs/active
 # a watcher that starts only after its run moved away, the case above at its narrowest: it is started
 # by hand here with what exec tells it, while no run is active
@@ -692,6 +695,15 @@ jd=".idleflow/runs/active/tasks/TA/jobs/$job"; rid="$(bash "$RUN" get id)"; grp=
 mv .idleflow/runs/active "$scratch/moved-active"
 bash "$RUN" wait TA "$job" --watch "$rid" "$grp" "$(( $(date +%s) + 2 ))" > /dev/null 2> "$scratch/late.err"; rc=$?
 check "a watcher that starts after its run moved away still stops the job at its deadline" '[ "$rc" = 1 ] && has -F "its processes were stopped at the limit" "$scratch/late.err" && ! kill -0 "$(cat "$wa/child5.pid")" 2>/dev/null'
+mv "$scratch/moved-active" .idleflow/runs/active
+# a watcher exec could give no group (the job's shell had not written its pid yet) takes it from the
+# folder while it is there, so a move after that still leaves the job its limit
+bash "$RUN" exec TA --limit 30 -- sh -c 'sleep 60 & echo "$!" > child6.pid; wait' >/dev/null 2> "$scratch/job.err"
+job="$(sed -n 's/^\[idleflow\] job \([0-9]*\) of TA started$/\1/p' "$scratch/job.err")"; rid="$(bash "$RUN" get id)"
+t6=$SECONDS; bash "$RUN" wait TA "$job" --watch "$rid" - "$(( $(date +%s) + 3 ))" > /dev/null 2> "$scratch/late6.err" & w6=$!
+sleep 1; mv .idleflow/runs/active "$scratch/moved-active"; wait "$w6"; rc=$?; t6=$(( SECONDS - t6 ))
+# at the deadline it was given, not at the job's own 30 s one, which a watcher reading the folder would use
+check "a watcher given no group takes it from the folder, and still stops the job after the folder moves" '[ "$rc" = 1 ] && [ "$t6" -lt 15 ] && has -F "its processes were stopped at the limit" "$scratch/late6.err" && ! kill -0 "$(cat "$wa/child6.pid")" 2>/dev/null'
 mv "$scratch/moved-active" .idleflow/runs/active
 check "a job within its --limit passes its exit code" 'bash "$RUN" exec TA --limit 30 -- sh -c "exit 3" 2>/dev/null; [ $? = 3 ]'
 # The whole limit is proved by the deadline the job keeps, not by timing a command against it: the
