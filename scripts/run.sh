@@ -2,13 +2,14 @@
 # Run lifecycle helper. Called by the orchestrator (the /idleflow:* commands).
 # Everything is plain git + files so a run can be inspected or resumed by hand.
 #
-#   run.sh new <slug>                     -> creates .idleflow/runs/active/ for a new run, prints its <id>
+#   run.sh new [--park] <slug>            -> creates .idleflow/runs/active/ for a new run, prints its <id>; refuses while
+#                                            a job or preview of the run it would park still runs (--park: park anyway)
 #   run.sh services                       -> runs the approved `services:` check (the database, cache or queue the
 #                                            repo's tests need); exit 1 and its last lines when one is down, 7 unapproved
 #   run.sh services start                 -> runs the approved `services_start:` command once, from the main checkout, then
 #                                            the check again for up to SERVICES_START_SECONDS while they come up; exit 1 when
 #                                            they are still down (unavailable here), 7 unapproved. Records what it ran
-#   run.sh resume <run-id>                -> makes a stopped run active again from its locked plan: its merged tasks
+#   run.sh resume [--park] <run-id>       -> makes a stopped run active again from its locked plan: its merged tasks
 #                                            stay merged, every other task starts afresh from the branch as it is now
 #   run.sh wt add <task-id> [base-ref]    -> creates the task's worktree and branch, records its base sha, runs the approved
 #                                            worktree_setup there (exit 6: setup failed, 7: not approved, 8: the plan
@@ -55,13 +56,16 @@
 #   run.sh merge <task-id>                -> merges the task branch into the current branch (no-ff); exit 3 on conflict, 4 otherwise
 #   run.sh ignore <pattern>               -> adds the pattern to the ignore file `ignore_in:` names, prints that file
 #   run.sh snapshot                       -> commits the repo-level docs the orchestrator writes (conventions, CLAUDE.md, prd, ...)
-#   run.sh ci plan <job>                 -> what a push for that job would do, for the human to approve: the branch, the
-#                                            commit, and the workflows ci wait would start by hand when the push starts none
+#   run.sh ci plan <job> [<commit>]       -> what a push for that job would do, for the human to approve: the branch, the
+#                                            commit (HEAD, or one on a task's branch of this run), and the workflows ci wait
+#                                            would start by hand when the push starts none
 #   run.sh ci push <job> <commit>         -> evidence only a CI job can give, once the human approved the push: pushes the
-#                                            run's merged state (HEAD) to its own branch idleflow/<run id>/ci, never another;
-#                                            again on the same commit, it is another try (exit 2 past CI_EVIDENCE_TRIES)
+#                                            commit ci plan showed (the run's merged state, or a task's commit) to the run's
+#                                            own branch idleflow/<run id>/ci, never another; again on the same commit, it is
+#                                            another try (exit 2 past CI_EVIDENCE_TRIES)
 #   run.sh ci wait <job>                  -> that job's result on the pushed commit, read with gh: writes ci/<job>.md (its
-#                                            conclusion and the last 200 lines of its log) and prints the path; exits 75 while the job
+#                                            conclusion and the last 200 lines of its log, kept per commit as
+#                                            ci/<job>-<commit>.md) and prints the per-commit path; exits 75 while the job
 #                                            has not finished after EXEC_WAIT_SECONDS, 3 when it ended cancelled, skipped or
 #                                            the like, 124 once CI_EVIDENCE_MINUTES passed since the push. With no run for the
 #                                            commit 2 minutes after it, it starts once the workflows ci plan named; a try
@@ -642,6 +646,13 @@ job_ended() { # job_ended <job dir>: the command ended and nothing of it is left
 write_status() { # write_status <job dir> <code>
   echo "$2" > "$1/status.tmp.$$" && mv -f "$1/status.tmp.$$" "$1/status"
 }
+# A job whose group is gone with no exit code ended without one (its shell was killed, or died with
+# the machine), unless a stop holds its lock: that stop writes the code (124 at the limit, 143 by
+# hand), and a 1 written first would hide it.
+ended_without_code() { # ended_without_code <job dir>: 0 when it wrote the status
+  if [ -f "$1/status" ] || [ -d "$1/stopping" ]; then return 1; fi
+  write_status "$1" 1
+}
 stop_job() { # stop_job <job dir>: TERM to the whole group, KILL after 5 s; 143 if the command had not ended
   local pid n=0
   job_ended "$1" && return 0
@@ -649,7 +660,7 @@ stop_job() { # stop_job <job dir>: TERM to the whole group, KILL after 5 s; 143 
   # nothing of it is left (its shell died without an exit code, and its pid may name another process
   # by now): it ended, as a wait would report it, and nothing is signalled
   if ! group_alive "$1"; then
-    [ -f "$1/status" ] || write_status "$1" 1
+    ended_without_code "$1" || true
     : > "$1/ended"; return 0
   fi
   signal_job "$1" TERM
@@ -711,8 +722,9 @@ await_job() { # await_job <task-id> <job> [watch [<group> <deadline>]]: the comm
   while [ ! -f "$d/status" ] && [ "$(date +%s)" -lt "$end" ]; do
     [ -d "$d" ] || gone_job "$1" "$2" "$group" "$deadline" "${3:-}"
     if ! group_alive "$d"; then
-      # a group another process is stopping is not one that ended without an exit code
-      sleep 0.2; [ -f "$d/status" ] || [ -d "$d/stopping" ] || { write_status "$d" 1; echo "[idleflow] job $2 of $1 ended without an exit code" >&2; }
+      # group_alive reads the folder: one that moved away while it read makes a live group look gone
+      [ -d "$d" ] || gone_job "$1" "$2" "$group" "$deadline" "${3:-}"
+      sleep 0.2; ! ended_without_code "$d" || echo "[idleflow] job $2 of $1 ended without an exit code" >&2
       break
     fi
     sleep 0.2
@@ -722,7 +734,8 @@ await_job() { # await_job <task-id> <job> [watch [<group> <deadline>]]: the comm
   if { [ ! -f "$d/status" ] && [ -n "$deadline" ] && [ "$(date +%s)" -ge "$deadline" ]; } || [ -d "$d/stopping" ]; then
     local holder="" left="" tries=0
     while [ ! -f "$d/stop-done" ]; do
-      [ -d "$d" ] || gone_job "$1" "$2" "$group" "$deadline" ""
+      # a watcher whose folder moves here still stops the group it remembered; a waiter only reports
+      [ -d "$d" ] || gone_job "$1" "$2" "$group" "$deadline" "${3:-}"
       if mkdir "$d/stopping" 2>/dev/null; then
         echo $$ > "$d/stopping/pid"
         stop_job "$d" || left=1
@@ -732,6 +745,9 @@ await_job() { # await_job <task-id> <job> [watch [<group> <deadline>]]: the comm
         if [ -n "$left" ] || [ -f "$d/stopped" ]; then
           [ -z "$left" ] || : > "$d/survived"
           : > "$d/limit-stopped"; write_status "$d" 124
+        elif [ ! -f "$d/status" ]; then
+          # its group was gone, with no exit code, before this stop: the lock kept the 1 for it to write
+          write_status "$d" 1
         fi
         : > "$d/stop-done"
         break
@@ -766,6 +782,7 @@ await_job() { # await_job <task-id> <job> [watch [<group> <deadline>]]: the comm
     fi
     exit "$(cat "$d/status")"
   fi
+  [ -d "$d" ] || gone_job "$1" "$2" "$group" "$deadline" "${3:-}"
   echo "[idleflow] job $2 of $1 is still running (log: $(native_path "$d/log")). Wait for it: bash \"$0\" wait $1 $2. End it: bash \"$0\" stop $1 $2. Do not start it again while it runs." >&2
   exit 75
 }
@@ -1086,20 +1103,20 @@ stop_preview() { # stop_preview <pid file> [trust]
 }
 # A run another session may still be building: one of its jobs or previews still runs. A pid that
 # now names a later process counts as gone, and its stop is never suggested.
-refuse_if_busy() { # refuse_if_busy <what to say first>
+refuse_if_busy() { # refuse_if_busy <what to say first> [what else to say]
   local jd jn jt pf pt
   for jd in "$ACTIVE"/tasks/*/jobs/*/; do
     [ -d "$jd" ] || continue
     jd="${jd%/}"; jn="${jd##*/}"; jt="${jd%/jobs/*}"; jt="${jt##*/}"
     job_ended "$jd" && continue
     [ -n "$(job_pid "$jd")" ] && ! group_alive "$jd" && continue
-    echo "$1 may still be built by another session: job $jn of $jt still runs. Wait for it, or end it with: bash \"$0\" stop $jt $jn" >&2; exit 1
+    echo "$1 may still be built by another session: job $jn of $jt still runs. Wait for it, or end it with: bash \"$0\" stop $jt $jn${2:+. $2}" >&2; exit 1
   done
   for pf in "$ACTIVE"/tasks/*/preview.pid; do
     [ -f "$pf" ] || continue
     pt="${pf%/preview.pid}"; pt="${pt##*/}"
     if preview_alive "$pf"; then
-      echo "$1 may still be built by another session: the preview of $pt still serves. End it with: bash \"$0\" preview $pt stop" >&2; exit 1
+      echo "$1 may still be built by another session: the preview of $pt still serves. End it with: bash \"$0\" preview $pt stop${2:+. $2}" >&2; exit 1
     fi
   done
 }
@@ -1110,8 +1127,14 @@ move_active() { # move_active <destination> <what failed, for the message>
   echo "$2: could not move .idleflow/runs/active to $(native_path "$1"), so the run is still active. A process may still hold a file in it (Windows moves no folder then); end it, then run this again" >&2
   return 1
 }
-park_active() {
+# Parking ends what is left of the run's jobs and previews, so a run another session may still be
+# building is refused first, whoever parks it. <anyway> skips that, for a run the human knows is over
+# where ps cannot judge its pids (Git Bash): a pid that names a later process already counts as gone.
+# Its jobs and previews are then judged as finish judges them, and one nothing can tell about is
+# left as it is.
+park_active() { # park_active <what to say first> [<anyway> [<how to park anyway>]]
   [ -d "$ACTIVE" ] || return 0
+  [ -n "${2:-}" ] || refuse_if_busy "$1" "${3:-}"
   local old=""
   [ -f "$ACTIVE/run.json" ] && old="$(idleflow_rt get "$ACTIVE/run.json" id 2>/dev/null || true)"
   [ -n "$old" ] && [ "$old" != "null" ] || old="abandoned-$(date +%Y%m%d-%H%M%S)"
@@ -1192,6 +1215,17 @@ ci_repo() { # ci_repo <remote>
   case "$host" in github.com|ssh.github.com|www.github.com) echo "$path" ;; *) echo "$host/$path" ;; esac
 }
 ci_get() { idleflow_rt get "$ACTIVE/run.json" "$1" 2>/dev/null || true; }
+# A commit CI may be asked about: the run's merged state or what led to it, or a commit on one of the
+# run's task branches (a task's test alone, its finished work) before it merges
+ci_commit_ok() { # ci_commit_ok <sha> <run id>
+  local ref
+  "${G[@]}" merge-base --is-ancestor "$1" HEAD 2>/dev/null && return 0
+  while IFS= read -r ref; do
+    [ -n "$ref" ] || continue
+    "${G[@]}" merge-base --is-ancestor "$1" "$ref" 2>/dev/null && return 0
+  done < <("${G[@]}" for-each-ref --format='%(refname)' "refs/heads/idleflow/$2/")
+  return 1
+}
 ci_gh() { # gh, from the repo, on the repository the run pushes to
   local remote repo=""
   if remote="$(ci_remote 2>/dev/null)"; then repo="$(ci_repo "$remote")"; fi
@@ -1200,13 +1234,14 @@ ci_gh() { # gh, from the repo, on the repository the run pushes to
 # never a prompt: a push that needs a password or a key's passphrase fails instead of waiting. Where
 # git would run plain ssh, ssh is told so too; an ssh command of the human's own (GIT_SSH_COMMAND,
 # GIT_SSH, core.sshCommand) is left as it is, since it may pick the key the remote needs
-ci_push_git() {
+ci_remote_git() { # ci_remote_git <git command that talks to the remote> [args]
   if [ -z "${GIT_SSH_COMMAND:-}${GIT_SSH:-}" ] && ! "${G[@]}" config --get core.sshCommand >/dev/null 2>&1; then
-    GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="ssh -o BatchMode=yes" "${G[@]}" push -q "$@"
+    GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="ssh -o BatchMode=yes" "${G[@]}" "$@"
   else
-    GIT_TERMINAL_PROMPT=0 "${G[@]}" push -q "$@"
+    GIT_TERMINAL_PROMPT=0 "${G[@]}" "$@"
   fi
 }
+ci_push_git() { ci_remote_git push -q "$@"; }
 ci_runs() { # ci_runs <branch> <sha> <key>: the runs on that commit, past those earlier tries saw
   local skip r ids
   skip=" $(ci_get "$3.skip") "
@@ -1354,11 +1389,12 @@ vocab_check() { # vocab_check <vocabulary file> <file>...
 cmd="${1:-}"; shift || true
 case "$cmd" in
   new)
+    park=""; if [ "${1:-}" = --park ]; then park=1; shift; fi
     slug="${1:?slug}"
     safe="$(echo "$slug" | tr -cs 'a-zA-Z0-9' '-' | sed 's/^-//;s/-$//' | cut -c1-40)"
     id="$(date +%Y%m%d-%H%M%S)-$safe"
     mkdir -p "$RUNS"
-    park_active
+    park_active "new: the active run, which a new run would park," "$park" "If that run is over (where ps cannot tell whose a pid is, as on Git Bash), park it anyway: bash \"$0\" new --park <slug>"
     mkdir -p "$ACTIVE"/{tasks,debate,review}
     # Both work on an unborn branch (fresh `git init`, no commits yet): base falls back to HEAD, sha to "".
     base="$("${G[@]}" symbolic-ref --short -q HEAD || echo HEAD)"
@@ -1510,6 +1546,20 @@ JSON
     # it then stops the group it was told about at the deadline, and never reads the folder of
     # another run's job with the same number. Told all three, it needs no active run at all, so a
     # run that moves away between its check and its wait cannot end it either.
+    # exec passes - for a group whose pid had not appeared yet: the watcher waits for it here, while
+    # the job's folder is there to give it, so it holds the group before any move can take the folder
+    if [ "$cmd" = wait ] && [ "${3:-}" = --watch ] && [ "${5:-}" = - ] && [[ "${6:-}" =~ ^[0-9]+$ ]] \
+      && [ "$(idleflow_rt get "$ACTIVE/run.json" id 2>/dev/null || true)" = "${4:-}" ]; then
+      d="$(job_dir "$tid" "$job")"
+      while [ -d "$d" ] && [ ! -f "$d/pid" ] && [ ! -f "$d/status" ] && [ "$(date +%s)" -lt "$6" ]; do sleep 0.2; done
+      p="$(job_pid "$d")"
+      if [[ "$p" =~ ^[0-9]+$ ]]; then set -- "$1" "$2" "$3" "${4:-}" "$p" "$6"
+      # still no group, and its folder went while it waited: whatever the active run is now, it is not this one
+      elif [ ! -d "$d" ] || [ "$(idleflow_rt get "$ACTIVE/run.json" id 2>/dev/null || true)" != "${4:-}" ]; then gone_job "$tid" "$job" "" "" ""; fi
+    elif [ "$cmd" = wait ] && [ "${3:-}" = --watch ] && [ "${5:-}" = - ]; then
+      # no group, and its run is no longer the active one: the job with that number is another run's
+      gone_job "$tid" "$job" "" "" ""
+    fi
     if [ "$cmd" = wait ] && [ "${3:-}" = --watch ] && [[ "${5:-}" =~ ^[0-9]+$ ]] && [[ "${6:-}" =~ ^[0-9]+$ ]]; then
       [ "$(idleflow_rt get "$ACTIVE/run.json" id 2>/dev/null || true)" = "${4:-}" ] || gone_job "$tid" "$job" "$5" "$6" watch
       await_job "$tid" "$job" watch "$5" "$6"
@@ -1886,6 +1936,7 @@ Task: $tid")
     if [ -f "$ACTIVE/run.json" ] && ! run_has_tasks; then conventions_to_run; fi
     ;;
   resume)
+    park=""; if [ "${1:-}" = --park ]; then park=1; shift; fi
     # A run that stopped before it finished done (needs-human, a time limit, a run a later `new` parked)
     # goes on from its locked plan. What it merged is on the branch and stays merged; every other task
     # starts afresh from the branch as it is now. Everything that can refuse is checked before anything
@@ -1935,8 +1986,7 @@ Task: $tid")
     # the active run may still be built by another session: its jobs and previews hold its worktrees,
     # so a resume waits until none of them runs, whether it resumes that run or parks it for another
     if [ "$src" = "$ACTIVE" ]; then refuse_if_busy "resume: run $rid"
-    elif [ -d "$ACTIVE" ]; then refuse_if_busy "resume: the active run, which resuming $rid would park,"; fi
-    if [ "$src" != "$ACTIVE" ]; then park_active; mv "$src" "$ACTIVE"; fi
+    else park_active "resume: the active run, which resuming $rid would park," "$park" "If that run is over (where ps cannot tell whose a pid is, as on Git Bash), park it anyway: bash \"$0\" resume --park $rid"; mv "$src" "$ACTIVE"; fi
     # this idleflow carries the run on, so it is the version the run records
     idleflow_rt set "$ACTIVE/run.json" plugin_version "$(json_str "$(plugin_version)")"
     merged=""; again=""; split=""
@@ -1978,13 +2028,18 @@ Task: $tid")
     ;;
   ci)
     sub="${1:-}"; job="${2:-}"; id="$(active_id)"
-    case "$sub" in plan|push|wait) ;; *) echo "usage: run.sh ci plan <job> | ci push <job> <commit> | ci wait <job>" >&2; exit 1 ;; esac
+    case "$sub" in plan|push|wait) ;; *) echo "usage: run.sh ci plan <job> [<commit>] | ci push <job> <commit> | ci wait <job>" >&2; exit 1 ;; esac
     [ -n "$job" ] || { echo "ci $sub: name the job, as GitHub shows it" >&2; exit 1; }
     if [ "$sub" = plan ]; then
       # what the human is asked about: the branch, and the workflows a start by hand would run
-      sha="$("${G[@]}" rev-parse -q --verify HEAD)" || { echo "ci plan: the run has no commit to push" >&2; exit 1; }
+      sha="$("${G[@]}" rev-parse -q --verify "${3:-HEAD}^{commit}")" || { echo "ci plan: ${3:-the run} has no commit to push" >&2; exit 1; }
+      ci_commit_ok "$sha" "$id" || { echo "ci plan: ${sha:0:12} is neither on the run's branch nor on one of its task branches" >&2; exit 1; }
       echo "branch: idleflow/$id/ci"
       echo "commit: $sha"
+      # a task's commit is pushed before it merges, and what CI runs on that push comes from its own
+      # tree: the workflows, and the local actions kept under .github/ (uses: ./.github/actions/...)
+      changed="$("${G[@]}" diff --name-only HEAD "$sha" -- .github/ 2>/dev/null || true)"
+      if [ -n "$changed" ]; then echo "files under .github/ this commit changes from the run's branch:"; printf '%s\n' "$changed" | sed 's/^/- /'; fi
       files="$(ci_dispatch_files "$sha" "$job")"
       if [ -n "$files" ]; then echo "started by hand when the push starts none:"; printf '%s\n' "$files" | sed 's/^/- /'
       else echo "started by hand when the push starts none: none"; fi
@@ -1996,9 +2051,12 @@ Task: $tid")
     mkdir -p "$ACTIVE/ci"
     if [ "$sub" = push ]; then
       remote="$(ci_remote)" || exit 1
-      sha="$("${G[@]}" rev-parse -q --verify HEAD)" || { echo "ci push: the run has no commit to push" >&2; exit 1; }
-      # the human approved what ci plan showed for one commit; a HEAD that moved since may start other workflows
-      [ "${3:-}" = "$sha" ] || { echo "ci push: HEAD is $sha, not the commit ci plan showed (${3:-none given}); run ci plan again and ask again" >&2; exit 1; }
+      # the human approved what ci plan showed for one commit, and exactly that commit is pushed: a
+      # HEAD that moved since never brings workflows the human did not see
+      [ -n "${3:-}" ] || { echo "ci push: name the commit ci plan showed" >&2; exit 1; }
+      sha="$("${G[@]}" rev-parse -q --verify "$3^{commit}" || true)"
+      if [ "$sha" != "$3" ]; then echo "ci push: '$3' is not the full commit ci plan showed; run ci plan again and ask again" >&2; exit 1; fi
+      ci_commit_ok "$sha" "$id" || { echo "ci push: ${sha:0:12} is neither on the run's branch nor on one of its task branches" >&2; exit 1; }
       tries=1; skip=""
       if [ "$(ci_get "$key.sha")" = "$sha" ]; then
         tries=$(( $(ci_get "$key.tries") + 1 ))
@@ -2023,11 +2081,20 @@ Task: $tid")
     fi
     sha="$(ci_get "$key.sha")"
     [ -n "$sha" ] || { echo "ci wait: nothing was pushed for $job; run.sh ci plan \"$job\", then ci push \"$job\" <its commit>, first" >&2; exit 1; }
-    "${G[@]}" merge-base --is-ancestor "$sha" HEAD 2>/dev/null || { echo "ci wait: the commit recorded for $job is not on the run's branch; push again" >&2; exit 1; }
+    ci_commit_ok "$sha" "$id" || { echo "ci wait: the commit recorded for $job is on neither the run's branch nor one of its task branches; push again" >&2; exit 1; }
     deadline="$(ci_get "$key.deadline")"; pushed="$(ci_get "$key.pushed")"; tries="$(ci_get "$key.tries")"
     # a round of gh calls takes some seconds, so the last one starts that much before EXEC_WAIT_SECONDS
     w=$(( ${EXEC_WAIT_SECONDS:-100} - 10 )); [ "$w" -ge 1 ] || w=1
     end=$(( $(date +%s) + w )); state="not started yet"
+    # what GitHub runs, and what a start by hand would start, is the commit the branch holds on the
+    # remote: the one ci push sent, after the human saw its workflows in ci plan. run.json can be
+    # rewritten with run.sh set, so the commit it records counts only while it is that one.
+    # ls-remote matches refs by their tail, so only the branch's own full name is read
+    remote="$(ci_remote)" || exit 1
+    held="$(ci_remote_git ls-remote "$remote" "refs/heads/$branch")" || { echo "ci wait: could not read $branch on $remote" >&2; exit 1; }
+    held="$(awk -v r="refs/heads/$branch" '$2 == r { print $1; exit }' <<< "$held")"
+    [ -n "$held" ] || { echo "ci wait: $remote has no $branch; run.sh ci plan \"$job\" and ask about the push again" >&2; exit 1; }
+    [ "$held" = "$sha" ] || { echo "ci wait: $branch on $remote holds ${held:0:12}, not ${sha:0:12}, the commit recorded for $job; run.sh ci plan \"$job\" and ask about the push again" >&2; exit 1; }
     while :; do
       gh_failed="ci wait: gh could not read the runs on $branch (signed in? gh auth status)"
       runs="$(ci_runs "$branch" "$sha" "$key")" || { echo "$gh_failed" >&2; exit 1; }
@@ -2043,6 +2110,8 @@ Task: $tid")
         if [ "$status" = completed ]; then
           idleflow_rt set "$ACTIVE/run.json" "$key.conclusion" "$(json_str "${conclusion:-none}")"
           idleflow_rt set "$ACTIVE/run.json" "$key.url" "$(json_str "$url")"
+          # the job's record is the latest push; each commit's result stays, so a task's red outlives its green
+          idleflow_rt set "$ACTIVE/run.json" "$key.runs.c${sha:0:12}" "{\"sha\":\"$sha\",\"conclusion\":$(json_str "${conclusion:-none}"),\"url\":$(json_str "$url"),\"job_id\":$(json_str "$job_id")}"
           case "$conclusion" in
             success|failure) ;;
             *) echo "ci wait: $job on ${sha:0:12} ended ${conclusion:-without a conclusion} ($url), which shows nothing of what the task waits for; try again or stop" >&2; exit 3 ;;
@@ -2070,8 +2139,10 @@ Task: $tid")
             printf '%s\n' "${log:-(gh returned no log)}"
             echo "$fence"
           } > "$ev"
+          # the latest result keeps its name; each commit's is kept too, so a task's red and green both stay
+          cp "$ev" "$ACTIVE/ci/$slug-${sha:0:12}.md"
           echo "ci: $job on ${sha:0:12}: $conclusion"
-          native_path "$ev"
+          native_path "$ACTIVE/ci/$slug-${sha:0:12}.md"
           exit 0
         fi
       elif [ -z "$runs" ] && [ "$(ci_get "$key.dispatched")" != true ] && [ "$(( $(date +%s) - pushed ))" -ge 120 ]; then
