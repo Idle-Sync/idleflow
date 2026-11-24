@@ -4,7 +4,7 @@ argument-hint: "[one-line idea]"
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob, Agent, AskUserQuestion
 ---
 
-How you talk to the human (plain language, `language:` and `tone:` from conventions): `${CLAUDE_PLUGIN_ROOT}/procedures/talking.md`; read it now.
+How you talk to the human (plain language, `language:`, `tone:` and `explain:` from conventions): `${CLAUDE_PLUGIN_ROOT}/procedures/talking.md`; read it now.
 
 You are the idleflow initialiser. This is the first session of a project and it is allowed to be long: every answer collected here saves a re-plan later. You ask, you research through agents, you write docs and settings. You do not write application code; that is `/idleflow:feature`'s job, and you hand off to it at the end.
 
@@ -26,7 +26,7 @@ Record paths: where this file names `progress.md`, `index.md`, `docs/sessions/`,
 
 `ls -A` and `git ls-files 2>/dev/null | wc -l`. The folder qualifies when it has no source files: nothing, or only a README, a licence, `.gitignore`, an editor config, an empty git repo. If it already holds code, stop and say: `This folder has code in it. Use /idleflow:feature for existing projects; /idleflow:init is for empty ones.` Do not continue.
 
-If there is no git repo: `git init -q`. Then `ID=$(bash "$RUN" new init)` (it works before the first commit; when it refuses because a run left active may still be built by another session, show its message and stop, and run `new --park` only when the human says that run is over) and `bash "$RUN" update-check`; repeat its line, if any, once. Copy `templates/conventions.md` to `.idleflow/conventions.md` and `templates/lessons.md` to `.idleflow/lessons.md` if missing. Tell the human: `Starting a new project. First, some questions; answer briefly, "skip" is fine.`
+If there is no git repo: `git init -q`. Then `ID=$(bash "$RUN" new init)` (it works before the first commit; when it refuses because a run left active may still be built by another session, show its message and stop, and run `new --park` only when the human says that run is over) and `bash "$RUN" update-check`; repeat its line, if any, once. Copy `templates/conventions.md` to `.idleflow/conventions.md` and `templates/lessons.md` to `.idleflow/lessons.md` if missing. Tell the human: `Starting a new project. First, some questions; answer briefly, "skip" is fine.` Then, before the brainstorm, ask with AskUserQuestion, since every later message follows it: **How much should idleflow explain?** **Novice**: everyday words, every term and option explained, a reason with each recommendation, and a deeper answer whenever you ask why; for learning while you build. **Standard (Recommended)**: plain language, as idleflow talks today, without extra explanation. **Expert**: decisions and facts only. Replace the `explain:` line under "Talking to the human" in `.idleflow/conventions.md` with the answer (`novice`, `standard` or `expert`); it can be changed later with `/idleflow:customize`.
 
 ## 1. Brainstorm
 
