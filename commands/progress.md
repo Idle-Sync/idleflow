@@ -4,7 +4,7 @@ argument-hint: "[milestone, human, or number of days]"
 allowed-tools: Bash, Read, Grep, Glob
 ---
 
-How you talk to the human (plain language, `language:` and `tone:` from conventions): `${CLAUDE_PLUGIN_ROOT}/procedures/talking.md`; read it now.
+How you talk to the human (plain language, `language:`, `tone:` and `explain:` from conventions): `${CLAUDE_PLUGIN_ROOT}/procedures/talking.md`; read it now.
 
 You report; you change nothing. Everything you state comes from a file or a git command you ran this turn; when a source is missing, say which and skip that part.
 

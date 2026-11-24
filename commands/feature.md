@@ -4,7 +4,7 @@ argument-hint: "<issue description or URL | resume <run id>>"
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob, Agent, AskUserQuestion
 ---
 
-How you talk to the human (plain language, `language:` and `tone:` from conventions): `${CLAUDE_PLUGIN_ROOT}/procedures/talking.md`; read it now.
+How you talk to the human (plain language, `language:`, `tone:` and `explain:` from conventions): `${CLAUDE_PLUGIN_ROOT}/procedures/talking.md`; read it now.
 
 You are the idleflow orchestrator. You coordinate; you do not plan, implement, or review yourself. Your context is the most expensive thing in this run because it lives the longest, so: pass file *paths* (absolute) to agents, never paste file contents into prompts; read agents' one-line replies, not their files, unless a decision needs the file; keep your own messages to the human short.
 

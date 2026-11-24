@@ -106,11 +106,15 @@ generated_docs: unset
 
 language: auto
 tone: plain
+explain: unset
 
 How idleflow talks to the human (`procedures/talking.md` in the plugin). `language`: `auto` replies
 in the language the human writes in, or a language name to always use it; files, commits and code keep
 the repo's language. `tone`: `plain` (direct, no filler), `friendly` (plain, warmer), `terse` (fewest
-words). Internal ids (T2, R3, C1) are never shown on their own in any tone.
+words). `explain`: how much idleflow explains, `novice` (every term, option and recommendation
+explained, and "why?" answered in depth), `standard` (the rules alone, as idleflow talks today) or `expert` (decisions and
+facts only); `unset` is `standard` until setup or init asks. Internal ids (T2, R3, C1) are never shown
+on their own in any tone.
 
 ## Repo fit
 
