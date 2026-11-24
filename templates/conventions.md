@@ -24,7 +24,7 @@ idleflow run. Commit this file. Edit it by hand whenever a decision changes, or 
 
 ## Writing docs, commits and comments (always on)
 
-- **No meta commentary.** Nothing in this repo narrates how it came to be: no "the user
+- **No meta commentary.** Nothing in this repo narrates how it came to be: no "the user <!-- vocab: allow -->
   asked", "as requested", "per our discussion", "I'll now", "after review". State the fact,
   the decision, or the reason. Applies to every `.md`, commit message, pull request, issue,
   session note, research file and code comment. The conformance reviewer rejects on it.
@@ -93,7 +93,7 @@ generated_docs: unset
 - `index_rewrite`: `yes` lets the retro rewrite the index after a run; `no` leaves it to the
   repo's own process (tasks add their rows through `shared_files`).
 - `session_names`: `time-author` (`s_<YYYYMMDD-HHMM>-<author>.md`, safe with several writers),
-  `per-person` (`<person>/s_0001.md`: each person numbers their own folder, so nothing collides; the
+  `per-person` (`<person>/s_0001.md`: each human numbers their own folder, so nothing collides; the
   folder is the GitHub login, or `git config idleflow.person <name>` to name it), or `numbered`
   (`s_0001.md`, ...; two writers can pick the same number).
 - `shared_files`: space-separated paths every task may add its own lines to, such as `CHANGELOG.md`
@@ -114,7 +114,7 @@ words). Internal ids (T2, R3, C1) are never shown on their own in any tone.
 
 How idleflow fits a repo that already has its own rules. Unset or missing lines keep idleflow's
 defaults. A command here (`worktree_setup`, `gate`, `services`, `services_start`) runs only as committed, and only after each
-person approved that exact text on their own clone (`run.sh approve <key>`, kept in local git
+human approved that exact text on their own clone (`run.sh approve <key>`, kept in local git
 config); a changed command is asked about again. `unset` means nobody has decided yet, so setup and
 the end of a run may propose one; `none` means the repo has decided to go without.
 

@@ -35,14 +35,14 @@ Ask with AskUserQuestion in rounds of at most four questions. Every question has
 Round A — what and for whom
 - What are we building, in one sentence? (options: a web app, a CLI or developer tool, a mobile app, a library or API, a data or ML pipeline)
 - Who uses it first? (options: just me, a small team I know, the public, businesses)
-- The one job it must do on day one: what does a user do, and what do they see when it worked?
+- The one job it must do on day one: what does an end user do, and what do they see when it worked?
 - What exists today that people use instead? (options: nothing, a spreadsheet or manual process, a named product, a mix)
 
 Round B — shape
 - Platform and delivery: browser, terminal, desktop, phone, server-only, more than one?
 - Data: what is stored, who owns it, does it need accounts and login? (options: no persistence, local files, a database with accounts, third-party data)
 - Integrations it cannot live without (payments, email, an external API, OAuth providers, none).
-- Scale on day one and in a year: a handful of users, hundreds, many thousands.
+- Scale on day one and in a year: a handful of end users, hundreds, many thousands.
 
 Round C — constraints
 - Language or stack preferences, or "whatever fits" (the stack advisor will propose; this records a veto or a must).
@@ -53,7 +53,7 @@ Round C — constraints
 Round D — future-proofing
 - What should still be true in two years: the one thing you would not want to rewrite (data model, API, auth, file format, plugin boundary).
 - What could it grow into that it must not block (multi-tenant, mobile, plugins, an API for others, a paid tier).
-- How you will know it is working: the measurable signal (users, time saved, revenue, a test passing).
+- How you will know it is working: the measurable signal (end users, time saved, revenue, a test passing).
 - What is explicitly out of scope for v1.
 
 After the rounds, write a ten-line summary at the top of `brainstorm.md` (what, who, core job, platform, data, integrations, stack vetoes, constraints, growth paths, success signal) and show it to the human. Ask: **Looks right** / **Change something** (free text) / **Start over**. Loop on "Change something" until "Looks right".
@@ -69,9 +69,9 @@ Ask in one AskUserQuestion call (four questions):
 1. **Readability mode**: the three options and pros/cons from R1, Balanced first and marked Recommended (the folder has no code, so R1's **Match this repo** is not offered).
 2. **Co-author Claude on commits?** **No (Recommended)**: commits carry only the human's identity, no `Co-Authored-By: Claude` trailer, no "Generated with Claude Code" footers anywhere; cons: no record in git history of which commits an agent wrote. **Yes**: every commit an agent makes ends with `Co-Authored-By: Claude <noreply@anthropic.com>`; cons: every commit shows it.
 3. **Versioned, tagged releases on GitHub?** **Yes, public repo**: semantic versions, a `vX.Y.Z` tag and a GitHub release with notes when a milestone in `progress.md` completes; cons: the code is public from the first push. **Yes, private repo**: same, visible to collaborators only. **Not now**: local git only; a repo can be added later.
-4. **Keep docs/ in git?** **Yes (Recommended)**: research, market research and session notes are shared with everyone who clones. **No, keep it local**: notes stay on this machine; cons: the next person starts blind.
+4. **Keep docs/ in git?** **Yes (Recommended)**: research, market research and session notes are shared with everyone who clones. **No, keep it local**: notes stay on this machine; cons: the next human starts blind.
 
-Then, in a second call, R1's **Ignore file** question with its two options and a **Team** question: **Recommend idleflow to everyone who opens this repo** (`bash "$RUN" team-install` in step 6: the committed `.claude/settings.json` offers it to teammates and `CLAUDE.md` carries an install note) / **Just me for now** (`/idleflow:doctor` suggests it once a second person commits).
+Then, in a second call, R1's **Ignore file** question with its two options and a **Team** question: **Recommend idleflow to everyone who opens this repo** (`bash "$RUN" team-install` in step 6: the committed `.claude/settings.json` offers it to teammates and `CLAUDE.md` carries an install note) / **Just me for now** (`/idleflow:doctor` suggests it once a second human commits).
 
 Write `mode:`, `docs: yes`, `docs_in_git:` and `ignore_in:` into `.idleflow/conventions.md`, then `bash "$RUN" ignore .idleflow/runs/` and, on "No, keep it local", `bash "$RUN" ignore docs/`. Keep `co_author_claude:` and `releases:` for step 6. R1 and the `docs_in_git` question of R2 are now answered; do not ask them again.
 
@@ -128,8 +128,8 @@ Then ask: **Start milestone 1 now** / **End the session** / **Stop here**. On "S
 
 - Never write application code or scaffold a framework yourself; accepted stack decisions become tasks in the first feature run.
 - Never skip the market research or the PRD approval; the point of this command is that the first session is thorough.
-- Never put meta commentary in any file you create: no "the user asked", "as requested", "I decided". State the decision.
+- Never put meta commentary in any file you create: no "the user asked", "as requested", "I decided". State the decision. <!-- vocab: allow -->
 - Never add `Co-Authored-By: Claude` unless `co_author_claude: yes` was chosen; never add "Generated with Claude Code" footers at all.
 - Never create the GitHub repo without the human confirming owner, name and visibility in this session.
-- Never install anything into the repo. The only installs are the tooling commands the human accepted by name in R5, and those change the user's Claude Code setup, not the repo.
+- Never install anything into the repo. The only installs are the tooling commands the human accepted by name in R5, and those change the human's Claude Code setup, not the repo.
 - Never agree with an answer the evidence contradicts without saying so once, with the evidence.

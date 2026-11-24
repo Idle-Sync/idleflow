@@ -309,7 +309,7 @@ echo "--- report / gate"
 check "report fails when none written"  '! bash "$RUN" report T1 2>/dev/null'
 ( cd "$wt" && printf 'x\ny\nz\n' > src/code.py && printf '%s\n' $(seq 1 50) > README.md && printf 'task: T1\nstatus: done\n' > .idleflow-run/result.md && git add src/code.py README.md && commit -m "T1: code" )
 r="$(bash "$RUN" report T1)"
-check "report copied into run dir"     '[ -f .idleflow/runs/active/tasks/T1/report.md ] && grep -q "status: done" "$r"'
+check "report copied into the run folder" '[ -f .idleflow/runs/active/tasks/T1/report.md ] && grep -q "status: done" "$r"'
 touch -t 200001010000 "$wt/.idleflow-run/result.md"; echo "edited: yes" >> "$r"
 g="$(bash "$RUN" gate T1)"
 check "gate keeps a newer run copy"    'grep -q "edited: yes" "$r"'
@@ -723,7 +723,7 @@ check "a finished job whose pid was reused is never signalled" 'bash "$RUN" stop
 kill "$other" 2>/dev/null
 ( cd "$wa" && echo new > only-in-task.txt && git add only-in-task.txt && commit -m "TA: a file the base lacks" ) >/dev/null
 for _ in 1 2 3; do out="$(bash "$RUN" exec TA --base -- sh -c 'git rev-parse HEAD; test -e only-in-task.txt && echo has || echo lacks' 2>/dev/null)"; rc=$?; [ "$rc" = 75 ] || break; done
-check "exec --base runs on the task's base commit, not its work" '[ "$(echo "$out" | sed -n 1p)" = "$(bash "$RUN" get tasks.TA.base_sha)" ] && [ "$(echo "$out" | sed -n 2p)" = lacks ] && [ -f "$wa/only-in-task.txt" ]'
+check "exec --base runs on the task's base sha, not its work" '[ "$(echo "$out" | sed -n 1p)" = "$(bash "$RUN" get tasks.TA.base_sha)" ] && [ "$(echo "$out" | sed -n 2p)" = lacks ] && [ -f "$wa/only-in-task.txt" ]'
 check "exec --base keeps the job under the task and passes the exit code" 'bash "$RUN" exec TA --limit 30 --base -- sh -c "exit 5" 2>/dev/null; [ $? = 5 ]'
 last_job() { local n=0 j; for j in .idleflow/runs/active/tasks/"$1"/jobs/*; do j="${j##*/}"; [ "$j" -gt "$n" ] && n="$j"; done; echo ".idleflow/runs/active/tasks/$1/jobs/$n/"; }
 jb="$(last_job TA)"
@@ -865,6 +865,16 @@ echo 41 > "$ghf/runs"
 gh_run ci wait "$cijob" 2> "$scratch/ci.err"; rc=$?
 check "a run on the commit that does not list the job yet is waited for, not started again" '[ "$rc" = 75 ] && has -F "does not list the job yet" "$scratch/ci.err" && [ ! -e "$ghf/dispatched" ]'
 rm -f "$ghf/runs"
+# run.json records the pushed commit, and run.sh set can rewrite it: an earlier commit's workflows are
+# never started, since the commit the branch holds on the remote is the one that counts
+bash "$RUN" set "$cikey.sha" "\"$(git rev-parse HEAD~1)\""
+gh_run ci wait "$cijob" 2> "$scratch/ci.err"; rc=$?
+check "ci wait refuses a recorded commit the CI branch does not hold, and starts nothing" '[ "$rc" = 1 ] && has -F "holds ${cisha:0:12}, not" "$scratch/ci.err" && [ ! -e "$ghf/dispatched" ]'
+bash "$RUN" set "$cikey.sha" "\"$cisha\""
+git --git-dir="$scratch/ci-remote.git" update-ref -d "refs/heads/idleflow/$cirid/ci"
+gh_run ci wait "$cijob" 2> "$scratch/ci.err"; rc=$?
+check "ci wait refuses when the CI branch is gone from the remote, and starts nothing" '[ "$rc" = 1 ] && has -F "has no idleflow/$cirid/ci" "$scratch/ci.err" && [ ! -e "$ghf/dispatched" ]'
+git --git-dir="$scratch/ci-remote.git" update-ref "refs/heads/idleflow/$cirid/ci" "$cisha"
 gh_run ci wait "$cijob" 2> "$scratch/ci.err"; rc=$?
 check "with no run 2 minutes after the push, each workflow that has the job is started by hand, once" '[ "$rc" = 75 ] && [ "$(sort "$ghf/dispatched" | tr "\n" " ")" = "listed.yml w.yml " ] && ! has -x release.yml "$ghf/dispatched" && has -F -- "workflow run w.yml --ref idleflow/$cirid/ci" "$ghf/calls" && { gh_run ci wait "$cijob" 2>/dev/null; true; } && [ "$(wc -l < "$ghf/dispatched" | tr -d " ")" = 2 ]'
 echo 42 > "$ghf/runs"; printf '42\t7\tin_progress\t\thttps://ci.example/runs/42\n' > "$ghf/jobs-42"
@@ -1050,6 +1060,15 @@ out="$(bash "$RUN" wait TS 2 2>&1)"; rc=$?
 check "a wait on a job whose pid names a later process reports it ended, never still running" '[ "$rc" = 1 ] && has -F "job 2 of TS ended without an exit code" <<< "$out" && kill -0 "$stranger" 2>/dev/null'
 out="$(bash "$RUN" preview TS stop 2>&1)"; rc=$?
 check "preview stop never signals a pid that names a later process" '[ "$rc" = 0 ] && has -F "preview TS: was not running; nothing was signalled" <<< "$out" && kill -0 "$stranger" 2>/dev/null && [ ! -f .idleflow/runs/active/tasks/TS/preview.pid ]'
+# a stop by hand that finds the group gone while a limit stop holds the job's lock leaves the code to
+# that stop; a limit stop that finds the group gone with no code writes the 1 itself
+sh -c 'exit 0' & dead=$!; wait "$dead"
+mkdir -p "$js/4/stopping" "$js/5"; : > "$js/4/log"; : > "$js/5/log"; echo "$dead" > "$js/4/pid"; echo $$ > "$js/4/stopping/pid"
+bash "$RUN" stop TS 4 >/dev/null 2>&1
+check "a stop by hand leaves the exit code to a limit stop in progress" '[ ! -f "$js/4/status" ] && [ -f "$js/4/ended" ]'
+echo "$dead" > "$js/5/pid"; echo $(( $(date +%s) - 5 )) > "$js/5/deadline"
+bash "$RUN" wait TS 5 > /dev/null 2> "$scratch/w5.err"; rc=$?
+check "a limit stop of a job whose group is already gone writes its 1" '[ "$rc" = 1 ] && has -F "job 5 of TS ended with exit code 1" "$scratch/w5.err" && [ "$(cat "$js/5/status")" = 1 ] && [ -f "$js/5/stop-done" ] && [ ! -f "$js/5/limit-stopped" ]'
 bash "$RUN" finish "done" >/dev/null 2>&1
 check "finish never signals a group a stale job pid now leads, and marks the job ended" 'kill -0 "$stranger" 2>/dev/null && [ -f ".idleflow/runs/$sid/tasks/TS/jobs/3/ended" ]'
 kill -- "-$stranger" 2>/dev/null || kill "$stranger" 2>/dev/null
@@ -1577,7 +1596,7 @@ check "the planner writes prd.md only while it is the template" 'grep -q "Your p
 check "reviews record the checks they ran and the deviations they weighed" 'grep -q "^checks_run: <none (<why>) | one line each" "$HERE/../agents/review-correct.md" && grep -q "^deviations_weighed: <none | one line each" "$HERE/../agents/review-correct.md" && grep -q "record the judgement under \`deviations_weighed:\`" "$HERE/../agents/review-correct.md" && grep -q "^checks_run: <none (<why>) | one line each" "$HERE/../agents/review-design.md" && grep -q "\`deviations_weighed:\` is its judgement" "$HERE/../agents/retro.md"'
 check "each issue form's title hint is the form ISSUES.md gives its kind" '( for k in bug workflow idea pushback; do form="$(grep -o "^| \`$k\` | \`$k: <[^\`]*>\` |\$" "$HERE/../ISSUES.md" | sed "s/^| \`$k\` | \`//; s/\` |\$//")"; [ -n "$form" ] && grep -qF "Title: \"$form\"" "$HERE/../.github/ISSUE_TEMPLATE/$k.md" || exit 1; done ) && ! grep -qE "^\| \`(idea|pushback)\` \| \`[a-z]+: <what is wrong" "$HERE/../ISSUES.md"'
 check "a criterion checked after merge is reported apart and spends no retry" 'for a in implementer implementer-hard; do grep -q "^after_merge: <none | the A-ids of \`verify: browser after merge\` criteria" "$HERE/../agents/$a.md" && grep -q "it is not a criterion you failed, so it is never a deviation and never makes the task \`partial\`" "$HERE/../agents/$a.md" || exit 1; done && grep -q "\`partial\` whose \`deviations\` are \`none\` or name only A-ids listed under \`after_merge:\`, each written \`verify: browser after merge\`" "$HERE/../commands/feature.md" && grep -q "\`partial\` with any other deviation" "$HERE/../commands/feature.md"'
-check "a finding after merge is recorded with a fix command and comes before any push" 'grep -q "^\*\*Findings after merge.\*\* A run ends at its merge" "$HERE/../commands/feature.md" && grep -q "/idleflow:fix \"<the finding> in <file, or the check> (found after run <id>)\"" "$HERE/../commands/feature.md" && grep -q "A \`needs-human\` stop that lists any ends, like the final message, with the" "$HERE/../commands/feature.md" && grep -q "the entries of \`after-merge.md\` (step 8) for the final message" "$HERE/../commands/feature.md" && grep -q "first every entry of \`after-merge.md\` in the run directory" "$HERE/../agents/retro.md" && grep -q "every entry of \`.idleflow/runs/<id>/after-merge.md\`" "$HERE/../commands/endsession.md"'
+check "a finding after merge is recorded with a fix command and comes before any push" 'grep -q "^\*\*Findings after merge.\*\* A run ends at its merge" "$HERE/../commands/feature.md" && grep -q "/idleflow:fix \"<the finding> in <file, or the check> (found after run <id>)\"" "$HERE/../commands/feature.md" && grep -q "A \`needs-human\` stop that lists any ends, like the final message, with the" "$HERE/../commands/feature.md" && grep -q "the entries of \`after-merge.md\` (step 8) for the final message" "$HERE/../commands/feature.md" && grep -q "first every entry of \`after-merge.md\` in the run folder" "$HERE/../agents/retro.md" && grep -q "every entry of \`.idleflow/runs/<id>/after-merge.md\`" "$HERE/../commands/endsession.md"'
 check "a criterion whose check fails on the base is a plan problem, not a retry" 'grep -q "| base: <the failing tests or checks> — base job <n>, task job <n>>" "$HERE/../agents/review-correct.md" && grep -q "an entry under \`unverified:\` as \`base\` (see Format), never a finding" "$HERE/../agents/review-correct.md" && for a in implementer implementer-hard; do grep -q "its \`base_failures:\` line names the criterion.s A-id" "$HERE/../agents/$a.md" || exit 1; done && grep -q "A \`base\` entry is a criterion whose own check fails on the base the same way" "$HERE/../commands/feature.md" && grep -q "the run.s \`known-failures.md\` that names an A-id of a task that merged" "$HERE/../agents/retro.md" && grep -q "one the task.s commits add or change, or one the task.s plan section says is broken" "$HERE/../agents/review-correct.md" && grep -q "no \`environment\` or \`base\` entry is still open" "$HERE/../commands/feature.md"'
 check "a decision that changes the design reaches the design spec" 'grep -q "^\*\*Design follows the plan\*\*, when step 2c ran, after every planner call that writes plan.md, as the plan check does" "$HERE/../commands/feature.md" && grep -q "run \`bash \"\$RUN\" snapshot\` before the next \`wt add\`, so the worktrees branch from the design system" "$HERE/../commands/feature.md" && grep -q "This replaces \"Order of work\" above" "$HERE/../agents/designer.md" && grep -q "^## Revision mode$" "$HERE/../agents/designer.md" && grep -q "design revised: <N> sections changed" "$HERE/../agents/designer.md" && grep -q "never restate a design rule in the plan as a replacement for the spec" "$HERE/../agents/planner.md"'
 # A frontmatter value is YAML: an unquoted one may not hold ": " or " #", nor start with a character
@@ -1611,6 +1630,18 @@ check "STEP_DESIGN is a setting" 'grep -q STEP_DESIGN "$HERE/conf.sh" && grep -q
 check "the human chooses a design direction before the design system" 'grep -q "STEP_DESIGN_OPTIONS)" "$HERE/conf.sh" && grep -q "^STEP_DESIGN_OPTIONS=auto" "$HERE/../config/idleflow.conf" && [ -n "$(bash "$RUN" conf | grep -x "STEP_DESIGN_OPTIONS=auto")" ] && grep -q "^## Options mode$" "$HERE/../agents/designer.md" && grep -q "^\*\*Directions first\*\*, when \`STEP_DESIGN_OPTIONS\` is \`on\`" "$HERE/../commands/feature.md" && grep -q "design-direction: <n>-<slug>" "$HERE/../commands/feature.md" && grep -q "as \`Chosen direction\`" "$HERE/../commands/feature.md"'
 check "every command reads the talking rules" '[ -z "$(cd "$HERE/../commands" && grep -L "procedures/talking.md" *.md | grep -vx fix.md)" ]'
 check "R3 chunks and concatenates"      'grep -q "stack-research-<n>.md" "$setup" && grep -q "\`cat\` them in order into \`.idleflow/runs/active/stack-research.md\` before step 3" "$setup"'
+
+# one term per concept: run.sh vocab over idleflow's own Markdown, and what it counts as a hit
+check "idleflow's own Markdown uses one term per concept (vocabulary.md)" '(cd "$HERE/.." && bash "$RUN" vocab --all) > "$scratch/vocab.out" 2>&1'
+printf '%s\n' '| use | means | never write |' '|---|---|---|' '| main checkout | the repo outside the worktrees | main repo, run dir |' '| end user | who uses the product | |' '| human | who runs idleflow | user |' > "$scratch/vocab.md"
+printf '%s\n' 'in the main repo' 'in `main repo` code' '```sh' 'main repo' '```' 'the Main Repo, twice: main repo' 'a user and end users' 'superuser, end user' 'a quote: "main repo" <!-- vocab: allow -->' 'run dir' > "$scratch/vdoc.md"
+printf 'the run dir\r\n' >> "$scratch/vdoc.md"
+printf 'an end-user view, two end-users\n' >> "$scratch/vdoc.md"
+bash "$RUN" vocab --file "$scratch/vocab.md" "$scratch/vdoc.md" > "$scratch/vocab.out" 2>&1; rc=$?
+check "vocab reports each never-write word once per line, outside code, any case, never inside a term to use" '[ "$rc" = 1 ] && [ "$(cat "$scratch/vocab.out")" = "$(printf "%s\n" "$scratch/vdoc.md:1: main repo → main checkout" "$scratch/vdoc.md:6: main repo → main checkout" "$scratch/vdoc.md:7: user → human" "$scratch/vdoc.md:10: run dir → main checkout" "$scratch/vdoc.md:11: run dir → main checkout")" ]'
+check "vocab finds the same hits from a subfolder, with the vocabulary named from there" 'mkdir -p "$scratch/vrepo/docs" && git -C "$scratch/vrepo" init -q && cp "$scratch/vocab.md" "$scratch/vrepo/docs/v.md" && cp "$scratch/vdoc.md" "$scratch/vrepo/a.md" && git -C "$scratch/vrepo" add -A && (cd "$scratch/vrepo/docs" && bash "$RUN" vocab --file v.md --all) > "$scratch/vsub.out" 2>&1; [ $? = 1 ] && [ "$(wc -l < "$scratch/vsub.out" | tr -d " ")" = 5 ] && has -F "a.md:1: main repo → main checkout" "$scratch/vsub.out" && ! has -F "v.md" "$scratch/vsub.out"'
+check "vocab refuses a vocabulary that bans nothing rather than pass every file" 'printf "| use | means | never write |\n|---|---|---|\n| human | x | |\n" > "$scratch/vnone.md"; bash "$RUN" vocab --file "$scratch/vnone.md" "$scratch/vdoc.md" 2> "$scratch/vnone.err"; [ $? = 2 ] && has -F "has no" "$scratch/vnone.err"'
+check "vocab passes a file with no hit, and a call with no file" 'printf "the main checkout\n" > "$scratch/vok.md" && bash "$RUN" vocab --file "$scratch/vocab.md" "$scratch/vok.md" && bash "$RUN" vocab --file "$scratch/vocab.md"'
 
 echo
 if [ "$fails" -eq 0 ]; then echo "PASS ($(idleflow_rt_name))"; else echo "FAIL: $fails check(s)"; exit 1; fi
