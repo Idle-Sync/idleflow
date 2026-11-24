@@ -1035,6 +1035,15 @@ out="$(bash "$RUN" wait TS 2 2>&1)"; rc=$?
 check "a wait on a job whose pid names a later process reports it ended, never still running" '[ "$rc" = 1 ] && has -F "job 2 of TS ended without an exit code" <<< "$out" && kill -0 "$stranger" 2>/dev/null'
 out="$(bash "$RUN" preview TS stop 2>&1)"; rc=$?
 check "preview stop never signals a pid that names a later process" '[ "$rc" = 0 ] && has -F "preview TS: was not running; nothing was signalled" <<< "$out" && kill -0 "$stranger" 2>/dev/null && [ ! -f .idleflow/runs/active/tasks/TS/preview.pid ]'
+# a stop by hand that finds the group gone while a limit stop holds the job's lock leaves the code to
+# that stop; a limit stop that finds the group gone with no code writes the 1 itself
+sh -c 'exit 0' & dead=$!; wait "$dead"
+mkdir -p "$js/4/stopping" "$js/5"; : > "$js/4/log"; : > "$js/5/log"; echo "$dead" > "$js/4/pid"; echo $$ > "$js/4/stopping/pid"
+bash "$RUN" stop TS 4 >/dev/null 2>&1
+check "a stop by hand leaves the exit code to a limit stop in progress" '[ ! -f "$js/4/status" ] && [ -f "$js/4/ended" ]'
+echo "$dead" > "$js/5/pid"; echo $(( $(date +%s) - 5 )) > "$js/5/deadline"
+bash "$RUN" wait TS 5 > /dev/null 2> "$scratch/w5.err"; rc=$?
+check "a limit stop of a job whose group is already gone writes its 1" '[ "$rc" = 1 ] && has -F "job 5 of TS ended with exit code 1" "$scratch/w5.err" && [ "$(cat "$js/5/status")" = 1 ] && [ -f "$js/5/stop-done" ] && [ ! -f "$js/5/limit-stopped" ]'
 bash "$RUN" finish "done" >/dev/null 2>&1
 check "finish never signals a group a stale job pid now leads, and marks the job ended" 'kill -0 "$stranger" 2>/dev/null && [ -f ".idleflow/runs/$sid/tasks/TS/jobs/3/ended" ]'
 kill -- "-$stranger" 2>/dev/null || kill "$stranger" 2>/dev/null
