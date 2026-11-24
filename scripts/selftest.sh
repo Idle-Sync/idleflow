@@ -374,7 +374,8 @@ m="$(bash "$RUN" merge T1 2>"$scratch/merge.err")"
 check "merge stamps the task's merge"     '[[ "$(bash "$RUN" get tasks.T1.t_merge 2>/dev/null)" =~ ^[0-9]{10}$ ]]'
 check "merge reports merged"           '[ "$m" = "merged T1" ]'
 check "merged file on main"            '[ -f src/code.py ]'
-check "merge takes commits, never uncommitted work" '[ ! -e src/generated.py ] && [ "$(cat src/code.py)" = "$(printf "x\ny\nz")" ] && grep -q "not merged: .*src/generated.py" "$scratch/merge.err"'
+# the merged file is read as git stores it: a Windows checkout (core.autocrlf) gives it CRLF lines
+check "merge takes commits, never uncommitted work" '[ ! -e src/generated.py ] && [ "$(git show HEAD:src/code.py)" = "$(printf "x\ny\nz")" ] && git diff --quiet -- src/code.py && grep -q "not merged: .*src/generated.py" "$scratch/merge.err"'
 check "merge leaves untracked caches out" '[ ! -e .pytest_cache ] && ! git ls-files | has pytest_cache'
 check "merge keeps the human identity" '[ "$(git log -1 --format=%an)" = "Human" ]'
 bash "$RUN" wt add TL > "$scratch/wl" 2>/dev/null
@@ -760,6 +761,8 @@ check "a command that exits 75 itself is told apart from a job still running" 'o
 check "exec refuses a --limit that is not whole seconds" '! bash "$RUN" exec TA --limit 0 -- true 2>/dev/null && ! bash "$RUN" exec TA --limit 1.5 -- true 2>/dev/null && ! bash "$RUN" exec TA --limit -- true 2>/dev/null'
 bash "$RUN" exec TA -- sh -c 'sleep 30 >/dev/null 2>&1 &' >/dev/null 2> "$scratch/job.err"; rc=$?
 job="$(sed -n 's/^\[idleflow\] job \([0-9]*\) of TA started$/\1/p' "$scratch/job.err")"
+# a slow start (node on Windows) can outlast EXEC_WAIT_SECONDS=1, so a job still starting is waited for again
+for _ in 1 2 3 4 5; do [ "$rc" = 75 ] || break; bash "$RUN" wait TA "$job" >/dev/null 2> "$scratch/job.err"; rc=$?; done
 check "a job that leaves a process behind ends with its code and says so" '[ "$rc" = 0 ] && grep -q "job $job of TA ended, but processes it started still run" "$scratch/job.err" && bash "$RUN" stop TA "$job" >/dev/null && [ -f .idleflow/runs/active/tasks/TA/jobs/$job/ended ]'
 sleep 300 >/dev/null 2>&1 & other=$!
 echo "$other" > ".idleflow/runs/active/tasks/TA/jobs/$job/pid"
@@ -919,7 +922,10 @@ printf '%s\tr1\tT8\n' "$o" > "$utmp/ports/4400"
 out="$(bash "$RUN" preview main start 2>/dev/null)"; pid="$(cat .idleflow/runs/active/tasks/main/preview.pid 2>/dev/null)"; sleep 1
 check "preview main claims a free port of its own" '[ "$(cut -f2,3 "$utmp/ports/4401" 2>/dev/null)" = "$(bash "$RUN" get id)	main" ] && [ "$(cut -f3 "$utmp/ports/4400")" = T8 ]'
 check "a second preview main start reports the server already serving and claims nothing" 'again="$(bash "$RUN" preview main start 2>/dev/null)" && echo "$again" | has "^preview main: serving at http://localhost:4173 (already running" && [ "$(cat .idleflow/runs/active/tasks/main/preview.pid)" = "$pid" ] && [ "$(grep -ls "	main$" "$utmp"/ports/* | wc -l | tr -d " ")" = 1 ]'
-check "under preview_in: main the main checkout is served" 'echo "$out" | has "^preview main: serving at http://localhost:4173" && kill -0 "$pid" 2>/dev/null && [ "$(cat "$utmp"/*/main/where 2>/dev/null)" = "$(pwd -P)" ]'
+check "under preview_in: main the preview of main starts and its process runs" 'echo "$out" | has "^preview main: serving at http://localhost:4173" && kill -0 "$pid" 2>/dev/null'
+# the server's own pwd may be in either form of one path on Git Bash (/c/... or /tmp/...), so both are resolved
+where="$(cat "$utmp"/*/main/where 2>/dev/null)"
+check "under preview_in: main the main checkout is served" '[ -n "$where" ] && [ "$(cd "$where" && pwd -P)" = "$(pwd -P)" ]'
 bash "$RUN" preview main stop >/dev/null; sleep 1
 check "preview main stop ends it" '! kill -0 "$pid" 2>/dev/null'
 check "preview main stop gives its port back and leaves other claims" '[ ! -e "$utmp/ports/4401" ] && [ "$(cut -f3 "$utmp/ports/4400")" = T8 ]'
