@@ -84,7 +84,7 @@ Replace each with a decision tied to the direction:
 
 ## 11. What the design files hold
 
-`design-system` (lasting, shared by every run): the direction's four lines, the tokens (type families and scale, colour roles for light and dark with contrast ratios, spacing, radius, elevation, motion durations and easing, breakpoints), the component inventory with what each is for, and the libraries in use.
+`design-system` (lasting, shared by every run; its sections are `templates/design-system.md`, and only a project with screens people see has one, a frontend or a game, never an API or a backend): the direction's four lines, the tokens (type families and scale, colour roles for light and dark with contrast ratios, spacing, radius, elevation, motion durations and easing, breakpoints), the component inventory with what each is for, the libraries in use, the looks the project avoids, and for a game its art direction, HUD and menus, in-game text, feedback timing and how it reads at each screen size.
 
 `design-options` (one run, before the design system exists): three directions for the human to choose from, each a `direction.md` (the four lines and the tokens, contrast measured) and a `preview.html` that opens from disk and shows the palette, the type pairing and the issue's main screen in light and dark, plus `rejected.md` with the human's reason for each set they turned down. The chosen one is carried into `design-system`.
 

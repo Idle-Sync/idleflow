@@ -31,8 +31,11 @@ For work an end user sees (the classifier reports `ui: true`, or `STEP_DESIGN=on
 - **`idleflow:designer`** reads idleflow's own design handbook (`procedures/design.md`) and reference data
   (`procedures/design-data.md`: type pairings, scales, colour recipes, contrast formula, motion values,
   checklists by screen type). It writes or extends the repo's lasting design system (`docs/design-system.md`,
-  or `.idleflow/design-system.md` without docs): a direction, tokens with measured contrast for light and dark,
-  components. For this run it writes `design.md`: a spec per screen with layout, hierarchy, every state,
+  or `.idleflow/design-system.md` without docs), in the sections of `templates/design-system.md`: a direction,
+  tokens with measured contrast for light and dark, components, the looks the project avoids. Only a project
+  with screens people see, a frontend or a game, keeps one: `/idleflow:init` has the human pick its direction,
+  `/idleflow:setup` records it from the UI the code already has (`run.sh ui` says whether there is one), and
+  the doctor reports a UI repo without it. For this run it writes `design.md`: a spec per screen with layout, hierarchy, every state,
   motion and accessibility, plus the issue's requirements that no screen shows (an API payload, CLI output),
   which the plan gives to the tasks that build those surfaces. Token work becomes the plan's first task.
 - **Directions to choose from.** On a greenfield run, or in a repo with no design system yet, the designer first
@@ -200,7 +203,7 @@ agents/                         one file per role; frontmatter sets the model
 hooks/hooks.json                PreToolUse → ownership-guard
 scripts/run.sh                  run lifecycle: new / wt / own / get / set / inc / report / keep / gate / merge / snapshot / finish / loc /
                                 conf, plus path / migrate / doctor / update-check / detect / repo-gate / commands / approve /
-                                reword / findings / session-name / behind / team-install / custom / agent / vocab (`bash scripts/run.sh` lists them)
+                                reword / findings / session-name / behind / team-install / custom / agent / vocab / ui (`bash scripts/run.sh` lists them)
 scripts/diff-gate.sh            counts hand-written code lines vs base, emits JSON verdict
 scripts/ownership-guard.sh      the hook; blocks edits outside a task's globs
 scripts/rt.sh                   picks Python or Node, whichever is installed
@@ -212,7 +215,7 @@ scripts/shellcheck-new.sh       fails only on shellcheck findings a change adds 
 .github/workflows/checks.yml    CI: selftest on both runtimes, plugin validate, new shellcheck findings
 config/idleflow.conf            every number the workflow uses
 templates/                      plan.md, context.md, lessons.md, conventions.md, prd.md, progress.md, install-note.md,
-                                index.md, session.md, time-log.md, CLAUDE.md, vocabulary.md
+                                index.md, session.md, time-log.md, CLAUDE.md, vocabulary.md, design-system.md
 setup.md                        global install, written for Claude Code to execute
 PUBLISHING.md                   validate, push to GitHub, install elsewhere, release updates
 ISSUES.md                       how every idleflow issue is written: kinds, title, four headings; the form and plugin-feedback use it
@@ -245,6 +248,7 @@ on `.`, `agents` and `commands`, and `shellcheck-new.sh` against the base on eve
 .idleflow/conventions.md             commit this: style rules, readability mode, stack decisions
 prd.md  progress.md  index.md      repo root, when docs are on; humans and the retro both edit them
 vocabulary.md                      repo root, when docs are on; one term per concept, kept by humans
+docs/design-system.md              a repo with a UI only (.idleflow/ without docs); the designer keeps it
 CLAUDE.md                          the idleflow block: start-of-session doc grounding, end-of-session notes
 docs/research/<capability>.md      library and stack research with sources
 docs/sessions/s_<time>-<author>.md one note per run or session, named so teammates never collide; ignored or committed, asked once

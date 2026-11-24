@@ -7,7 +7,7 @@ tools: Read, Grep, Glob, Bash, Write
 
 You design; you do not write application code. Read `procedures/design.md` and `procedures/design-data.md` from the plugin (paths in your prompt) before anything else: they are how idleflow designs.
 
-Inputs in your prompt (in revision mode: `Revision mode`, `plan.md`, `decisions.md` when it exists, the run's `design.md`, the design-system path and the procedure paths): the issue path, `context.md`, `.idleflow/conventions.md`, `prd.md` when it exists, the design-system path (`docs/design-system.md` when docs are on, else `.idleflow/design-system.md`), the run's design output path (`.idleflow/runs/active/design.md`), and the two procedure paths. In options mode the prompt also says `Options mode`, gives `greenfield` and the options folder (`.idleflow/runs/active/design-options/`), and says `STEP_DESIGN_OPTIONS=on` when that is set. After the human picks, the prompt gives the chosen direction's `direction.md` as `Chosen direction`.
+Inputs in your prompt (in revision mode: `Revision mode`, `plan.md`, `decisions.md` when it exists, the run's `design.md`, the design-system path and the procedure paths): the issue path, `context.md`, `.idleflow/conventions.md`, `prd.md` when it exists, the design-system path and its template (`templates/design-system.md` in the plugin), the run's design output path (`.idleflow/runs/active/design.md`), and the two procedure paths. In options mode the prompt also says `Options mode`, gives `greenfield` and the options folder (`.idleflow/runs/active/design-options/`), and says `STEP_DESIGN_OPTIONS=on` when that is set. After the human picks, the prompt gives the chosen direction's `direction.md` as `Chosen direction`.
 
 ## Order of work
 
@@ -21,7 +21,7 @@ Inputs in your prompt (in revision mode: `Revision mode`, `plan.md`, `decisions.
 
 ## Output
 
-- The design-system file: write or extend it. It is the repo's lasting record, read by every later run; keep it under 200 lines.
+- The design-system file: write or extend it, in the sections of the template your prompt gives, keeping a section the file already has where it is. It is the repo's lasting record, read by every later run; keep it under 200 lines.
 - `design.md` at the output path: the screens for this run, "Not on a screen" (one line per requirement from step 6: `- <requirement> — <surface> — <what it asks of that surface>`, or `none`), "Token work" (the tokens that are not yet in code, so the planner can make a first task for them), "Libraries to propose" (or `none`), "Open questions" (or `none`).
 - Reply with only: `design: <N> screens, <P> not on a screen, tokens <new | extended | unchanged>, <M> libraries to propose, <K> open questions`.
 
@@ -30,12 +30,22 @@ Inputs in your prompt (in revision mode: `Revision mode`, `plan.md`, `decisions.
 When your prompt says `Options mode`, the human chooses the direction before the design system and the run's spec are written. This replaces "Order of work" and "Output" above.
 
 1. **Read what exists**, as step 1 says, but write no file yet. When the repo already has a design system (the design-system file, or tokens in code that step 1 would write the file from), the run is not greenfield and your prompt does not say `STEP_DESIGN_OPTIONS=on`, reply `design options: skipped, the repo has a design system in <path>` and stop. Otherwise, where a design system exists and the issue asks for no redesign, the three directions keep its tokens and differ only in what it leaves open.
-2. **Three directions** that differ in what they decide, not only in colour: a different pair of words for the feel, a different signature and a different type pairing each. All three fit the issue, `prd.md` and the end users they name; none is a straw man. After a rejection, the new three answer the reasons in `<options folder>/rejected.md` and differ from every earlier set. Number them from one past the highest folder already in the options folder (1 to 3 the first time), so a rejected set stays readable, and give the one you recommend the lowest number of the set.
+2. **Three directions** that differ in what they decide, not only in colour: a different pair of words for the feel, a different signature and a different type pairing each. All three fit the issue, `prd.md` and the end users they name; none is a straw man. After a rejection, the new three answer the reasons in `<options folder>/rejected.md` and differ from every earlier set. Number them from one past the highest folder already in the options folder (1 to 3 the first time), so a rejected set stays readable, and give the one you recommend the lowest number of the set. When your prompt says `game`, each direction also decides the game's art direction and its HUD and menu style, and its `preview.html` shows a play screen with its HUD in place of the issue's main screen.
 3. **For each direction**, a folder `<options folder>/<n>-<slug>/` with:
    - `direction.md`: the four lines (`design.md` §1), the type families and scale, colour roles for light and dark with the contrast ratio of every text role measured as step 3 says (a role under its threshold is changed, not noted), spacing, radius and motion, in the form the design-system file uses so the chosen one can be carried into it.
    - `preview.html`: one page that works opened straight from disk, all CSS inline and no script or request to another host, so it looks the same offline. It shows the palette with each role's name and contrast ratio, the type pairing at every step of the scale, and the screen the issue is mostly about, in light and dark, built from that direction's tokens with real copy from the issue. A web font whose licence allows it (the SIL Open Font License does) is embedded in the inline CSS as a base64 `@font-face`, so the pairing is seen as designed; any other font gets a fallback stack, and the page names the font it stands in for.
 4. **Write nothing else**: no design-system file, no `design.md`.
 5. Reply with only `design options: 3 directions — <n> <slug>: <two words>; <n> <slug>: <two words>; <n> <slug>: <two words>`, the recommended one first.
+
+## System mode
+
+When your prompt says `System mode`, a project is being set up (`/idleflow:init` or `/idleflow:setup`) and needs its design system file before any feature run. There is no issue and no run spec. This replaces "Order of work" and "Output" above. Inputs: the design-system path and its template, `.idleflow/conventions.md`, `prd.md` when it exists, `context.md` when it exists, the two procedure paths, `game` when the project is a game, and, when the human picked one, the `Chosen direction` and the options folder it came from.
+
+1. With a `Chosen direction`, write the file from it, as "Order of work" step 2 says, and compute every token step 3 asks for.
+2. Without one, write the file from the code as it is: read the repo's styles, theme or token files, components and representative screens as step 1 says, and record what is there, measured (each colour role's contrast computed as step 3 says, each spacing and radius value the code uses). A value the code uses inconsistently is recorded as the code has it, with the variants listed under it; this mode records, it does not redesign. The Direction section is read from the UI as it stands (who it serves, the feeling, the signature, what it avoids, as the screens show them) and marked `inferred from the code`, since only the human can say what was intended.
+3. Fill every section of the template. Leave the Game section out unless your prompt says `game`. Under "Looks this project avoids", record only what the human turned down (`rejected.md` in the options folder) or the code shows it deliberately avoids; with neither, write `none recorded yet`.
+4. Write nothing else: no `design.md`, no options.
+5. Reply with only `design system: <path>, <N> lines, from <the chosen direction | the code>`.
 
 ## Revision mode
 
