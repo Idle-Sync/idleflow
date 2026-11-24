@@ -56,13 +56,16 @@
 #   run.sh merge <task-id>                -> merges the task branch into the current branch (no-ff); exit 3 on conflict, 4 otherwise
 #   run.sh ignore <pattern>               -> adds the pattern to the ignore file `ignore_in:` names, prints that file
 #   run.sh snapshot                       -> commits the repo-level docs the orchestrator writes (conventions, CLAUDE.md, prd, ...)
-#   run.sh ci plan <job>                 -> what a push for that job would do, for the human to approve: the branch, the
-#                                            commit, and the workflows ci wait would start by hand when the push starts none
+#   run.sh ci plan <job> [<commit>]       -> what a push for that job would do, for the human to approve: the branch, the
+#                                            commit (HEAD, or one on a task's branch of this run), and the workflows ci wait
+#                                            would start by hand when the push starts none
 #   run.sh ci push <job> <commit>         -> evidence only a CI job can give, once the human approved the push: pushes the
-#                                            run's merged state (HEAD) to its own branch idleflow/<run id>/ci, never another;
-#                                            again on the same commit, it is another try (exit 2 past CI_EVIDENCE_TRIES)
+#                                            commit ci plan showed (the run's merged state, or a task's commit) to the run's
+#                                            own branch idleflow/<run id>/ci, never another; again on the same commit, it is
+#                                            another try (exit 2 past CI_EVIDENCE_TRIES)
 #   run.sh ci wait <job>                  -> that job's result on the pushed commit, read with gh: writes ci/<job>.md (its
-#                                            conclusion and the last 200 lines of its log) and prints the path; exits 75 while the job
+#                                            conclusion and the last 200 lines of its log, kept per commit as
+#                                            ci/<job>-<commit>.md) and prints the per-commit path; exits 75 while the job
 #                                            has not finished after EXEC_WAIT_SECONDS, 3 when it ended cancelled, skipped or
 #                                            the like, 124 once CI_EVIDENCE_MINUTES passed since the push. With no run for the
 #                                            commit 2 minutes after it, it starts once the workflows ci plan named; a try
@@ -1208,6 +1211,17 @@ ci_repo() { # ci_repo <remote>
   case "$host" in github.com|ssh.github.com|www.github.com) echo "$path" ;; *) echo "$host/$path" ;; esac
 }
 ci_get() { idleflow_rt get "$ACTIVE/run.json" "$1" 2>/dev/null || true; }
+# A commit CI may be asked about: the run's merged state or what led to it, or a commit on one of the
+# run's task branches (a task's test alone, its finished work) before it merges
+ci_commit_ok() { # ci_commit_ok <sha> <run id>
+  local ref
+  "${G[@]}" merge-base --is-ancestor "$1" HEAD 2>/dev/null && return 0
+  while IFS= read -r ref; do
+    [ -n "$ref" ] || continue
+    "${G[@]}" merge-base --is-ancestor "$1" "$ref" 2>/dev/null && return 0
+  done < <("${G[@]}" for-each-ref --format='%(refname)' "refs/heads/idleflow/$2/")
+  return 1
+}
 ci_gh() { # gh, from the repo, on the repository the run pushes to
   local remote repo=""
   if remote="$(ci_remote 2>/dev/null)"; then repo="$(ci_repo "$remote")"; fi
@@ -1996,13 +2010,17 @@ Task: $tid")
     ;;
   ci)
     sub="${1:-}"; job="${2:-}"; id="$(active_id)"
-    case "$sub" in plan|push|wait) ;; *) echo "usage: run.sh ci plan <job> | ci push <job> <commit> | ci wait <job>" >&2; exit 1 ;; esac
+    case "$sub" in plan|push|wait) ;; *) echo "usage: run.sh ci plan <job> [<commit>] | ci push <job> <commit> | ci wait <job>" >&2; exit 1 ;; esac
     [ -n "$job" ] || { echo "ci $sub: name the job, as GitHub shows it" >&2; exit 1; }
     if [ "$sub" = plan ]; then
       # what the human is asked about: the branch, and the workflows a start by hand would run
-      sha="$("${G[@]}" rev-parse -q --verify HEAD)" || { echo "ci plan: the run has no commit to push" >&2; exit 1; }
+      sha="$("${G[@]}" rev-parse -q --verify "${3:-HEAD}^{commit}")" || { echo "ci plan: ${3:-the run} has no commit to push" >&2; exit 1; }
+      ci_commit_ok "$sha" "$id" || { echo "ci plan: ${sha:0:12} is neither on the run's branch nor on one of its task branches" >&2; exit 1; }
       echo "branch: idleflow/$id/ci"
       echo "commit: $sha"
+      # a task's commit is pushed before it merges, and the workflows in its own tree run on that push
+      changed="$("${G[@]}" diff --name-only HEAD "$sha" -- .github/workflows/ 2>/dev/null || true)"
+      if [ -n "$changed" ]; then echo "workflow files this commit changes from the run's branch:"; printf '%s\n' "$changed" | sed 's/^/- /'; fi
       files="$(ci_dispatch_files "$sha" "$job")"
       if [ -n "$files" ]; then echo "started by hand when the push starts none:"; printf '%s\n' "$files" | sed 's/^/- /'
       else echo "started by hand when the push starts none: none"; fi
@@ -2014,9 +2032,12 @@ Task: $tid")
     mkdir -p "$ACTIVE/ci"
     if [ "$sub" = push ]; then
       remote="$(ci_remote)" || exit 1
-      sha="$("${G[@]}" rev-parse -q --verify HEAD)" || { echo "ci push: the run has no commit to push" >&2; exit 1; }
-      # the human approved what ci plan showed for one commit; a HEAD that moved since may start other workflows
-      [ "${3:-}" = "$sha" ] || { echo "ci push: HEAD is $sha, not the commit ci plan showed (${3:-none given}); run ci plan again and ask again" >&2; exit 1; }
+      # the human approved what ci plan showed for one commit, and exactly that commit is pushed: a
+      # HEAD that moved since never brings workflows the human did not see
+      [ -n "${3:-}" ] || { echo "ci push: name the commit ci plan showed" >&2; exit 1; }
+      sha="$("${G[@]}" rev-parse -q --verify "$3^{commit}" || true)"
+      if [ "$sha" != "$3" ]; then echo "ci push: '$3' is not the full commit ci plan showed; run ci plan again and ask again" >&2; exit 1; fi
+      ci_commit_ok "$sha" "$id" || { echo "ci push: ${sha:0:12} is neither on the run's branch nor on one of its task branches" >&2; exit 1; }
       tries=1; skip=""
       if [ "$(ci_get "$key.sha")" = "$sha" ]; then
         tries=$(( $(ci_get "$key.tries") + 1 ))
@@ -2041,7 +2062,7 @@ Task: $tid")
     fi
     sha="$(ci_get "$key.sha")"
     [ -n "$sha" ] || { echo "ci wait: nothing was pushed for $job; run.sh ci plan \"$job\", then ci push \"$job\" <its commit>, first" >&2; exit 1; }
-    "${G[@]}" merge-base --is-ancestor "$sha" HEAD 2>/dev/null || { echo "ci wait: the commit recorded for $job is not on the run's branch; push again" >&2; exit 1; }
+    ci_commit_ok "$sha" "$id" || { echo "ci wait: the commit recorded for $job is on neither the run's branch nor one of its task branches; push again" >&2; exit 1; }
     deadline="$(ci_get "$key.deadline")"; pushed="$(ci_get "$key.pushed")"; tries="$(ci_get "$key.tries")"
     # a round of gh calls takes some seconds, so the last one starts that much before EXEC_WAIT_SECONDS
     w=$(( ${EXEC_WAIT_SECONDS:-100} - 10 )); [ "$w" -ge 1 ] || w=1
@@ -2070,6 +2091,8 @@ Task: $tid")
         if [ "$status" = completed ]; then
           idleflow_rt set "$ACTIVE/run.json" "$key.conclusion" "$(json_str "${conclusion:-none}")"
           idleflow_rt set "$ACTIVE/run.json" "$key.url" "$(json_str "$url")"
+          # the job's record is the latest push; each commit's result stays, so a task's red outlives its green
+          idleflow_rt set "$ACTIVE/run.json" "$key.runs.c${sha:0:12}" "{\"sha\":\"$sha\",\"conclusion\":$(json_str "${conclusion:-none}"),\"url\":$(json_str "$url"),\"job_id\":$(json_str "$job_id")}"
           case "$conclusion" in
             success|failure) ;;
             *) echo "ci wait: $job on ${sha:0:12} ended ${conclusion:-without a conclusion} ($url), which shows nothing of what the task waits for; try again or stop" >&2; exit 3 ;;
@@ -2097,8 +2120,10 @@ Task: $tid")
             printf '%s\n' "${log:-(gh returned no log)}"
             echo "$fence"
           } > "$ev"
+          # the latest result keeps its name; each commit's is kept too, so a task's red and green both stay
+          cp "$ev" "$ACTIVE/ci/$slug-${sha:0:12}.md"
           echo "ci: $job on ${sha:0:12}: $conclusion"
-          native_path "$ev"
+          native_path "$ACTIVE/ci/$slug-${sha:0:12}.md"
           exit 0
         fi
       elif [ -z "$runs" ] && [ "$(ci_get "$key.dispatched")" != true ] && [ "$(( $(date +%s) - pushed ))" -ge 120 ]; then
