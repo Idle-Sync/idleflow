@@ -24,7 +24,7 @@ idleflow run. Commit this file. Edit it by hand whenever a decision changes, or 
 
 ## Writing docs, commits and comments (always on)
 
-- **No meta commentary.** Nothing in this repo narrates how it came to be: no "the user
+- **No meta commentary.** Nothing in this repo narrates how it came to be: no "the user <!-- vocab: allow -->
   asked", "as requested", "per our discussion", "I'll now", "after review". State the fact,
   the decision, or the reason. Applies to every `.md`, commit message, pull request, issue,
   session note, research file and code comment. The conformance reviewer rejects on it.

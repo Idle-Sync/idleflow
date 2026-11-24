@@ -80,10 +80,10 @@ happen, boring over clever.
 ## No meta commentary, anywhere
 
 No file in this repo narrates how it came to be. Not in docs, commit messages, pull requests,
-issues, code comments, session notes or research files. Banned: "the user asked", "as
-requested", "per our discussion", "user said so", "I'll now", "using skill X", "after
+issues, code comments, session notes or research files. Banned: "the user asked", "as <!-- vocab: allow -->
+requested", "per our discussion", "user said so", "I'll now", "using skill X", "after <!-- vocab: allow -->
 reviewing", "Claude decided". Write the fact, the decision, or the reason. A session note says
-"Switched auth to cookie sessions: the token refresh path leaked on logout", not "The user
+"Switched auth to cookie sessions: the token refresh path leaked on logout", not "The user <!-- vocab: allow -->
 wanted cookies so I switched". Reviewers reject a diff for this the same as for a bug.
 
 ## Git attribution

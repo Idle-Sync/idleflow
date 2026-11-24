@@ -11,7 +11,7 @@ All are open-licence families on Google Fonts. Display face first, text face sec
 | warm editorial | Fraunces | Source Sans 3 | publishing, food, lifestyle |
 | calm editorial | Instrument Serif | Geist | portfolios, studios, essays |
 | civic, trustworthy | Newsreader | Public Sans | government, health, finance |
-| reading-first, accessible | Literata | Atkinson Hyperlegible | learning, long-form, low-vision users |
+| reading-first, accessible | Literata | Atkinson Hyperlegible | learning, long-form, low-vision end users |
 | precise, technical | Space Grotesk | IBM Plex Sans | developer products, analytics |
 | terminal-native | IBM Plex Mono | IBM Plex Sans | CLIs, logs, infrastructure |
 | friendly, characterful | Bricolage Grotesque | Figtree | consumer apps, communities |
@@ -75,11 +75,11 @@ Start from content: where a line gets too long or a row too cramped. Common land
 - **Landing**: one promise in the first view, one primary action, proof near the claim it supports, a page that still works with images off.
 - **Sign up and sign in**: the fewest fields, a visible password rule before the error, the way back and the way to the other form, errors that do not reveal which accounts exist.
 - **Onboarding**: one goal per step, a visible count of steps, skip where possible, a first useful result before any setup that can wait.
-- **Dashboard**: the one number or list the user came for at the top left, comparison context for every number, empty states that say how data arrives, no chart without a question it answers.
+- **Dashboard**: the one number or list the end user came for at the top left, comparison context for every number, empty states that say how data arrives, no chart without a question it answers.
 - **List and table**: sortable headers that show the sort, a sticky header for long lists, row actions on hover and in a menu for touch, filters that show what is filtered, pagination or virtual scroll past a few hundred rows.
 - **Detail**: the identity of the item first, primary action near it, related items after the main content.
 - **Form and settings**: groups with headings, labels above fields, sensible defaults, save state shown, destructive actions separated and confirmed.
-- **Search**: results as the user types where cheap, the query echoed, no-result states that suggest a next step.
+- **Search**: results as the end user types where cheap, the query echoed, no-result states that suggest a next step.
 - **Checkout and payment**: total always visible, steps shown, nothing new at the last step, errors that keep entered data.
 - **Error and empty pages**: what happened in plain words, what to do next, a way home.
 - **Mobile navigation**: at most five top-level destinations, the current one marked, reachable by thumb.

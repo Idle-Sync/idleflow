@@ -1,6 +1,6 @@
 # Writing an idleflow issue
 
-Every issue on Idle-Sync/idleflow follows this one blueprint, whoever writes it: a person on the
+Every issue on Idle-Sync/idleflow follows this one blueprint, whoever writes it: a human on the
 GitHub form, `/idleflow:plugin-feedback`, the `plugin_gap:` lines a run files at its end, or a
 maintainer filing a follow-up from a review. One shape makes issues easy to triage, easy to find
 duplicates of, and easy to fix at the cause.
