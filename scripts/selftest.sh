@@ -1052,7 +1052,8 @@ bash "$RUN" wt rm T3; rm -f .idleflow/idleflow.conf; [ ! -f "$scratch/conf.bak" 
 bash "$RUN" new leftover >/dev/null 2>&1; jl=".idleflow/runs/active/tasks/TL/jobs/1"; mkdir -p "$jl"
 sleep 60 & stranger=$!; echo "$stranger" > "$jl/pid"; touch -t "$(date -d @$(( $(date +%s) - 3600 )) +%Y%m%d%H%M 2>/dev/null || date -r $(( $(date +%s) - 3600 )) +%Y%m%d%H%M)" "$jl/pid"
 lrid="$(bash "$RUN" get id)"; bash "$RUN" new after-leftover >/dev/null 2>&1
-check "parking a leftover run never signals a process that only reuses its job's pid" 'kill -0 "$stranger" 2>/dev/null && [ -f ".idleflow/runs/$lrid/tasks/TL/jobs/1/ended" ]'
+if [ -z "$on_windows" ]; then check "parking a leftover run never signals a process that only reuses its job's pid" 'kill -0 "$stranger" 2>/dev/null && [ -f ".idleflow/runs/$lrid/tasks/TL/jobs/1/ended" ]'
+else skip "parking a leftover run never signals a process that only reuses its job's pid" "Git Bash's ps has no -o etime, so a pid that names a later process cannot be told from the job's"; fi
 kill "$stranger" 2>/dev/null; wait "$stranger" 2>/dev/null; bash "$RUN" finish "done" >/dev/null
 # a job's shell may start well after its started stamp (a large repo's bytecode sweep runs between):
 # finish still stops it, judged by when its pid file was written
@@ -1071,7 +1072,8 @@ printf '## Tasks\n' > ".idleflow/runs/$orid/plan.md"
 bash "$RUN" new leftover2 >/dev/null 2>&1; lrid2="$(bash "$RUN" get id)"; jl=".idleflow/runs/active/tasks/TL/jobs/1"; mkdir -p "$jl"
 sleep 60 & stranger=$!; echo "$stranger" > "$jl/pid"; touch -t "$(date -d @$(( $(date +%s) - 3600 )) +%Y%m%d%H%M 2>/dev/null || date -r $(( $(date +%s) - 3600 )) +%Y%m%d%H%M)" "$jl/pid"
 bash "$RUN" resume "$orid" >/dev/null 2> "$scratch/resume.err"; rc=$?
-check "a resume parks a leftover run whose job pid names a later process, and never signals it" '[ "$rc" = 0 ] && ! has -F "may still be built" "$scratch/resume.err" && kill -0 "$stranger" 2>/dev/null && [ "$(idleflow_rt get ".idleflow/runs/$lrid2/run.json" status)" = abandoned ]'
+if [ -z "$on_windows" ]; then check "a resume parks a leftover run whose job pid names a later process, and never signals it" '[ "$rc" = 0 ] && ! has -F "may still be built" "$scratch/resume.err" && kill -0 "$stranger" 2>/dev/null && [ "$(idleflow_rt get ".idleflow/runs/$lrid2/run.json" status)" = abandoned ]'
+else skip "a resume parks a leftover run whose job pid names a later process, and never signals it" "Git Bash's ps has no -o etime, so a pid that names a later process cannot be told from the job's"; fi
 kill "$stranger" 2>/dev/null; wait "$stranger" 2>/dev/null; [ ! -f .idleflow/runs/active/run.json ] || bash "$RUN" finish "done" >/dev/null 2>&1
 # a preview pid that now leads an unrelated group of its own (a shell, a daemon) is never signalled
 bash "$RUN" new leftover3 >/dev/null 2>&1; mkdir -p .idleflow/runs/active/tasks/TP
@@ -1079,7 +1081,8 @@ idleflow_rt detach "$PWD" /dev/null "$scratch/leader.pid" "sleep 60"; leader="$(
 echo "$leader" > .idleflow/runs/active/tasks/TP/preview.pid
 touch -t "$(date -d @$(( $(date +%s) - 3600 )) +%Y%m%d%H%M 2>/dev/null || date -r $(( $(date +%s) - 3600 )) +%Y%m%d%H%M)" .idleflow/runs/active/tasks/TP/preview.pid
 bash "$RUN" finish "done" >/dev/null 2>&1
-check "finish never signals a group a stale preview pid now leads" 'kill -0 "$leader" 2>/dev/null'
+if [ -z "$on_windows" ]; then check "finish never signals a group a stale preview pid now leads" 'kill -0 "$leader" 2>/dev/null'
+else skip "finish never signals a group a stale preview pid now leads" "Git Bash's ps has no -o etime, so a pid that names a later process cannot be told from the job's"; fi
 kill -- "-$leader" 2>/dev/null || kill "$leader" 2>/dev/null
 # stop, preview stop and wait never take a pid that now names a later process for the job or the
 # preview: nothing of either is left, so they say so, and the job is marked ended
@@ -1090,13 +1093,17 @@ for f in "$js/1/pid" "$js/2/pid" "$js/3/pid" .idleflow/runs/active/tasks/TS/prev
   echo "$stranger" > "$f"; touch -t "$(date -d @$(( $(date +%s) - 3600 )) +%Y%m%d%H%M 2>/dev/null || date -r $(( $(date +%s) - 3600 )) +%Y%m%d%H%M)" "$f"
 done
 out="$(bash "$RUN" stop TS 1 2>&1)"; rc=$?
-check "stop never signals a job pid that names a later process, and marks the job ended" '[ "$rc" = 0 ] && has -F "job 1 of TS: had already ended; nothing was signalled" <<< "$out" && kill -0 "$stranger" 2>/dev/null && [ -f "$js/1/ended" ] && [ "$(cat "$js/1/status")" = 1 ]'
+if [ -z "$on_windows" ]; then check "stop never signals a job pid that names a later process, and marks the job ended" '[ "$rc" = 0 ] && has -F "job 1 of TS: had already ended; nothing was signalled" <<< "$out" && kill -0 "$stranger" 2>/dev/null && [ -f "$js/1/ended" ] && [ "$(cat "$js/1/status")" = 1 ]'
+else skip "stop never signals a job pid that names a later process, and marks the job ended" "Git Bash's ps has no -o etime, so a pid that names a later process cannot be told from the job's"; fi
 out="$(bash "$RUN" wait TS 2 2>&1)"; rc=$?
-check "a wait on a job whose pid names a later process reports it ended, never still running" '[ "$rc" = 1 ] && has -F "job 2 of TS ended without an exit code" <<< "$out" && kill -0 "$stranger" 2>/dev/null'
+if [ -z "$on_windows" ]; then check "a wait on a job whose pid names a later process reports it ended, never still running" '[ "$rc" = 1 ] && has -F "job 2 of TS ended without an exit code" <<< "$out" && kill -0 "$stranger" 2>/dev/null'
+else skip "a wait on a job whose pid names a later process reports it ended, never still running" "Git Bash's ps has no -o etime, so a pid that names a later process cannot be told from the job's"; fi
 out="$(bash "$RUN" preview TS stop 2>&1)"; rc=$?
-check "preview stop never signals a pid that names a later process" '[ "$rc" = 0 ] && has -F "preview TS: was not running; nothing was signalled" <<< "$out" && kill -0 "$stranger" 2>/dev/null && [ ! -f .idleflow/runs/active/tasks/TS/preview.pid ]'
+if [ -z "$on_windows" ]; then check "preview stop never signals a pid that names a later process" '[ "$rc" = 0 ] && has -F "preview TS: was not running; nothing was signalled" <<< "$out" && kill -0 "$stranger" 2>/dev/null && [ ! -f .idleflow/runs/active/tasks/TS/preview.pid ]'
+else skip "preview stop never signals a pid that names a later process" "Git Bash's ps has no -o etime, so a pid that names a later process cannot be told from the job's"; fi
 bash "$RUN" finish "done" >/dev/null 2>&1
-check "finish never signals a group a stale job pid now leads, and marks the job ended" 'kill -0 "$stranger" 2>/dev/null && [ -f ".idleflow/runs/$sid/tasks/TS/jobs/3/ended" ]'
+if [ -z "$on_windows" ]; then check "finish never signals a group a stale job pid now leads, and marks the job ended" 'kill -0 "$stranger" 2>/dev/null && [ -f ".idleflow/runs/$sid/tasks/TS/jobs/3/ended" ]'
+else skip "finish never signals a group a stale job pid now leads, and marks the job ended" "Git Bash's ps has no -o etime, so a pid that names a later process cannot be told from the job's"; fi
 kill -- "-$stranger" 2>/dev/null || kill "$stranger" 2>/dev/null
 bash "$RUN" new previewmain >/dev/null 2>&1
 # another repo's live run holds PORT_BASE, so preview main takes the next port, under the owner main
