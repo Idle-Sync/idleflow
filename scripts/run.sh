@@ -1200,13 +1200,14 @@ ci_gh() { # gh, from the repo, on the repository the run pushes to
 # never a prompt: a push that needs a password or a key's passphrase fails instead of waiting. Where
 # git would run plain ssh, ssh is told so too; an ssh command of the human's own (GIT_SSH_COMMAND,
 # GIT_SSH, core.sshCommand) is left as it is, since it may pick the key the remote needs
-ci_push_git() {
+ci_remote_git() { # ci_remote_git <git command that talks to the remote> [args]
   if [ -z "${GIT_SSH_COMMAND:-}${GIT_SSH:-}" ] && ! "${G[@]}" config --get core.sshCommand >/dev/null 2>&1; then
-    GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="ssh -o BatchMode=yes" "${G[@]}" push -q "$@"
+    GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="ssh -o BatchMode=yes" "${G[@]}" "$@"
   else
-    GIT_TERMINAL_PROMPT=0 "${G[@]}" push -q "$@"
+    GIT_TERMINAL_PROMPT=0 "${G[@]}" "$@"
   fi
 }
+ci_push_git() { ci_remote_git push -q "$@"; }
 ci_runs() { # ci_runs <branch> <sha> <key>: the runs on that commit, past those earlier tries saw
   local skip r ids
   skip=" $(ci_get "$3.skip") "
@@ -2028,6 +2029,15 @@ Task: $tid")
     # a round of gh calls takes some seconds, so the last one starts that much before EXEC_WAIT_SECONDS
     w=$(( ${EXEC_WAIT_SECONDS:-100} - 10 )); [ "$w" -ge 1 ] || w=1
     end=$(( $(date +%s) + w )); state="not started yet"
+    # what GitHub runs, and what a start by hand would start, is the commit the branch holds on the
+    # remote: the one ci push sent, after the human saw its workflows in ci plan. run.json can be
+    # rewritten with run.sh set, so the commit it records counts only while it is that one.
+    # ls-remote matches refs by their tail, so only the branch's own full name is read
+    remote="$(ci_remote)" || exit 1
+    held="$(ci_remote_git ls-remote "$remote" "refs/heads/$branch")" || { echo "ci wait: could not read $branch on $remote" >&2; exit 1; }
+    held="$(awk -v r="refs/heads/$branch" '$2 == r { print $1; exit }' <<< "$held")"
+    [ -n "$held" ] || { echo "ci wait: $remote has no $branch; run.sh ci plan \"$job\" and ask about the push again" >&2; exit 1; }
+    [ "$held" = "$sha" ] || { echo "ci wait: $branch on $remote holds ${held:0:12}, not ${sha:0:12}, the commit recorded for $job; run.sh ci plan \"$job\" and ask about the push again" >&2; exit 1; }
     while :; do
       gh_failed="ci wait: gh could not read the runs on $branch (signed in? gh auth status)"
       runs="$(ci_runs "$branch" "$sha" "$key")" || { echo "$gh_failed" >&2; exit 1; }

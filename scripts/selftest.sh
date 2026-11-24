@@ -865,6 +865,16 @@ echo 41 > "$ghf/runs"
 gh_run ci wait "$cijob" 2> "$scratch/ci.err"; rc=$?
 check "a run on the commit that does not list the job yet is waited for, not started again" '[ "$rc" = 75 ] && has -F "does not list the job yet" "$scratch/ci.err" && [ ! -e "$ghf/dispatched" ]'
 rm -f "$ghf/runs"
+# run.json records the pushed commit, and run.sh set can rewrite it: an earlier commit's workflows are
+# never started, since the commit the branch holds on the remote is the one that counts
+bash "$RUN" set "$cikey.sha" "\"$(git rev-parse HEAD~1)\""
+gh_run ci wait "$cijob" 2> "$scratch/ci.err"; rc=$?
+check "ci wait refuses a recorded commit the CI branch does not hold, and starts nothing" '[ "$rc" = 1 ] && has -F "holds ${cisha:0:12}, not" "$scratch/ci.err" && [ ! -e "$ghf/dispatched" ]'
+bash "$RUN" set "$cikey.sha" "\"$cisha\""
+git --git-dir="$scratch/ci-remote.git" update-ref -d "refs/heads/idleflow/$cirid/ci"
+gh_run ci wait "$cijob" 2> "$scratch/ci.err"; rc=$?
+check "ci wait refuses when the CI branch is gone from the remote, and starts nothing" '[ "$rc" = 1 ] && has -F "has no idleflow/$cirid/ci" "$scratch/ci.err" && [ ! -e "$ghf/dispatched" ]'
+git --git-dir="$scratch/ci-remote.git" update-ref "refs/heads/idleflow/$cirid/ci" "$cisha"
 gh_run ci wait "$cijob" 2> "$scratch/ci.err"; rc=$?
 check "with no run 2 minutes after the push, each workflow that has the job is started by hand, once" '[ "$rc" = 75 ] && [ "$(sort "$ghf/dispatched" | tr "\n" " ")" = "listed.yml w.yml " ] && ! has -x release.yml "$ghf/dispatched" && has -F -- "workflow run w.yml --ref idleflow/$cirid/ci" "$ghf/calls" && { gh_run ci wait "$cijob" 2>/dev/null; true; } && [ "$(wc -l < "$ghf/dispatched" | tr -d " ")" = 2 ]'
 echo 42 > "$ghf/runs"; printf '42\t7\tin_progress\t\thttps://ci.example/runs/42\n' > "$ghf/jobs-42"
