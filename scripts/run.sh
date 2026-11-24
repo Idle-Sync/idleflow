@@ -719,6 +719,8 @@ await_job() { # await_job <task-id> <job> [watch [<group> <deadline>]]: the comm
   while [ ! -f "$d/status" ] && [ "$(date +%s)" -lt "$end" ]; do
     [ -d "$d" ] || gone_job "$1" "$2" "$group" "$deadline" "${3:-}"
     if ! group_alive "$d"; then
+      # group_alive reads the folder: one that moved away while it read makes a live group look gone
+      [ -d "$d" ] || gone_job "$1" "$2" "$group" "$deadline" "${3:-}"
       sleep 0.2; ! ended_without_code "$d" || echo "[idleflow] job $2 of $1 ended without an exit code" >&2
       break
     fi
@@ -729,7 +731,8 @@ await_job() { # await_job <task-id> <job> [watch [<group> <deadline>]]: the comm
   if { [ ! -f "$d/status" ] && [ -n "$deadline" ] && [ "$(date +%s)" -ge "$deadline" ]; } || [ -d "$d/stopping" ]; then
     local holder="" left="" tries=0
     while [ ! -f "$d/stop-done" ]; do
-      [ -d "$d" ] || gone_job "$1" "$2" "$group" "$deadline" ""
+      # a watcher whose folder moves here still stops the group it remembered; a waiter only reports
+      [ -d "$d" ] || gone_job "$1" "$2" "$group" "$deadline" "${3:-}"
       if mkdir "$d/stopping" 2>/dev/null; then
         echo $$ > "$d/stopping/pid"
         stop_job "$d" || left=1
@@ -776,6 +779,7 @@ await_job() { # await_job <task-id> <job> [watch [<group> <deadline>]]: the comm
     fi
     exit "$(cat "$d/status")"
   fi
+  [ -d "$d" ] || gone_job "$1" "$2" "$group" "$deadline" "${3:-}"
   echo "[idleflow] job $2 of $1 is still running (log: $(native_path "$d/log")). Wait for it: bash \"$0\" wait $1 $2. End it: bash \"$0\" stop $1 $2. Do not start it again while it runs." >&2
   exit 75
 }
@@ -1528,6 +1532,20 @@ JSON
     # it then stops the group it was told about at the deadline, and never reads the folder of
     # another run's job with the same number. Told all three, it needs no active run at all, so a
     # run that moves away between its check and its wait cannot end it either.
+    # exec passes - for a group whose pid had not appeared yet: the watcher waits for it here, while
+    # the job's folder is there to give it, so it holds the group before any move can take the folder
+    if [ "$cmd" = wait ] && [ "${3:-}" = --watch ] && [ "${5:-}" = - ] && [[ "${6:-}" =~ ^[0-9]+$ ]] \
+      && [ "$(idleflow_rt get "$ACTIVE/run.json" id 2>/dev/null || true)" = "${4:-}" ]; then
+      d="$(job_dir "$tid" "$job")"
+      while [ -d "$d" ] && [ ! -f "$d/pid" ] && [ ! -f "$d/status" ] && [ "$(date +%s)" -lt "$6" ]; do sleep 0.2; done
+      p="$(job_pid "$d")"
+      if [[ "$p" =~ ^[0-9]+$ ]]; then set -- "$1" "$2" "$3" "${4:-}" "$p" "$6"
+      # still no group, and its folder went while it waited: whatever the active run is now, it is not this one
+      elif [ ! -d "$d" ] || [ "$(idleflow_rt get "$ACTIVE/run.json" id 2>/dev/null || true)" != "${4:-}" ]; then gone_job "$tid" "$job" "" "" ""; fi
+    elif [ "$cmd" = wait ] && [ "${3:-}" = --watch ] && [ "${5:-}" = - ]; then
+      # no group, and its run is no longer the active one: the job with that number is another run's
+      gone_job "$tid" "$job" "" "" ""
+    fi
     if [ "$cmd" = wait ] && [ "${3:-}" = --watch ] && [[ "${5:-}" =~ ^[0-9]+$ ]] && [[ "${6:-}" =~ ^[0-9]+$ ]]; then
       [ "$(idleflow_rt get "$ACTIVE/run.json" id 2>/dev/null || true)" = "${4:-}" ] || gone_job "$tid" "$job" "$5" "$6" watch
       await_job "$tid" "$job" watch "$5" "$6"
