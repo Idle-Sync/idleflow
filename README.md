@@ -22,7 +22,7 @@ Around the pipeline, five things that keep a repo honest:
 - **No meta commentary, ever.** The generated `CLAUDE.md` and `.idleflow/conventions.md` ban process narration ("the user asked", "as requested", "I'll now") from every doc, commit, PR, comment and note in the repo, and record whether commits carry a `Co-Authored-By: Claude` trailer (`co_author_claude: yes|no`; footers never). The conformance reviewer rejects on both. <!-- vocab: allow -->
 - **The right tooling, not hand-rolled.** A tooling advisor inventories installed plugins and skills, checks the [Idle-Sync/skills](https://github.com/Idle-Sync/skills) catalogue against what is installed, and proposes the skills, marketplace plugins and workflows the project will use often; accepted items are installed, missing ones become `/idleflow:skills-feedback` requests. `/idleflow:plugin-feedback` reports idleflow's own bugs with the run's evidence attached, written to the same blueprint as every other issue ([ISSUES.md](ISSUES.md)).
 - **It reports its own gaps.** Any agent that finds the plugin lacks an input, step, tool or config knob it needed appends a `plugin_gap:` line to `.idleflow/runs/active/gaps.md` instead of working around it. At the end of a run the orchestrator lists them and asks once whether to open them as issues on Idle-Sync/idleflow from the human's GitHub account; nothing is filed without that yes. On greenfield runs the stack advisor always proposes quality tooling per language (ruff, mypy or pyright, pytest and pre-commit for Python; biome or eslint plus prettier, strict tsc and vitest for TypeScript; gofmt and golangci-lint for Go; rustfmt and clippy for Rust, and so on), grounded by the researcher like every other proposal.
-- **No doc goes stale.** With project docs on (automatic for greenfield), the repo gets `prd.md` (the product), `progress.md` (milestones as checkboxes the retro ticks, plus the log), `index.md`, a `CLAUDE.md` block and `docs/sessions/`. A **doc-keeper** runs before every run, checks each claim in those docs against the code, fixes what is stale and commits. The retro writes a session note and updates progress and index after every run. The generated `CLAUDE.md` makes plain Claude Code sessions follow the same start-and-end protocol, and `/idleflow:endsession` closes a working session with a note whose "Next" lists, in order, what the next session does first: push, CI, release, restarts, open deviations.
+- **No doc goes stale.** With project docs on (automatic for greenfield), the repo gets `prd.md` (the product), `progress.md` (milestones as checkboxes the retro ticks, plus the log), `index.md`, `vocabulary.md` (one term per concept, which every run checks the docs it changes against), a `CLAUDE.md` block and `docs/sessions/`. A **doc-keeper** runs before every run, checks each claim in those docs against the code, fixes what is stale and commits. The retro writes a session note and updates progress and index after every run. The generated `CLAUDE.md` makes plain Claude Code sessions follow the same start-and-end protocol, and `/idleflow:endsession` closes a working session with a note whose "Next" lists, in order, what the next session does first: push, CI, release, restarts, open deviations.
 
 ## Frontend design, built in
 
@@ -143,7 +143,7 @@ beside it. Every key is optional and missing keys keep the defaults, so older re
 |---|---|
 | `worktrees_in: inside` | Task worktrees in `.idleflow/worktrees/` (ignored) instead of a sibling folder |
 | `worktree_setup: <command>` | Run in each new worktree before the implementer starts (`$MAIN`, `$WORKTREE` set). Runs only as committed and after each human approves that exact text (`run.sh approve`, local git config); fails loudly; may not change tracked files |
-| `progress_file`, `index_file`, `sessions_dir`, `time_log`, `lessons_in: <path>` | Use the records the repo already keeps |
+| `progress_file`, `index_file`, `vocabulary_file`, `sessions_dir`, `time_log`, `lessons_in: <path>` | Use the records the repo already keeps |
 | `index_rewrite: no` | The retro leaves the index to the repo's own process |
 | `session_names: per-person` | Notes in a folder per human, `<github-login>/s_0001.md`, each numbered on its own, so a team never collides (`git config idleflow.person <name>` names the folder) |
 | `session_names: numbered` | Keep a repo's `s_0001.md` numbering (two writers can collide) |
@@ -212,7 +212,7 @@ scripts/shellcheck-new.sh       fails only on shellcheck findings a change adds 
 .github/workflows/checks.yml    CI: selftest on both runtimes, plugin validate, new shellcheck findings
 config/idleflow.conf            every number the workflow uses
 templates/                      plan.md, context.md, lessons.md, conventions.md, prd.md, progress.md, install-note.md,
-                                index.md, session.md, time-log.md, CLAUDE.md
+                                index.md, session.md, time-log.md, CLAUDE.md, vocabulary.md
 setup.md                        global install, written for Claude Code to execute
 PUBLISHING.md                   validate, push to GitHub, install elsewhere, release updates
 ISSUES.md                       how every idleflow issue is written: kinds, title, four headings; the form and plugin-feedback use it
@@ -244,6 +244,7 @@ on `.`, `agents` and `commands`, and `shellcheck-new.sh` against the base on eve
 .idleflow/lessons.md                 commit this
 .idleflow/conventions.md             commit this: style rules, readability mode, stack decisions
 prd.md  progress.md  index.md      repo root, when docs are on; humans and the retro both edit them
+vocabulary.md                      repo root, when docs are on; one term per concept, kept by humans
 CLAUDE.md                          the idleflow block: start-of-session doc grounding, end-of-session notes
 docs/research/<capability>.md      library and stack research with sources
 docs/sessions/s_<time>-<author>.md one note per run or session, named so teammates never collide; ignored or committed, asked once

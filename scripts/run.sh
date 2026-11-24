@@ -84,11 +84,15 @@
 #   run.sh repo-gate <base|main|task> [--quick] -> runs the approved gate (or gate_quick) there, times it; 1 failed, 7 unapproved
 #   run.sh preview <task-id|main> start|stop -> serves the app from that worktree, or with preview_in: main from the main
 #                                            checkout after the merge, for screenshots (approved command, localhost only)
-#   run.sh vocab [--file <vocabulary>] [--all | <file>...] -> one term per concept: every "never write" word of the
-#                                            vocabulary file (vocabulary.md at the repo root by default) in the given
-#                                            Markdown files, or with --all in every tracked one of the checkout
-#                                            it runs in; exit 1 with one "<file>:<line>: <word> → <use>" line
-#                                            per hit, 2 when the vocabulary bans nothing or cannot be read
+#   run.sh vocab [--file <vocabulary>] [--all | --task <task-id> | --since <rev> | <file>...] -> one term per
+#                                            concept: every "never write" word of the vocabulary file (vocabulary_file
+#                                            in conventions, vocabulary.md by default) in the given Markdown files; with
+#                                            --all every tracked one of the checkout it runs in, with --task those the
+#                                            task's commits changed (in its worktree), with --since those the commits
+#                                            after <rev> changed. Exit 1 with one "<file>:<line>: <word> → <use>" line
+#                                            per hit, 2 when nothing could be checked (a vocabulary that bans nothing
+#                                            or cannot be read, a rev or worktree that is not there); a repo with no
+#                                            vocabulary file is not checked (exit 0, and it says so)
 #   run.sh commands                       -> the repo's commands (worktree_setup, gate, ..., services) as committed, approved or unapproved here
 #   run.sh approve <key>                  -> records this human's approval of that exact committed command (local git config)
 #   run.sh agent <name>                   -> how to spawn that agent here: agent, model, extra instructions, contract
@@ -214,6 +218,7 @@ lessons_rel() {
 lessons_path() { echo "$REPO/$(lessons_rel)"; }
 progress_rel() { record_path progress_file progress.md; }
 index_rel() { record_path index_file index.md; }
+vocabulary_rel() { record_path vocabulary_file vocabulary.md; }
 sessions_rel() { record_path sessions_dir docs/sessions; }
 time_log_rel() { record_path time_log .idleflow/time-log.md; }
 # Files every task may add its own lines to (a changelog, an index the repo's checks require rows
@@ -1669,7 +1674,7 @@ JSON
       # A protected file is owned when an owns: glob covers it. A folder is owned when a glob names
       # something inside it, or has a wildcard before the folder's name ends (*, **/*.md, .claude/*).
       owns_json="[$(printf '%s\n' "$owned" | as_json)]"
-      for p in prd.md "$(progress_rel)" "$(index_rel)" CLAUDE.md "$(lessons_rel)" .idleflow/ .claude/settings.json .claude/settings.local.json .claude/agents/ .claude/hooks/; do
+      for p in prd.md "$(progress_rel)" "$(index_rel)" "$(vocabulary_rel)" CLAUDE.md "$(lessons_rel)" .idleflow/ .claude/settings.json .claude/settings.local.json .claude/agents/ .claude/hooks/; do
         hit=""
         case "$p" in
           */)
@@ -1877,7 +1882,7 @@ Task: $tid")
     [ -f "$("${G[@]}" rev-parse --absolute-git-dir)/MERGE_HEAD" ] && { echo "snapshot: a merge is in progress; finish or abort it first" >&2; exit 1; }
     paths=()
     ensure_union_merge
-    for f in $(printf '%s\n' .idleflow CLAUDE.md prd.md "$(progress_rel)" "$(index_rel)" "$(lessons_rel)" README.md .gitignore .gitattributes docs | awk '!seen[$0]++'); do
+    for f in $(printf '%s\n' .idleflow CLAUDE.md prd.md "$(progress_rel)" "$(index_rel)" "$(vocabulary_rel)" "$(lessons_rel)" README.md .gitignore .gitattributes docs | awk '!seen[$0]++'); do
       [ -e "$REPO/$f" ] || continue
       # the human chose what is ignored (docs_in_git in R2); an ignored path is simply skipped
       if "${G[@]}" check-ignore -q --no-index -- "$f"; then
@@ -2135,16 +2140,17 @@ Task: $tid")
     if [ "${1:-}" = "--relative" ]; then
       # The repo-relative form, for text that is committed and read in other clones.
       case "${2:-}" in
-        progress) progress_rel;; index) index_rel;; sessions) sessions_rel;; time-log) time_log_rel;;
-        *) echo "path --relative: ${2:-no name given}: use progress, index, sessions or time-log" >&2; exit 1;;
+        progress) progress_rel;; index) index_rel;; vocabulary) vocabulary_rel;; sessions) sessions_rel;; time-log) time_log_rel;;
+        *) echo "path --relative: ${2:-no name given}: use progress, index, vocabulary, sessions or time-log" >&2; exit 1;;
       esac
       exit 0
     fi
-    case "${1:?conventions|lessons|progress|index|sessions|time-log|runs}" in
+    case "${1:?conventions|lessons|progress|index|vocabulary|sessions|time-log|runs}" in
       conventions) native_path "$CONVENTIONS";;
       lessons) native_path "$(lessons_path)";;
       progress) native_path "$REPO/$(progress_rel)";;
       index) native_path "$REPO/$(index_rel)";;
+      vocabulary) native_path "$REPO/$(vocabulary_rel)";;
       sessions) native_path "$REPO/$(sessions_rel)";;
       time-log) native_path "$REPO/$(time_log_rel)";;
       runs) native_path "$RUNS";;
@@ -2515,21 +2521,40 @@ Task: $tid")
     echo "preview $tid: serving at $url (log: $(native_path "$ACTIVE/tasks/$tid/preview.log"); stop with: run.sh preview $tid stop)"
     ;;
   vocab)
-    # the checkout it is run in, a task worktree included, never the main checkout behind it
+    # the checkout it is run in, a task worktree included, never the main checkout behind it; with
+    # --task, the task's own worktree, checked against the main checkout's vocabulary (no task owns
+    # it, and a copy that is ignored or not yet committed is in no worktree)
     top="$(git rev-parse --show-toplevel)"
-    vf="$top/vocabulary.md"
-    if [ "${1:-}" = --file ]; then vf="${2:?vocabulary file}"; shift 2; fi
-    [ -f "$vf" ] || { echo "vocab: no vocabulary file at $(native_path "$vf")" >&2; exit 1; }
+    named=""; vf=""
+    if [ "${1:-}" = --file ]; then vf="${2:?vocabulary file}"; named=1; shift 2; fi
+    case "${1:-}" in
+      --task)
+        tid="${2:-}"; check_task_id "$tid"; active_id >/dev/null
+        top="$(wt_path "$tid")"; [ -d "$top" ] || { echo "vocab: no worktree for $tid" >&2; exit 2; }
+        base="$(task_base "$tid")" || exit 2
+        git -C "$top" rev-parse -q --verify "$base^{commit}" >/dev/null || { echo "vocab: $tid's base sha $base is not in its worktree" >&2; exit 2; }
+        [ -n "$vf" ] || vf="$REPO/$(vocabulary_rel)" ;;
+      --since)
+        base="$(git rev-parse -q --verify "${2:-}^{commit}")" || { echo "vocab --since: '${2:-}' is not a commit" >&2; exit 2; } ;;
+    esac
+    [ -n "$vf" ] || vf="$top/$(vocabulary_rel)"
+    if [ ! -f "$vf" ]; then
+      [ -z "$named" ] || { echo "vocab: no vocabulary file at $(native_path "$vf")" >&2; exit 2; }
+      echo "vocab: the repo has no vocabulary file ($(vocabulary_rel)), so nothing was checked" >&2; exit 0
+    fi
     vf="$(cd "$(dirname "$vf")" && pwd -P)/$(basename "$vf")"
     files=()
-    if [ "${1:-}" = --all ]; then
-      cd "$top"
-      while IFS= read -r -d '' f; do
-        [ -f "$f" ] && [ "$(pwd -P)/$f" != "$vf" ] && files+=("$f")
-      done < <(git ls-files -z -- '*.md')
-    else
-      files=("$@")
-    fi
+    case "${1:-}" in
+      --all|--task|--since)
+        mode="$1"; cd "$top"
+        while IFS= read -r -d '' f; do
+          [ -f "$f" ] && [ "$(pwd -P)/$f" != "$vf" ] && files+=("$f")
+        done < <(case "$mode" in
+          --all) git ls-files -z -- '*.md' ;;
+          --task|--since) git diff -z --name-only --no-renames --diff-filter=d "$base" HEAD -- '*.md' ;;
+        esac) ;;
+      *) files=("$@") ;;
+    esac
     [ "${#files[@]}" -gt 0 ] || exit 0
     rc=0; vocab_check "$vf" "${files[@]}" || rc=$?
     exit "$rc"
@@ -2790,7 +2815,7 @@ Task: $tid")
 
     if [ "$(conventions_value docs)" = yes ]; then
       gone=()
-      for f in prd.md "$(progress_rel)" "$(index_rel)"; do [ -f "$REPO/$f" ] || gone+=("$f"); done
+      for f in prd.md "$(progress_rel)" "$(index_rel)" "$(vocabulary_rel)"; do [ -f "$REPO/$f" ] || gone+=("$f"); done
       grep -q '<!-- idleflow start -->' "$REPO/CLAUDE.md" 2>/dev/null || gone+=("CLAUDE.md block")
       if [ "${#gone[@]}" -gt 0 ]; then check_line warn docs "missing: ${gone[*]}" "/idleflow:setup"; else check_line ok docs "prd.md, $(progress_rel), $(index_rel) and the CLAUDE.md block are present"; fi
     fi

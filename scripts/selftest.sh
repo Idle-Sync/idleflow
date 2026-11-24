@@ -461,10 +461,11 @@ check "migrate again is a no-op"          '[ "$(bash "$RUN" migrate)" = "migrate
 
 echo "--- records where the repo keeps them"
 cp .idleflow/conventions.md "$d-conv.bak"
-printf 'lessons_in: lessons.md\nprogress_file: docs/progress.md\nindex_file: docs/index.md\nsessions_dir: docs/notes\nsession_names: numbered\n' >> .idleflow/conventions.md
+check "the vocabulary file is vocabulary.md at the repo root by default" '[ "$(bash "$RUN" path --relative vocabulary)" = vocabulary.md ]'
+printf 'lessons_in: lessons.md\nprogress_file: docs/progress.md\nindex_file: docs/index.md\nvocabulary_file: docs/terms.md\nsessions_dir: docs/notes\nsession_names: numbered\n' >> .idleflow/conventions.md
 top="$(native "$(git rev-parse --show-toplevel)")"
 check "record paths follow the conventions" '[ "$(bash "$RUN" path lessons)" = "$top/lessons.md" ] && [ "$(bash "$RUN" path progress)" = "$top/docs/progress.md" ] && [ "$(bash "$RUN" path index)" = "$top/docs/index.md" ]'
-check "path --relative prints the configured record paths repo-relative" '[ "$(bash "$RUN" path --relative progress)" = "docs/progress.md" ] && [ "$(bash "$RUN" path --relative index)" = "docs/index.md" ] && [ "$(bash "$RUN" path --relative sessions)" = "docs/notes" ] && ! bash "$RUN" path --relative runs 2>/dev/null'
+check "path --relative prints the configured record paths repo-relative" '[ "$(bash "$RUN" path --relative progress)" = "docs/progress.md" ] && [ "$(bash "$RUN" path --relative vocabulary)" = "docs/terms.md" ] && [ "$(bash "$RUN" path --relative index)" = "docs/index.md" ] && [ "$(bash "$RUN" path --relative sessions)" = "docs/notes" ] && ! bash "$RUN" path --relative runs 2>/dev/null'
 mkdir -p docs/notes && touch docs/notes/s_0003.md docs/notes/s_0010.md
 check "numbered notes continue the repo's count" '[ "$(bash "$RUN" session-name)" = "docs/notes/s_0011.md" ]'
 sed -i.bak 's#^session_names: .*#session_names: per-person#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
@@ -1014,6 +1015,21 @@ j4="$(sed -n 's/^\[idleflow\] job \([0-9]*\) of T4 started$/\1/p' "$scratch/job.
 echo $(( $(date +%s) - 60 )) > ".idleflow/runs/active/tasks/T4/jobs/$j4/started"
 bash "$RUN" finish "done" >/dev/null 2>&1
 check "finish stops a job whose shell started long after its stamp" '[ -n "$j4" ] && ! kill -0 "$(cat "$w4/child.pid")" 2>/dev/null'
+# a task's vocabulary check reads the Markdown its commits changed, in its worktree, and nothing else;
+# a repo with no vocabulary file is not checked
+bash "$RUN" new vocab-task >/dev/null 2>&1; wv="$(bash "$RUN" wt add TV 2>/dev/null)"
+printf '%s\n' '| use | means | never write |' '|---|---|---|' '| main checkout | x | main repo |' > "$scratch/vt-vocab.md"
+mkdir -p "$wv/docs" && printf 'the main repo\n' > "$wv/docs/vt.md" && printf 'the main repo\n' > "$wv/loose.md"
+git -C "$wv" add docs/vt.md && git -C "$wv" -c user.name=t -c user.email=t@t commit -qm "TV: docs"
+out="$(bash "$RUN" vocab --file "$scratch/vt-vocab.md" --task TV 2>&1)"; rc=$?
+check "vocab --task checks only the Markdown the task's commits changed" '[ "$rc" = 1 ] && [ "$out" = "docs/vt.md:1: main repo → main checkout" ]'
+out="$(bash "$RUN" vocab --task TV 2>&1)"; rc=$?
+check "vocab checks nothing, and says so, where the repo has no vocabulary file" '[ "$rc" = 0 ] && has -F "has no vocabulary file" <<< "$out"'
+vmain="$(bash "$RUN" path vocabulary)"; mkdir -p "$(dirname "$vmain")"; cp "$scratch/vt-vocab.md" "$vmain"
+out="$(bash "$RUN" vocab --task TV 2>&1)"; rc=$?
+check "vocab --task reads the main checkout's vocabulary file, which no worktree has until it is committed" '[ "$rc" = 1 ] && [ "$out" = "docs/vt.md:1: main repo → main checkout" ] && [ ! -e "$wv/$(bash "$RUN" path --relative vocabulary)" ]'
+rm -f "$vmain"
+rm -f "$wv/loose.md"; bash "$RUN" wt rm TV; bash "$RUN" finish "done" >/dev/null 2>&1
 bash "$RUN" wt rm T4; rm -f .idleflow/idleflow.conf; [ ! -f "$scratch/conf.bak" ] || mv "$scratch/conf.bak" .idleflow/idleflow.conf
 # a leftover run whose job pid names a later process does not stop a resume of another run
 bash "$RUN" new other-run >/dev/null 2>&1; orid="$(bash "$RUN" get id)"; bash "$RUN" finish needs-human >/dev/null 2>&1
@@ -1099,6 +1115,8 @@ printf '%s\n' '## Tasks' '### T1: one' 'group: 1' 'owns:' '  - src/a/**   # its 
 bash "$RUN" plan-check > "$scratch/pc.txt" 2>&1; rc=$?
 check "plan-check names each file a task names but does not own" '[ "$rc" = 1 ] && grep -qx "plan-check: T1 does not own src/b/y.py, which its entry point names; add it to T1.s owns: (or to shared_files when every task adds lines to it)" "$scratch/pc.txt" && grep -q "^plan-check: T1 does not own .gitignore, which its acceptance A2 names" "$scratch/pc.txt" && [ "$(grep -c "does not own" "$scratch/pc.txt")" = 2 ]'
 check "plan-check names every protected file a wide glob owns" 'for p in .claude/settings.json .claude/settings.local.json .claude/agents/ .claude/hooks/; do grep -qx "plan-check: T2 owns the protected $p; protected files belong to no task" "$scratch/pc.txt" || exit 1; done && [ "$(grep -c "protected" "$scratch/pc.txt")" = 4 ] && ! grep -q "T3\|zzz" "$scratch/pc.txt"'
+vrel="$(bash "$RUN" path --relative vocabulary)"; printf '%s\n' '## Tasks' '### T1: one' 'owns:' "  - $vrel" 'acceptance:' '  - A1: it reads well → verify: true' > .idleflow/runs/active/plan.md
+check "plan-check treats the vocabulary file as protected" '! bash "$RUN" plan-check > "$scratch/pcv.txt" 2>&1 && grep -qx "plan-check: T1 owns the protected $vrel; protected files belong to no task" "$scratch/pcv.txt"'
 printf '%s\n' '## Tasks' '### T1: one' 'owns:' '  - src/a/**' '  - .gitignore' 'entry_points:' '  - src/a/x.py: run' 'acceptance:' '  - A1: `src/a/x.py` and .gitignore → verify: true' > .idleflow/runs/active/plan.md
 check "plan-check passes a plan whose tasks own what they name" '[ "$(bash "$RUN" plan-check)" = "plan-check: every file each task names is in its owns: or shared_files, and no task owns a protected file" ]'
 # a file git ignores is in no worktree and no merge: a task may not change it, but a criterion may name
@@ -1625,6 +1643,11 @@ printf 'an end-user view, two end-users\n' >> "$scratch/vdoc.md"
 bash "$RUN" vocab --file "$scratch/vocab.md" "$scratch/vdoc.md" > "$scratch/vocab.out" 2>&1; rc=$?
 check "vocab reports each never-write word once per line, outside code, any case, never inside a term to use" '[ "$rc" = 1 ] && [ "$(cat "$scratch/vocab.out")" = "$(printf "%s\n" "$scratch/vdoc.md:1: main repo → main checkout" "$scratch/vdoc.md:6: main repo → main checkout" "$scratch/vdoc.md:7: user → human" "$scratch/vdoc.md:10: run dir → main checkout" "$scratch/vdoc.md:11: run dir → main checkout")" ]'
 check "vocab finds the same hits from a subfolder, with the vocabulary named from there" 'mkdir -p "$scratch/vrepo/docs" && git -C "$scratch/vrepo" init -q && cp "$scratch/vocab.md" "$scratch/vrepo/docs/v.md" && cp "$scratch/vdoc.md" "$scratch/vrepo/a.md" && git -C "$scratch/vrepo" add -A && (cd "$scratch/vrepo/docs" && bash "$RUN" vocab --file v.md --all) > "$scratch/vsub.out" 2>&1; [ $? = 1 ] && [ "$(wc -l < "$scratch/vsub.out" | tr -d " ")" = 5 ] && has -F "a.md:1: main repo → main checkout" "$scratch/vsub.out" && ! has -F "v.md" "$scratch/vsub.out"'
+mkdir -p "$scratch/vrepo2/docs" && git -C "$scratch/vrepo2" init -q && git -C "$scratch/vrepo2" -c user.name=t -c user.email=t@t commit -q --allow-empty -m base
+cp "$scratch/vocab.md" "$scratch/vrepo2/docs/v.md" && cp "$scratch/vdoc.md" "$scratch/vrepo2/a.md" && git -C "$scratch/vrepo2" add -A && git -C "$scratch/vrepo2" -c user.name=t -c user.email=t@t commit -qm docs
+check "vocab --since checks the Markdown the later commits changed, never the vocabulary file" '(cd "$scratch/vrepo2" && bash "$RUN" vocab --file docs/v.md --since HEAD~1) > "$scratch/vc.out" 2>&1; [ $? = 1 ] && [ "$(wc -l < "$scratch/vc.out" | tr -d " ")" = 5 ] && ! has -F "v.md:" "$scratch/vc.out" && (cd "$scratch/vrepo2" && bash "$RUN" vocab --file docs/v.md --since HEAD) && { (cd "$scratch/vrepo2" && bash "$RUN" vocab --file docs/v.md --since no-such-rev 2>/dev/null); [ $? = 2 ]; }'
+check "the vocabulary template seeds terms a new repo's docs are checked against" 'printf "the main repo\n" > "$scratch/vtm.md"; bash "$RUN" vocab --file "$HERE/../templates/vocabulary.md" "$scratch/vtm.md" > /dev/null; [ $? = 1 ] && has -F "\`templates/vocabulary.md\` to the vocabulary file" "$HERE/../procedures/repo-setup.md" && has "^vocabulary_file: vocabulary.md$" "$HERE/../templates/conventions.md"'
+check "a run checks each task's Markdown and the docs its agents write, and those agents get the vocabulary" 'has -F "**Vocabulary check**, before a task'"'"'s review: \`bash \"\$RUN\" vocab --task <id>\`" "$HERE/../commands/feature.md" && has -F "Every agent that writes the repo'"'"'s docs gets \`Vocabulary: <that path>\`" "$HERE/../commands/feature.md" && has -F "This round is not one of step 7'"'"'s fix rounds" "$HERE/../commands/feature.md" && n=0 && for a in planner doc-keeper retro implementer implementer-hard; do has -F "When your prompt gives \`Vocabulary: <path>\`" "$HERE/../agents/$a.md" && n=$((n + 1)); done && [ "$n" = 5 ]'
 check "vocab refuses a vocabulary that bans nothing rather than pass every file" 'printf "| use | means | never write |\n|---|---|---|\n| human | x | |\n" > "$scratch/vnone.md"; bash "$RUN" vocab --file "$scratch/vnone.md" "$scratch/vdoc.md" 2> "$scratch/vnone.err"; [ $? = 2 ] && has -F "has no" "$scratch/vnone.err"'
 check "vocab passes a file with no hit, and a call with no file" 'printf "the main checkout\n" > "$scratch/vok.md" && bash "$RUN" vocab --file "$scratch/vocab.md" "$scratch/vok.md" && bash "$RUN" vocab --file "$scratch/vocab.md"'
 
