@@ -8,9 +8,9 @@ A screen is designed when someone who has never seen it can tell in two seconds 
 
 Write four lines before choosing a single token:
 
-1. **Who and when.** The person using it and the moment they are in (a nurse between patients, a developer reading logs at 2 a.m., a parent comparing prices on a phone).
+1. **Who and when.** The end user and the moment they are in (a nurse between patients, a developer reading logs at 2 a.m., a parent comparing prices on a phone).
 2. **Two words for the feel**, pulling in different directions so the result has tension: calm and exact, playful and dense, warm and technical. Words like "clean" and "modern" decide nothing; do not use them.
-3. **The signature.** One thing a user would describe to a friend: an unusual type pairing, a colour used with conviction, a layout that breaks the grid on purpose, a motion that explains a state change. One, done fully, not five half-done.
+3. **The signature.** One thing an end user would describe to a friend: an unusual type pairing, a colour used with conviction, a layout that breaks the grid on purpose, a motion that explains a state change. One, done fully, not five half-done.
 4. **What it refuses.** The look it must not drift into (see section 9).
 
 Every later choice is checked against these four lines. When two options both fit, pick the one a competitor would not.
@@ -43,7 +43,7 @@ Every later choice is checked against these four lines. When two options both fi
 ## 5. Hierarchy and flow
 
 - One primary action per view, visibly heavier than the rest. Secondary actions look secondary.
-- Order the screen by the question the user arrives with, then what they do next.
+- Order the screen by the question the end user arrives with, then what they do next.
 - Headings describe; buttons say what happens ("Save changes", not "Submit").
 - Show progress and position in multi-step flows; never strand someone without a way back.
 
@@ -61,7 +61,7 @@ For each screen, design: empty (first use, with the action that fills it), loadi
 
 ## 8. Accessibility is part of the design, not a pass at the end
 
-Semantic structure (landmarks, headings in order, real buttons and links), full keyboard use with a visible focus ring, logical focus order, labels for every input, text alternatives for meaningful images, no information in colour alone, content that survives 200 % zoom, and motion that respects user settings. ARIA only where native elements cannot express it.
+Semantic structure (landmarks, headings in order, real buttons and links), full keyboard use with a visible focus ring, logical focus order, labels for every input, text alternatives for meaningful images, no information in colour alone, content that survives 200 % zoom, and motion that respects the end user's settings. ARIA only where native elements cannot express it.
 
 ## 9. Signs a screen looks generic
 
@@ -71,7 +71,7 @@ Replace each with a decision tied to the direction:
 - a purple-to-blue gradient on white, or any gradient chosen without a reason;
 - every corner the same large radius and every card the same soft shadow;
 - the default font stack and default icon set used everywhere with no adjustment;
-- icons standing in for words the user needs to read;
+- icons standing in for words the end user needs to read;
 - placeholder copy ("Lorem", "Feature one") that reached a review;
 - decoration that does not serve the direction's two words.
 

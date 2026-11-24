@@ -7,7 +7,7 @@ is done live in `progress.md`.
 ## Why this exists
 <One paragraph. The problem, who has it, what changes for them when this ships.>
 
-## Users
+## End users
 - <who> — <what they need to do>
 
 ## Must do (v1)

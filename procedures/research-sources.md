@@ -3,7 +3,7 @@
 Read by `idleflow:market-researcher`, `idleflow:stack-researcher` and `idleflow:library-scout`. Many
 sites refuse a plain page fetch (GitHub, review sites, Reddit, some news sites answer 403), so reach a
 source through its machine endpoint first, with Bash and `curl -s` or `gh`, and fall back to the
-page only after that. Cite the page a person can open (the release page, the thread, the package
+page only after that. Cite the page a human can open (the release page, the thread, the package
 page) and add `via <endpoint>` when the fact came from the endpoint.
 
 ## Routes, first choice first
@@ -30,7 +30,7 @@ breaks the curl URL). Without a login GitHub allows 60 requests an hour and 10 s
 ask only for what the claim needs; a `403` or `429` for the rate limit goes under `unreachable:` like
 any other. A private or GitHub Enterprise repository answers only with a login, through `gh`.
 
-Send a plain `User-Agent` with `curl` (`-A "research-client/1.0"`); never one that names the person or
+Send a plain `User-Agent` with `curl` (`-A "research-client/1.0"`); never one that names the human or
 the project.
 
 ## When a source cannot be reached

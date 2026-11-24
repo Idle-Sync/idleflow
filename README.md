@@ -11,7 +11,7 @@ issue ─► explore (Sonnet) ─► classify size, risk, new dependency (Haiku)
       ─► merge in plan order, run suite ─► retro writes ≤1 lesson (Haiku)
 ```
 
-For an empty folder, `/idleflow:init` runs the first session instead: a four-round brainstorm, a **market-research** agent (competitors, what their users complain about, table stakes, a viability verdict, every claim with a URL) into `docs/market-research.md`, the repo's rules (readability mode, whether Claude is co-authored on commits, tagged GitHub releases or not, docs in git or not), stack and library research, a PRD written by the planner and approved by the human, the project docs, the first commit and optionally the GitHub repo. It hands off to `/idleflow:feature "Milestone 1"`. For a project that already has code, `/idleflow:setup` does the onboarding part: it maps the code, asks the repo's rules once, records the stack the project already uses rather than proposing a new one, offers tooling, and commits the setup for the team. `/idleflow:doctor` checks a repo's setup and whether a newer idleflow is out at any time.
+For an empty folder, `/idleflow:init` runs the first session instead: a four-round brainstorm, a **market-research** agent (competitors, what their end users complain about, table stakes, a viability verdict, every claim with a URL) into `docs/market-research.md`, the repo's rules (readability mode, whether Claude is co-authored on commits, tagged GitHub releases or not, docs in git or not), stack and library research, a PRD written by the planner and approved by the human, the project docs, the first commit and optionally the GitHub repo. It hands off to `/idleflow:feature "Milestone 1"`. For a project that already has code, `/idleflow:setup` does the onboarding part: it maps the code, asks the repo's rules once, records the stack the project already uses rather than proposing a new one, offers tooling, and commits the setup for the team. `/idleflow:doctor` checks a repo's setup and whether a newer idleflow is out at any time.
 
 Around the pipeline, five things that keep a repo honest:
 
@@ -19,14 +19,14 @@ Around the pipeline, five things that keep a repo honest:
 
 - **Code style is a contract, not advice.** `.idleflow/conventions.md` (committed) holds the KISS rules — simplest correct thing, plain names a newcomer can read, one idea per function, failures handled where they happen — and a **readability mode** (`repo` / `balanced` / `explicit` / `idiomatic`) that decides whether a list comprehension or a loop is the right shape. On a repo that already has code, `repo` is offered first with a snippet from the repo itself: implementers copy the style of the files next to the change. The first run asks once, with pros and cons; `/idleflow:style` changes it later. Implementers write to it and the conformance reviewer rejects on it.
 - **Research before code.** On greenfield runs and changes that add a dependency, a **stack advisor** scans the repo and the machine (pyproject vs requirements.txt, venv, Docker present, lockfiles, linters, CI), a **researcher** checks several internet sources per candidate with a URL on every claim, and the human accepts or declines each proposal. A **library scout** does the same for the capabilities the change needs (canvas animation → p5.js / three.js, not hand-rolled canvas code), writing `docs/research/<capability>.md`. Repos at or above `LARGE_REPO_LOC` hand-written code lines get a proposal for a code map (Graphify, Serena MCP, Sourcegraph, ctags).
-- **No meta commentary, ever.** The generated `CLAUDE.md` and `.idleflow/conventions.md` ban process narration ("the user asked", "as requested", "I'll now") from every doc, commit, PR, comment and note in the repo, and record whether commits carry a `Co-Authored-By: Claude` trailer (`co_author_claude: yes|no`; footers never). The conformance reviewer rejects on both.
+- **No meta commentary, ever.** The generated `CLAUDE.md` and `.idleflow/conventions.md` ban process narration ("the user asked", "as requested", "I'll now") from every doc, commit, PR, comment and note in the repo, and record whether commits carry a `Co-Authored-By: Claude` trailer (`co_author_claude: yes|no`; footers never). The conformance reviewer rejects on both. <!-- vocab: allow -->
 - **The right tooling, not hand-rolled.** A tooling advisor inventories installed plugins and skills, checks the [Idle-Sync/skills](https://github.com/Idle-Sync/skills) catalogue against what is installed, and proposes the skills, marketplace plugins and workflows the project will use often; accepted items are installed, missing ones become `/idleflow:skills-feedback` requests. `/idleflow:plugin-feedback` reports idleflow's own bugs with the run's evidence attached, written to the same blueprint as every other issue ([ISSUES.md](ISSUES.md)).
 - **It reports its own gaps.** Any agent that finds the plugin lacks an input, step, tool or config knob it needed appends a `plugin_gap:` line to `.idleflow/runs/active/gaps.md` instead of working around it. At the end of a run the orchestrator lists them and asks once whether to open them as issues on Idle-Sync/idleflow from the human's GitHub account; nothing is filed without that yes. On greenfield runs the stack advisor always proposes quality tooling per language (ruff, mypy or pyright, pytest and pre-commit for Python; biome or eslint plus prettier, strict tsc and vitest for TypeScript; gofmt and golangci-lint for Go; rustfmt and clippy for Rust, and so on), grounded by the researcher like every other proposal.
 - **No doc goes stale.** With project docs on (automatic for greenfield), the repo gets `prd.md` (the product), `progress.md` (milestones as checkboxes the retro ticks, plus the log), `index.md`, a `CLAUDE.md` block and `docs/sessions/`. A **doc-keeper** runs before every run, checks each claim in those docs against the code, fixes what is stale and commits. The retro writes a session note and updates progress and index after every run. The generated `CLAUDE.md` makes plain Claude Code sessions follow the same start-and-end protocol, and `/idleflow:endsession` closes a working session with a note whose "Next" lists, in order, what the next session does first: push, CI, release, restarts, open deviations.
 
 ## Frontend design, built in
 
-For work a person sees (the classifier reports `ui: true`, or `STEP_DESIGN=on`), the run designs before it plans:
+For work an end user sees (the classifier reports `ui: true`, or `STEP_DESIGN=on`), the run designs before it plans:
 
 - **`idleflow:designer`** reads idleflow's own design handbook (`procedures/design.md`) and reference data
   (`procedures/design-data.md`: type pairings, scales, colour recipes, contrast formula, motion values,
@@ -56,7 +56,7 @@ For work a person sees (the classifier reports `ui: true`, or `STEP_DESIGN=on`),
 | Size of a change is unchecked | A diff gate sends oversized tasks to an auditor that accepts, splits or rejects |
 | Each session starts fresh | Lessons from every run feed the next plan; conventions and settings are committed for the team |
 | Status lives in people's heads | Milestones as checkboxes in `progress.md`, `/idleflow:progress`, session handoffs, docs grounded against the code |
-| Settings are per person | `/idleflow:customize` per repo, shared through git; `/idleflow:doctor` checks setup and updates |
+| Settings differ from human to human | `/idleflow:customize` per repo, shared through git; `/idleflow:doctor` checks setup and updates |
 
 ## Decisions baked in (and where to change them)
 
@@ -76,6 +76,7 @@ For work a person sees (the classifier reports `ui: true`, or `STEP_DESIGN=on`),
 | Checkable findings | each review finding says whether a deterministic check would have caught it; repeats become a lesson | reviewers, `agents/retro.md` |
 | Known base failures | a failure already on the commit a task started from is shown there with `run.sh exec --base`, never argued; the gate's baseline and every task's proven ones go into the run's `known-failures.md`, which later implementers and the correctness reviewer get, with or without a gate | step 5 of `commands/feature.md`, `agents/implementer.md` |
 | Unverified checks | a check that cannot decide for a cause outside the task is listed, never passed and never retried; an environment cause asks the human, a CI job still owed goes into the run's reports | `agents/review-correct.md`, `agents/review-design.md`, plan `verify: ci <job name>`, `commands/feature.md` §5 and §7 |
+| CI evidence | a task that needs what only a CI job shows (`blocked_until: ci <job>`) waits for it; once the human agrees, the run pushes its branch to `idleflow/<run id>/ci`, never the default branch, reads the job with `gh`, gives the planner its log, and deletes the branch at `finish` | `CI_EVIDENCE_MINUTES`, `CI_EVIDENCE_TRIES`, `run.sh ci`, step 5 of `commands/feature.md` |
 | Lessons | per repo, `.idleflow/lessons.md` or `docs/lessons.md` (`lessons_in:`), ≤1 per run | `agents/retro.md`, `run.sh path lessons` |
 | Metrics | `.idleflow/runs/log.jsonl` per run; the time log (estimate against actual lines, minutes and reported tokens per task, with why) feeds the planner's estimates | `scripts/run.sh finish`, `time_log`, `agents/retro.md` |
 | Priority | quality > tokens > time | retry on Opus; `opus` allowed per task; critics on Opus |
@@ -109,7 +110,7 @@ are committed, so everyone who pulls plans with the same rules and lessons. What
   whole team's landed work from git history, plus the milestones in `progress.md`.
 - **Teammates without idleflow.** `run.sh team-install` adds idleflow to the committed `.claude/settings.json`
   (`extraKnownMarketplaces` and `enabledPlugins`); Claude Code loads it for each teammate once they trust
-  the folder. The doctor warns when more than one person commits and it is not set.
+  the folder. The doctor warns when more than one human commits and it is not set.
 
 ## Docs kept by code
 
@@ -141,13 +142,14 @@ beside it. Every key is optional and missing keys keep the defaults, so older re
 | Key | What it does |
 |---|---|
 | `worktrees_in: inside` | Task worktrees in `.idleflow/worktrees/` (ignored) instead of a sibling folder |
-| `worktree_setup: <command>` | Run in each new worktree before the implementer starts (`$MAIN`, `$WORKTREE` set). Runs only as committed and after each person approves that exact text (`run.sh approve`, local git config); fails loudly; may not change tracked files |
+| `worktree_setup: <command>` | Run in each new worktree before the implementer starts (`$MAIN`, `$WORKTREE` set). Runs only as committed and after each human approves that exact text (`run.sh approve`, local git config); fails loudly; may not change tracked files |
 | `progress_file`, `index_file`, `sessions_dir`, `time_log`, `lessons_in: <path>` | Use the records the repo already keeps |
 | `index_rewrite: no` | The retro leaves the index to the repo's own process |
-| `session_names: per-person` | Notes in a folder per person, `<github-login>/s_0001.md`, each numbered on its own, so a team never collides (`git config idleflow.person <name>` names the folder) |
+| `session_names: per-person` | Notes in a folder per human, `<github-login>/s_0001.md`, each numbered on its own, so a team never collides (`git config idleflow.person <name>` names the folder) |
 | `session_names: numbered` | Keep a repo's `s_0001.md` numbering (two writers can collide) |
 | `gate: <command>` | The repo's own check is the definition of done: run on the base first (old failures are not blamed on the run), by implementers and the correctness reviewer, and after merge. Same approval rule as `worktree_setup` |
 | `services: <command>` | A quick check that the services the tests need are up (`pg_isready -t 3 -p 5433`): run before the baseline and before each group's build, review and the gate after merge, so a database that is down stops the run with a question, not as a failed test. Same approval rule as `gate` |
+| `services_start: <command>` | Starts those services (`docker compose up -d db`) when the check fails and the human says **Start them**: run once from the main checkout, then the check again for up to `SERVICES_START_SECONDS`. The run never stops what it started, and says so at the end. Same approval rule as `gate` |
 | `gate_runs: once` + `gate_quick: <command>` | For a slow gate (over `SLOW_GATE_SECONDS`, 120 by default): a quick check per task and the full gate once after merge, the base checked only if it fails. `repo-gate` times every run; `detect` suggests this and points out commit or push hooks that run the tests every time (idleflow never edits hooks) |
 | `commit_format: conventional` | Task and merge commits as Conventional Commits (subject at most 72 characters, ids in the body) |
 | `commit_format: plain` | Task and merge commits as plain sentences with no prefix (merges `Merge <task title>`, ids in the body) |
@@ -171,7 +173,7 @@ sourced: a key outside the list in `scripts/conf.sh`, or a value out of range, i
 
 Each customization can be reported as a comment on one issue per setting on Idle-Sync/idleflow
 (`customization: DIFF_LIMIT`, `customization: prompt planner`, ...). The first time, the project answers
-report / always / never; `always` and `never` are saved per person in the clone's git config
+report / always / never; `always` and `never` are saved per human in the clone's git config
 (`idleflow.reportCustomizations`), never committed, so one teammate's answer never posts from another's account. Instruction text and
 prompt diffs are shown before every post.
 
@@ -198,7 +200,7 @@ agents/                         one file per role; frontmatter sets the model
 hooks/hooks.json                PreToolUse → ownership-guard
 scripts/run.sh                  run lifecycle: new / wt / own / get / set / inc / report / keep / gate / merge / snapshot / finish / loc /
                                 conf, plus path / migrate / doctor / update-check / detect / repo-gate / commands / approve /
-                                reword / findings / session-name / behind / team-install / custom / agent (`bash scripts/run.sh` lists them)
+                                reword / findings / session-name / behind / team-install / custom / agent / vocab (`bash scripts/run.sh` lists them)
 scripts/diff-gate.sh            counts hand-written code lines vs base, emits JSON verdict
 scripts/ownership-guard.sh      the hook; blocks edits outside a task's globs
 scripts/rt.sh                   picks Python or Node, whichever is installed
@@ -215,11 +217,12 @@ setup.md                        global install, written for Claude Code to execu
 PUBLISHING.md                   validate, push to GitHub, install elsewhere, release updates
 ISSUES.md                       how every idleflow issue is written: kinds, title, four headings; the form and plugin-feedback use it
 .github/ISSUE_TEMPLATE/         the GitHub issue forms (bug, workflow, idea, pushback), built from ISSUES.md
+vocabulary.md                   one term per concept in idleflow's own Markdown; `run.sh vocab --all` checks it, in the selftest
 ```
 
 ## Runtime
 
-The bash scripts need either **Python ≥ 3.8** or **Node ≥ 18** on `PATH`; `scripts/rt.sh` tries
+The bash scripts run on bash 3.2 or newer (macOS ships 3.2 as `/bin/bash`; CI runs the selftest on it) and need either **Python ≥ 3.8** or **Node ≥ 18** on `PATH`; `scripts/rt.sh` tries
 `python3`, then `python`, then `node`, and `IDLEFLOW_RUNTIME=node` (or `python`, or a full path)
 pins one. `bash scripts/run.sh conf` prints which one is in use. On Windows, bash comes from Git for
 Windows; paths in every form (`D:\x`, `D:/x`, `/d/x`) are normalised before comparison.
@@ -231,7 +234,7 @@ IDLEFLOW_RUNTIME=python bash scripts/selftest.sh
 bash scripts/shellcheck-new.sh origin/main    # shellcheck findings this branch adds
 ```
 
-`.github/workflows/checks.yml` runs the selftest on each runtime, `claude plugin validate --strict`
+`.github/workflows/checks.yml` runs the selftest on each runtime, under the newest bash and under bash 3.2, `claude plugin validate --strict`
 on `.`, `agents` and `commands`, and `shellcheck-new.sh` against the base on every pull request to
 `main` and every push to it, and the first two nightly on `main`.
 

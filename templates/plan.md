@@ -23,11 +23,11 @@ issue: <link or one-line reference>
 ### T1: <title: what the task delivers, in a few words; the merge commit's subject uses it, so it does not start with "merge">
 group: 1                      # tasks in the same group run in parallel; groups run in order
 depends_on: []                # task ids
-blocked_until: none           # or: revision — <what it waits to learn, from which task>; its section is final only after that task has run
+blocked_until: none           # or: revision — <what it waits to learn, from which task>; or: ci <job> — <what it waits to learn from that CI job>; its section is final only after that task has run
 model: sonnet | opus
 tests_first: true | false     # true when context.md §4 shows no tests for the entry points
 mutation: true | false        # the implementer proves the tests catch deliberate faults in the code this task changes, in files it owns (see STEP_MUTATION)
-ui: true | false              # touches what a person sees; gets the design spec and the design reviewer
+ui: true | false              # touches what an end user sees; gets the design spec and the design reviewer
 cause: none                   # for a bug: source <file>:<function> | with <task-id> | symptom — <why the source cannot be fixed>
 from: none                    # for a sub-task of a split: the split task's id (T<n>)
 estimate_lines: <N>           # hand-written code lines, added+deleted
