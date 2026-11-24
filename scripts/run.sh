@@ -2550,8 +2550,9 @@ Task: $tid")
         while IFS= read -r -d '' f; do
           [ -f "$f" ] && [ "$(pwd -P)/$f" != "$vf" ] && files+=("$f")
         done < <(case "$mode" in
-          --all) git ls-files -z -- '*.md' ;;
-          --task|--since) git diff -z --name-only --no-renames --diff-filter=d "$base" HEAD -- '*.md' ;;
+          # each pattern opens with (: bash 3.2 ends a <( ) at a pattern's bare )
+          (--all) git ls-files -z -- '*.md' ;;
+          (--task|--since) git diff -z --name-only --no-renames --diff-filter=d "$base" HEAD -- '*.md' ;;
         esac) ;;
       *) files=("$@") ;;
     esac
@@ -2817,7 +2818,7 @@ Task: $tid")
       gone=()
       for f in prd.md "$(progress_rel)" "$(index_rel)" "$(vocabulary_rel)"; do [ -f "$REPO/$f" ] || gone+=("$f"); done
       grep -q '<!-- idleflow start -->' "$REPO/CLAUDE.md" 2>/dev/null || gone+=("CLAUDE.md block")
-      if [ "${#gone[@]}" -gt 0 ]; then check_line warn docs "missing: ${gone[*]}" "/idleflow:setup"; else check_line ok docs "prd.md, $(progress_rel), $(index_rel) and the CLAUDE.md block are present"; fi
+      if [ "${#gone[@]}" -gt 0 ]; then check_line warn docs "missing: ${gone[*]}" "/idleflow:setup"; else check_line ok docs "prd.md, $(progress_rel), $(index_rel), $(vocabulary_rel) and the CLAUDE.md block are present"; fi
     fi
     ;;
   conf)
