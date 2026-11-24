@@ -2018,9 +2018,10 @@ Task: $tid")
       ci_commit_ok "$sha" "$id" || { echo "ci plan: ${sha:0:12} is neither on the run's branch nor on one of its task branches" >&2; exit 1; }
       echo "branch: idleflow/$id/ci"
       echo "commit: $sha"
-      # a task's commit is pushed before it merges, and the workflows in its own tree run on that push
-      changed="$("${G[@]}" diff --name-only HEAD "$sha" -- .github/workflows/ 2>/dev/null || true)"
-      if [ -n "$changed" ]; then echo "workflow files this commit changes from the run's branch:"; printf '%s\n' "$changed" | sed 's/^/- /'; fi
+      # a task's commit is pushed before it merges, and what CI runs on that push comes from its own
+      # tree: the workflows, and the local actions kept under .github/ (uses: ./.github/actions/...)
+      changed="$("${G[@]}" diff --name-only HEAD "$sha" -- .github/ 2>/dev/null || true)"
+      if [ -n "$changed" ]; then echo "files under .github/ this commit changes from the run's branch:"; printf '%s\n' "$changed" | sed 's/^/- /'; fi
       files="$(ci_dispatch_files "$sha" "$job")"
       if [ -n "$files" ]; then echo "started by hand when the push starts none:"; printf '%s\n' "$files" | sed 's/^/- /'
       else echo "started by hand when the push starts none: none"; fi
