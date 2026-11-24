@@ -871,8 +871,11 @@ tsha="$(git commit-tree "HEAD^{tree}" -p HEAD -m "T9: the test alone")"; git upd
 stray="$(git commit-tree "$(git mktree < /dev/null)" -m stray)"
 check "ci plan shows a commit on one of the run's task branches, and refuses one on none" 'gh_run ci plan "$cijob" "$tsha" | has -x "commit: $tsha" && ! gh_run ci plan "$cijob" "$stray" 2>/dev/null'
 wsha="$(git commit-tree "$(git rm -q --cached .github/workflows/w.yml >/dev/null 2>&1; git write-tree; git reset -q HEAD -- .github/workflows/w.yml)" -p HEAD -m "T9: drops a workflow")"; git update-ref "refs/heads/idleflow/$cirid/T8" "$wsha"
-check "ci plan names the workflow files a task commit changes, since they run on its push" 'gh_run ci plan "$cijob" "$wsha" | has -x -- "- .github/workflows/w.yml" && ! gh_run ci plan "$cijob" "$tsha" | has -F "workflow files this commit changes"'
-git update-ref -d "refs/heads/idleflow/$cirid/T8"
+ablob="$(echo 'runs: { using: composite, steps: [] }' | git hash-object -w --stdin)"; GIT_INDEX_FILE="$scratch/ci-idx" git read-tree HEAD
+GIT_INDEX_FILE="$scratch/ci-idx" git update-index --add --cacheinfo "100644,$ablob,.github/actions/setup/action.yml"
+asha="$(git commit-tree "$(GIT_INDEX_FILE="$scratch/ci-idx" git write-tree)" -p HEAD -m "T7: changes a local action")"; git update-ref "refs/heads/idleflow/$cirid/T7" "$asha"
+check "ci plan names the files under .github/ a task commit changes, workflows and local actions alike, since they run on its push" 'gh_run ci plan "$cijob" "$wsha" | has -x -- "- .github/workflows/w.yml" && gh_run ci plan "$cijob" "$asha" | has -x -- "- .github/actions/setup/action.yml" && ! gh_run ci plan "$cijob" "$tsha" | has -F "files under .github/ this commit changes"'
+git update-ref -d "refs/heads/idleflow/$cirid/T8"; git update-ref -d "refs/heads/idleflow/$cirid/T7"
 check "ci push refuses a commit on no branch of the run, and a commit named short" 'gh_run ci push "$cijob" "$stray" 2> "$scratch/ci.err" >/dev/null; [ $? = 1 ] && has -F "neither on the run" "$scratch/ci.err" && { gh_run ci push "$cijob" "$(git rev-parse --short HEAD)" 2> "$scratch/ci.err" >/dev/null; [ $? = 1 ]; } && has -F "not the full commit ci plan showed" "$scratch/ci.err" && [ -z "$(git --git-dir="$scratch/ci-remote.git" for-each-ref)" ]'
 out="$(gh_run ci push "$cijob" "$(git rev-parse HEAD)" 2>&1)"; rc=$?
 cisha="$(git rev-parse HEAD)"
