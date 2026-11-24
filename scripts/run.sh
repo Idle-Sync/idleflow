@@ -610,15 +610,20 @@ job_dir() { echo "$ACTIVE/tasks/$1/jobs/$2"; }
 job_pid() { cat "$1/pid" 2>/dev/null || true; }
 # Once the command has ended its own pid may be reused, so only the group is asked about then; the
 # bare pid stands in for the group only while the job's own shell still runs (where there are no
-# process groups).
+# process groups). A pid that names a process started after the job (pid_state) is another's: a
+# job's shell that died without an exit code, in a run left since a reboot, has given its pid away.
+# A group of that number is that process's too, never the job's: no pid is given out while a group
+# of that id still has members.
 group_alive() { # group_alive <job dir>
   local pid; pid="$(job_pid "$1")"
   [ -n "$pid" ] || return 1
+  if kill -0 "$pid" 2>/dev/null && [ "$(pid_state "$pid" "$1/pid")" = later ]; then return 1; fi
   kill -0 -- "-$pid" 2>/dev/null && return 0
   [ ! -f "$1/status" ] && kill -0 "$pid" 2>/dev/null
 }
 signal_job() { # signal_job <job dir> <signal>: to the group; to the bare pid only while the command runs
   local pid; pid="$(job_pid "$1")"
+  group_alive "$1" || return 0
   kill "-$2" -- "-$pid" 2>/dev/null && return 0
   if [ ! -f "$1/status" ]; then kill "-$2" "$pid" 2>/dev/null || true; fi
 }
@@ -636,6 +641,12 @@ stop_job() { # stop_job <job dir>: TERM to the whole group, KILL after 5 s; 143 
   local pid n=0
   job_ended "$1" && return 0
   pid="$(job_pid "$1")"; [ -n "$pid" ] || return 0
+  # nothing of it is left (its shell died without an exit code, and its pid may name another process
+  # by now): it ended, as a wait would report it, and nothing is signalled
+  if ! group_alive "$1"; then
+    [ -f "$1/status" ] || write_status "$1" 1
+    : > "$1/ended"; return 0
+  fi
   signal_job "$1" TERM
   while group_alive "$1" && [ "$n" -lt 25 ]; do sleep 0.2; n=$((n + 1)); done
   if group_alive "$1"; then signal_job "$1" KILL; sleep 0.5; fi
@@ -1024,59 +1035,65 @@ pid_state() { # pid_state <pid> <pid file>
 # signalled only with <trust>, for the run that is still the active one; otherwise it is named and
 # left as it is, so `stop` and `preview stop` still find it.
 stop_run_processes() { # stop_run_processes [trust]
-  local jd pf pid st n
+  local jd pf pid st rc
   for jd in "$ACTIVE"/tasks/*/jobs/*/; do
     [ -d "$jd" ] || continue
     jd="${jd%/}"; job_ended "$jd" && continue
     pid="$(job_pid "$jd")"; [ -n "$pid" ] || continue
     st="$(pid_state "$pid" "$jd/pid")"
-    case "$st" in
-      ours) stop_job "$jd" || true ;;
-      later) : > "$jd/ended" ;;
-      *) if [ -n "${1:-}" ]; then stop_job "$jd" || true; else echo "[idleflow] job $(basename "$jd") in $(native_path "$jd") may still run; nothing could tell, so it was left as it is" >&2; fi ;;
-    esac
+    if [ "$st" = unknown ] && [ -z "${1:-}" ] && group_alive "$jd"; then
+      echo "[idleflow] job $(basename "$jd") in $(native_path "$jd") may still run; nothing could tell, so it was left as it is" >&2
+    else
+      stop_job "$jd" || true
+    fi
   done
   for pf in "$ACTIVE"/tasks/*/preview.pid; do
     [ -f "$pf" ] || continue
-    pid="$(cat "$pf")"
-    [[ "$pid" =~ ^[0-9]+$ ]] || { rm -f "$pf"; continue; }
-    st="$(pid_state "$pid" "$pf")"
-    if [ "$st" = ours ] || { [ "$st" = unknown ] && [ -n "${1:-}" ]; }; then
-      # the group, or the bare pid where there are no process groups (Git Bash)
-      kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
-      n=0; while { kill -0 -- "-$pid" 2>/dev/null || kill -0 "$pid" 2>/dev/null; } && [ "$n" -lt 25 ]; do sleep 0.2; n=$((n + 1)); done
-      if kill -0 -- "-$pid" 2>/dev/null || kill -0 "$pid" 2>/dev/null; then
-        kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true; sleep 0.2
-      fi
-    fi
-    # a pid that names a later process is gone for the preview, and so is a group of that number: no
-    # pid is given out while a group of that id still has members, so such a group is the new one's
-    if [ "$st" != later ] && { kill -0 -- "-$pid" 2>/dev/null || kill -0 "$pid" 2>/dev/null; }; then
-      echo "[idleflow] the preview in $(native_path "${pf%/preview.pid}") may still serve; it was left as it is" >&2
-    else
-      rm -f "$pf"
-    fi
+    rc=0; stop_preview "$pf" "${1:-}" || rc=$?
+    [ "$rc" != 1 ] || echo "[idleflow] the preview in $(native_path "${pf%/preview.pid}") may still serve; it was left as it is" >&2
   done
   return 0
+}
+# A preview's server leads its own group (the bare pid stands in where there are none, as on Git
+# Bash). A pid that names a later process is gone for the preview, and so is a group of that number:
+# no pid is given out while a group of that id still has members, so such a group is the new one's.
+preview_alive() { # preview_alive <pid file>
+  local pid; pid="$(cat "$1" 2>/dev/null || true)"
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  kill -0 -- "-$pid" 2>/dev/null || kill -0 "$pid" 2>/dev/null || return 1
+  [ "$(pid_state "$pid" "$1")" != later ]
+}
+# 0 when it was stopped, 2 when nothing of it was left to stop, 1 when it may still serve. One ps
+# cannot judge is signalled only with <trust>: a stop asked for by name, or the run still active.
+stop_preview() { # stop_preview <pid file> [trust]
+  local pid n=0
+  preview_alive "$1" || { rm -f "$1"; return 2; }
+  pid="$(cat "$1")"
+  if [ "$(pid_state "$pid" "$1")" = ours ] || [ -n "${2:-}" ]; then
+    kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+    while { kill -0 -- "-$pid" 2>/dev/null || kill -0 "$pid" 2>/dev/null; } && [ "$n" -lt 25 ]; do sleep 0.2; n=$((n + 1)); done
+    if kill -0 -- "-$pid" 2>/dev/null || kill -0 "$pid" 2>/dev/null; then
+      kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true; sleep 0.2
+    fi
+  fi
+  if kill -0 -- "-$pid" 2>/dev/null || kill -0 "$pid" 2>/dev/null; then return 1; fi
+  rm -f "$1"; return 0
 }
 # A run another session may still be building: one of its jobs or previews still runs. A pid that
 # now names a later process counts as gone, and its stop is never suggested.
 refuse_if_busy() { # refuse_if_busy <what to say first>
-  local jd jn jt pf pt pid
+  local jd jn jt pf pt
   for jd in "$ACTIVE"/tasks/*/jobs/*/; do
     [ -d "$jd" ] || continue
     jd="${jd%/}"; jn="${jd##*/}"; jt="${jd%/jobs/*}"; jt="${jt##*/}"
     job_ended "$jd" && continue
-    pid="$(job_pid "$jd")"
-    [ -n "$pid" ] && [ "$(pid_state "$pid" "$jd/pid")" = later ] && continue
+    [ -n "$(job_pid "$jd")" ] && ! group_alive "$jd" && continue
     echo "$1 may still be built by another session: job $jn of $jt still runs. Wait for it, or end it with: bash \"$0\" stop $jt $jn" >&2; exit 1
   done
   for pf in "$ACTIVE"/tasks/*/preview.pid; do
     [ -f "$pf" ] || continue
-    pt="${pf%/preview.pid}"; pt="${pt##*/}"; pid="$(cat "$pf")"
-    [[ "$pid" =~ ^[0-9]+$ ]] || continue
-    [ "$(pid_state "$pid" "$pf")" = later ] && continue
-    if kill -0 -- "-$pid" 2>/dev/null || kill -0 "$pid" 2>/dev/null; then
+    pt="${pf%/preview.pid}"; pt="${pt##*/}"
+    if preview_alive "$pf"; then
       echo "$1 may still be built by another session: the preview of $pt still serves. End it with: bash \"$0\" preview $pt stop" >&2; exit 1
     fi
   done
@@ -1444,8 +1461,12 @@ JSON
     fi
     active_id >/dev/null
     if [ "$cmd" = wait ]; then if [ "${3:-}" = --watch ]; then await_job "$tid" "$job" watch; else await_job "$tid" "$job"; fi; fi
-    [ -f "$(job_dir "$tid" "$job")/pid" ] || { echo "no job $job for task $tid" >&2; exit 1; }
-    stop_job "$(job_dir "$tid" "$job")" || exit 1
+    d="$(job_dir "$tid" "$job")"
+    [ -f "$d/pid" ] || { echo "no job $job for task $tid" >&2; exit 1; }
+    if job_ended "$d" || ! group_alive "$d"; then
+      stop_job "$d"; echo "job $job of $tid: had already ended; nothing was signalled"; exit 0
+    fi
+    stop_job "$d" || exit 1
     echo "job $job of $tid: stopped"
     ;;
   get)
@@ -2389,12 +2410,15 @@ Task: $tid")
     pidf="$ACTIVE/tasks/$tid/preview.pid"
     if [ "$act" = stop ]; then
       # the server runs in its own session, so its whole process group goes (dev servers start children)
-      if [ -f "$pidf" ]; then pid="$(cat "$pidf")"; kill -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true; fi
-      rm -f "$pidf" "$ACTIVE/tasks/$tid/preview.url"; [ "$tid" != main ] || release_ports main; echo "preview $tid: stopped"; exit 0
+      rc=0; [ ! -f "$pidf" ] || stop_preview "$pidf" trust || rc=$?
+      if [ "$rc" = 1 ]; then echo "preview $tid: its processes survived KILL and still run (pid $(cat "$pidf"))" >&2; exit 1; fi
+      rm -f "$ACTIVE/tasks/$tid/preview.url"; [ "$tid" != main ] || release_ports main
+      if [ "$rc" = 2 ]; then echo "preview $tid: was not running; nothing was signalled"; else echo "preview $tid: stopped"; fi
+      exit 0
     fi
     # a start while the last one still serves (its group: a dev server's leader may have exited while
     # a child serves) reports that server again, so it never claims a second port beside it
-    if [ -f "$pidf" ] && { kill -0 -- "-$(cat "$pidf")" 2>/dev/null || kill -0 "$(cat "$pidf")" 2>/dev/null; }; then
+    if preview_alive "$pidf"; then
       echo "preview $tid: serving at $(cat "$ACTIVE/tasks/$tid/preview.url" 2>/dev/null || echo "an earlier address") (already running; log: $(native_path "$ACTIVE/tasks/$tid/preview.log"); stop with: run.sh preview $tid stop)"; exit 0
     fi
     cmd="$(idleflow_rt get "$ACTIVE/run.json" preview 2>/dev/null || true)"

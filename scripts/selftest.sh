@@ -1020,6 +1020,23 @@ touch -t "$(date -d @$(( $(date +%s) - 3600 )) +%Y%m%d%H%M 2>/dev/null || date -
 bash "$RUN" finish "done" >/dev/null 2>&1
 check "finish never signals a group a stale preview pid now leads" 'kill -0 "$leader" 2>/dev/null'
 kill -- "-$leader" 2>/dev/null || kill "$leader" 2>/dev/null
+# stop, preview stop and wait never take a pid that now names a later process for the job or the
+# preview: nothing of either is left, so they say so, and the job is marked ended
+# (the stranger leads a group of its own, as a daemon or a login shell does)
+bash "$RUN" new stale-stop >/dev/null 2>&1; sid="$(bash "$RUN" get id)"; js=".idleflow/runs/active/tasks/TS/jobs"; mkdir -p "$js/1" "$js/2" "$js/3"
+idleflow_rt detach "$PWD" /dev/null "$scratch/stranger.pid" "sleep 60"; stranger="$(cat "$scratch/stranger.pid")"
+for f in "$js/1/pid" "$js/2/pid" "$js/3/pid" .idleflow/runs/active/tasks/TS/preview.pid; do
+  echo "$stranger" > "$f"; touch -t "$(date -d @$(( $(date +%s) - 3600 )) +%Y%m%d%H%M 2>/dev/null || date -r $(( $(date +%s) - 3600 )) +%Y%m%d%H%M)" "$f"
+done
+out="$(bash "$RUN" stop TS 1 2>&1)"; rc=$?
+check "stop never signals a job pid that names a later process, and marks the job ended" '[ "$rc" = 0 ] && has -F "job 1 of TS: had already ended; nothing was signalled" <<< "$out" && kill -0 "$stranger" 2>/dev/null && [ -f "$js/1/ended" ] && [ "$(cat "$js/1/status")" = 1 ]'
+out="$(bash "$RUN" wait TS 2 2>&1)"; rc=$?
+check "a wait on a job whose pid names a later process reports it ended, never still running" '[ "$rc" = 1 ] && has -F "job 2 of TS ended without an exit code" <<< "$out" && kill -0 "$stranger" 2>/dev/null'
+out="$(bash "$RUN" preview TS stop 2>&1)"; rc=$?
+check "preview stop never signals a pid that names a later process" '[ "$rc" = 0 ] && has -F "preview TS: was not running; nothing was signalled" <<< "$out" && kill -0 "$stranger" 2>/dev/null && [ ! -f .idleflow/runs/active/tasks/TS/preview.pid ]'
+bash "$RUN" finish "done" >/dev/null 2>&1
+check "finish never signals a group a stale job pid now leads, and marks the job ended" 'kill -0 "$stranger" 2>/dev/null && [ -f ".idleflow/runs/$sid/tasks/TS/jobs/3/ended" ]'
+kill -- "-$stranger" 2>/dev/null || kill "$stranger" 2>/dev/null
 bash "$RUN" new previewmain >/dev/null 2>&1
 # another repo's live run holds PORT_BASE, so preview main takes the next port, under the owner main
 printf '{"id":"r1","tasks":{"T9":{"port":4402},"T8":{"port":4400}}}\n' > "$o/.idleflow/runs/active/run.json"
