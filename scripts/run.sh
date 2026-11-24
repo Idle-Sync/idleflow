@@ -1870,10 +1870,10 @@ JSON
     active_id >/dev/null
     for tid in "$@"; do
       [ "$tid" = merged ] || check_task_id "$tid"
-      for kind in correct conform design api; do
+      for kind in correct conform design api security; do
         name="$tid-$kind.md"; f="$ACTIVE/review/$name"
         [ -f "$f" ] || continue
-        tr -d '\r' < "$f" | R="review/$name" T="$tid" awk '/^### [FDP][0-9]+\. / { sub(/^### /, ""); print ENVIRON["T"] ": " $0 " (" ENVIRON["R"] ")" }'
+        tr -d '\r' < "$f" | R="review/$name" T="$tid" awk '/^### [FDPS][0-9]+\. / { sub(/^### /, ""); print ENVIRON["T"] ": " $0 " (" ENVIRON["R"] ")" }'
       done
     done
     ;;
@@ -2031,7 +2031,7 @@ Task: $tid")
         "${G[@]}" branch -q -m "$br" "$kept"
       fi
       # its reviews, report and gate result were of the build that is gone
-      for rel in "review/$tid-correct.md" "review/$tid-conform.md" "review/$tid-design.md" "review/$tid-api.md" "tasks/$tid/report.md" "tasks/$tid/gate.json"; do
+      for rel in "review/$tid-correct.md" "review/$tid-conform.md" "review/$tid-design.md" "review/$tid-api.md" "review/$tid-security.md" "tasks/$tid/report.md" "tasks/$tid/gate.json"; do
         [ ! -f "$ACTIVE/$rel" ] || bash "$0" keep --move "$rel" >/dev/null
       done
       idleflow_rt set "$ACTIVE/run.json" "tasks.$tid" '{}'
