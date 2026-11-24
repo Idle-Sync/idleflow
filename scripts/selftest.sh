@@ -357,7 +357,9 @@ printf '### D1. A hyphenated task id   severity: minor\n' > .idleflow/runs/activ
 f="$(bash "$RUN" findings T1)"
 check "findings lists the current reviews' findings only" '[ "$(echo "$f" | wc -l | tr -d " ")" = 2 ] && echo "$f" | has -x "T1: F2. A leak on the error path   severity: major (review/T1-correct.md)" && ! echo "$f" | has "F9\|Not this task\|Nor this one"'
 check "findings reads a hyphenated task id's current review" '[ "$(bash "$RUN" findings T1-2)" = "T1-2: D1. A hyphenated task id   severity: minor (review/T1-2-design.md)" ]'
-rm .idleflow/runs/active/review/T1-correct.md .idleflow/runs/active/review/T1-correct.1.md .idleflow/runs/active/review/T10-conform.md .idleflow/runs/active/review/T1-ui-conform.md .idleflow/runs/active/review/T1-2-design.md
+printf '### P1. A list with no pagination   severity: major\n' > .idleflow/runs/active/review/T1-2-api.md
+check "findings reads the API reviewer's findings" 'bash "$RUN" findings T1-2 | has -xF "T1-2: P1. A list with no pagination   severity: major (review/T1-2-api.md)"'
+rm .idleflow/runs/active/review/T1-correct.md .idleflow/runs/active/review/T1-correct.1.md .idleflow/runs/active/review/T10-conform.md .idleflow/runs/active/review/T1-ui-conform.md .idleflow/runs/active/review/T1-2-design.md .idleflow/runs/active/review/T1-2-api.md
 
 echo "--- merge, then a second group gates against its own base"
 check "merge refuses an unapproved task" 'bash "$RUN" merge T1 >/dev/null 2>&1; [ $? -eq 4 ]'
@@ -1336,6 +1338,7 @@ bash "$RUN" set tasks.T1.status '"approved"'; bash "$RUN" merge T1 >/dev/null 2>
 wr2="$(bash "$RUN" wt add T2 2>/dev/null)"; ( cd "$wr2" && echo r2 >> src/keep.py && git add src/keep.py && commit -m "keep r2" )
 t2_sha="$(git -C "$wr2" rev-parse HEAD)"; bash "$RUN" set tasks.T2.status '"approved"'
 printf 'verdict: approve\n' > .idleflow/runs/active/review/T2-correct.md
+printf 'verdict: approve\n' > .idleflow/runs/active/review/T2-api.md
 echo "- a test — fails — \"x\" — T2 base job 1" > .idleflow/runs/active/known-failures.md
 bash "$RUN" wt rm T1; bash "$RUN" finish needs-human >/dev/null
 # a time-limit stop leaves the worktree: uncommitted work in it stops the resume before anything moves
@@ -1358,7 +1361,7 @@ out="$(bash "$RUN" resume "$rid" 2>&1)"
 check "resume makes the stopped run active again and parks the one in its way" '[ "$(bash "$RUN" get id)" = "$rid" ] && [ "$(bash "$RUN" get status)" = building ] && [ "$(bash "$RUN" get resumed_from)" = needs-human ] && [ -n "$(ls -d .idleflow/runs/*-something-else 2>/dev/null)" ]'
 check "resume keeps what merged and starts the rest again" 'echo "$out" | has "merged: T1; to build again: T2;" && [ -n "$(bash "$RUN" get tasks.T1.t_merge)" ] && [ "$(bash "$RUN" get tasks.T2)" = "{}" ] && grep -q "^r1$" src/keep.py && [ ! -d "$wr2" ]'
 check "resume keeps the old commits of a reset task on a branch of their own" '[ "$(git rev-parse "idleflow/$rid/T2-before-resume")" = "$t2_sha" ] && ! git show-ref -q --verify "refs/heads/idleflow/$rid/T2"'
-check "resume moves the review of the old build aside and takes the base failures again" '[ ! -f .idleflow/runs/active/review/T2-correct.md ] && [ -f .idleflow/runs/active/review/T2-correct.1.md ] && [ "$(bash "$RUN" get gate_base)" = null ] && [ ! -f .idleflow/runs/active/known-failures.md ] && [ -f .idleflow/runs/active/known-failures.1.md ]'
+check "resume moves the review of the old build aside and takes the base failures again" '[ ! -f .idleflow/runs/active/review/T2-correct.md ] && [ -f .idleflow/runs/active/review/T2-correct.1.md ] && [ ! -f .idleflow/runs/active/review/T2-api.md ] && [ -f .idleflow/runs/active/review/T2-api.1.md ] && [ "$(bash "$RUN" get gate_base)" = null ] && [ ! -f .idleflow/runs/active/known-failures.md ] && [ -f .idleflow/runs/active/known-failures.1.md ]'
 wr2b="$(bash "$RUN" wt add T2 2>/dev/null)"
 # a job another session still runs: a job folder with a live process and no exit code yet
 sleep 30 & busy=$!; jb=".idleflow/runs/active/tasks/T2/jobs/99"; mkdir -p "$jb"; echo "$busy" > "$jb/pid"
@@ -1661,6 +1664,8 @@ yaml_unsafe() { # the frontmatter lines of the given files whose unquoted value 
 check "every command, agent and issue form frontmatter is valid YAML" '[ -z "$(yaml_unsafe "$HERE"/../commands/*.md "$HERE"/../agents/*.md "$HERE"/../.github/ISSUE_TEMPLATE/*.md)" ] && [ -n "$(printf "%s\n" "---" "description: Usage: x" "a: \"open" "b: ends:" "c: #lost" "---" > "$scratch/yaml-bad.md"; yaml_unsafe "$scratch/yaml-bad.md" | wc -l | grep -x " *4")" ]'
 check "a change to a file git ignores is planned by hand after merge" 'grep -q "^## By hand after merge$" "$HERE/../templates/plan.md" && grep -q "A file git ignores (\`.gitignore\`, \`.git/info/exclude\`) belongs to no task either" "$HERE/../agents/planner.md" && grep -q "Then the plan.s \"By hand after merge\" lines" "$HERE/../commands/feature.md" && grep -q "each line of the plan.s \"By hand after merge\"" "$HERE/../agents/retro.md"'
 check "the designer and design reviewer exist" '[ -f "$HERE/../agents/designer.md" ] && [ -f "$HERE/../agents/review-design.md" ] && grep -q "\"ui\"" "$HERE/../agents/classifier.md" && grep -q "^### 2c. Design" "$HERE/../commands/feature.md"'
+check "the API reviewer exists and reviews every task the plan marks api" '[ -f "$HERE/../agents/review-api.md" ] && [ -f "$HERE/../procedures/api-design.md" ] && grep -q "^api: true | false" "$HERE/../templates/plan.md" && grep -q "^4b. \*\*API marking.\*\*" "$HERE/../agents/planner.md" && grep -qF "An \`api: true\` task at any size also gets \`idleflow:review-api\`" "$HERE/../commands/feature.md" && grep -qF "review/<id>-api.md" "$HERE/../commands/feature.md"'
+check "the API reviewer follows the API's own conventions before any guide" 'grep -q "^## 1. The API.s own conventions come first" "$HERE/../procedures/api-design.md" && grep -q "^## 4. Outside callers" "$HERE/../procedures/api-design.md" && grep -q "^callers: " "$HERE/../agents/review-api.md" && grep -q "^conventions: " "$HERE/../agents/review-api.md"'
 check "requirements no screen shows reach the plan" 'grep -q "^- \`design.md\` at the output path: the screens for this run, \"Not on a screen\"" "$HERE/../agents/designer.md" && grep -q "Each line under \"Not on a screen\" becomes acceptance of the task that builds its surface" "$HERE/../agents/planner.md" && grep -q "listed under \"Not on a screen\"" "$HERE/../procedures/design.md"'
 check "the design handbook carries the contrast rule" 'grep -q "4.5:1" "$HERE/../procedures/design.md" && grep -q "0.2126 R + 0.7152 G + 0.0722 B" "$HERE/../procedures/design-data.md"'
 check "a check on a writer that pauses between lines still sees the match" '{ echo a; sleep 0.3; echo b; } | has a'
