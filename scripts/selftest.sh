@@ -1092,13 +1092,17 @@ kill "$stranger" 2>/dev/null; wait "$stranger" 2>/dev/null; bash "$RUN" finish "
 # new and resume park a run only once nothing of it still runs, since parking ends its jobs: another
 # session may still be building it. --park parks it anyway, for a run the human knows is over
 bash "$RUN" new busy >/dev/null 2>&1; brid="$(bash "$RUN" get id)"; jb=".idleflow/runs/active/tasks/TB/jobs/1"; mkdir -p "$jb"
-idleflow_rt detach "$PWD" /dev/null "$jb/pid" "sleep 60"; live="$(cat "$jb/pid")"
+busy_job() { # busy_job <job dir>: a live stand-in job; on Git Bash the runtime records a native pid kill -0 cannot test
+  if [ -n "$on_windows" ]; then sleep 60 & echo "$!" > "$1/pid"; live=$!
+  else idleflow_rt detach "$PWD" /dev/null "$1/pid" "sleep 60"; live="$(cat "$1/pid")"; fi
+}
+busy_job "$jb"
 nruns="$(find .idleflow/runs -mindepth 1 -maxdepth 1 | wc -l)"; out="$(bash "$RUN" new after-busy 2>&1)"; rc=$?
 check "new refuses while a job of the run it would park still runs, and moves nothing" '[ "$rc" = 1 ] && [ "$(find .idleflow/runs -mindepth 1 -maxdepth 1 | wc -l)" = "$nruns" ] && [ "$(bash "$RUN" get id)" = "$brid" ] && has -F "new: the active run, which a new run would park, may still be built by another session: job 1 of TB still runs" <<< "$out" && has -F "new --park <slug>" <<< "$out" && kill -0 "$live" 2>/dev/null'
 nid="$(bash "$RUN" new --park after-busy 2>/dev/null)"
 check "new --park parks it anyway and ends its job" '[ -n "$nid" ] && [ "$(bash "$RUN" get id)" = "$nid" ] && [ "$(idleflow_rt get ".idleflow/runs/$brid/run.json" status)" = abandoned ] && ! kill -0 "$live" 2>/dev/null'
 printf '## Tasks\n' > ".idleflow/runs/$brid/plan.md"; jb=".idleflow/runs/active/tasks/TB/jobs/1"; mkdir -p "$jb"
-idleflow_rt detach "$PWD" /dev/null "$jb/pid" "sleep 60"; live="$(cat "$jb/pid")"
+busy_job "$jb"
 nruns="$(find .idleflow/runs -mindepth 1 -maxdepth 1 | wc -l)"; out="$(bash "$RUN" resume "$brid" 2>&1)"; rc=$?
 check "resume refuses while a job of the run it would park still runs, and moves nothing" '[ "$rc" = 1 ] && [ "$(find .idleflow/runs -mindepth 1 -maxdepth 1 | wc -l)" = "$nruns" ] && [ "$(bash "$RUN" get id)" = "$nid" ] && [ -d ".idleflow/runs/$brid" ] && has -F "resume: the active run, which resuming $brid would park, may still be built by another session: job 1 of TB still runs" <<< "$out" && has -F "resume --park $brid" <<< "$out" && kill -0 "$live" 2>/dev/null'
 bash "$RUN" resume --park "$brid" >/dev/null 2>&1; rc=$?
