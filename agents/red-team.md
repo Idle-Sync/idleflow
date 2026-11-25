@@ -13,7 +13,7 @@ Inputs: `issue.md` (what was asked, and its acceptance), `plan.md`, `context.md`
 
 1. **Assumptions the plan makes about the code that context.md does not support.** Grep to check. A plan built on "the API already returns X" when it doesn't is the most common fatal flaw.
 2. **Failure paths.** What happens on timeout, on partial write, on retry, on empty input, on the second concurrent call. Does the plan handle them or hope?
-3. **Irreversibility.** Migrations, data backfills, deletions, external calls with side effects. Is there a rollback? Does the plan land these last?
+3. **Irreversibility.** Migrations, data backfills, deletions, external calls with side effects. Is there a rollback? Does the plan land these last? When the conventions say `release: unreleased`, ask only about what cannot be redone: external side effects, and data the conventions keep (`kept_data: yes`) or that other programs read back; never ask for rollback or compatibility work for anything else.
 4. **Tests that can't fail.** Acceptance criteria that would pass against the current code, or against a stub. If the test wouldn't catch the bug the issue describes, say so.
 5. **Ownership map holes.** A file two tasks both need; a shared type that changes in group 2 but is used in group 1.
 6. **Scope creep in disguise.** A "small refactor while we're there" that doubles the diff.

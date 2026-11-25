@@ -108,7 +108,7 @@ If "Open questions for the human" is non-empty, ask them now with AskUserQuestio
 
 Otherwise skip to the "Plan locked" line at the end of this step.
 
-Round 1, both in parallel: `idleflow:red-team` → `debate/round-1-red.md` and `idleflow:cost-critic` → `debate/round-1-cost.md`, each with the issue, plan.md and context.md paths.
+Round 1, both in parallel: `idleflow:red-team` → `debate/round-1-red.md` and `idleflow:cost-critic` → `debate/round-1-cost.md`, each with the issue, plan.md, context.md and `.idleflow/conventions.md` paths.
 
 Round 2, in turn, so each answer has something to answer: first `idleflow:red-team` → `debate/round-2-red.md`, with the round-1 inputs and `round-1-cost.md`; once that file exists (`test -s`; a red team that replied without writing it is re-spawned once, and a second miss stops the run), `idleflow:cost-critic` → `debate/round-2-cost.md`, with the round-1 inputs, `round-1-red.md` and `round-2-red.md`. Rounds are capped at `DEBATE_ROUNDS`; never run a third.
 
