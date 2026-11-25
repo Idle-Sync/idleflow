@@ -174,7 +174,11 @@ while_waiting: work
   and the address it serves, which must be on this machine (`http://localhost:${IDLEFLOW_PORT}`, so two
   tasks' previews never share a port; `${IDLEFLOW_PORT}` is replaced with the task's port). The design
   reviewer starts it in a task's worktree only through `run.sh preview`, to take screenshots at phone and
-  desktop widths when a browser tool is available. Same approval rule as `gate`.
+  desktop widths when a browser tool is available. Same approval rule as `gate`. When the app needs an API
+  and a database to show a task's work, the command starts the worktree's whole stack: the API from the
+  worktree's code on `$IDLEFLOW_PORT_API`, and a database of its own on `$IDLEFLOW_PORT_DB` named
+  `$IDLEFLOW_DB`, with the worktree's migrations applied. Each task gets its own three ports and name, so
+  previews never share a stack, and stopping the preview ends all of it.
 - `services`: one quick shell command that exits 0 when every service the repo's tests need is up (a
   database, a cache, a queue: `pg_isready -t 3 -h localhost -p 5433 && redis-cli -p 6380 ping`), each
   part limiting its own wait so a service that hangs fails in seconds. Run from

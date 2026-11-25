@@ -508,6 +508,17 @@ run_tmp() {
   echo "$u/$key"
 }
 task_port() { idleflow_rt get "$ACTIVE/run.json" "tasks.$1.port" 2>/dev/null || true; }
+# A task's API and database ports (`api`, `db`), for a preview that starts the worktree's whole stack;
+# empty for a task added before they were claimed.
+task_port_of() { # task_port_of <task-id> <api|db>
+  local v; v="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$1.port_$2" 2>/dev/null || true)"
+  case "$v" in null) echo;; *) echo "$v";; esac
+}
+# A database or schema name unique to the run and the task, made of [a-z0-9_] so every engine takes it.
+task_db() { # task_db <task-id>
+  local id; id="$(active_id)" || return 1
+  printf 'idleflow_%s_%s_%s\n' "$(printf '%s' "$id" | tr -cd '0-9' | cut -c1-14)" "$(printf '%s' "$REPO" | cksum | cut -d' ' -f1)" "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9\n' '_')"
+}
 task_tmp() { local r; r="$(run_tmp)" || return 1; echo "$r/$1"; }
 # The sha a task's commits start from: its own, recorded by `wt add`, or the run's for an older run.
 task_base() { # task_base <task-id>
@@ -527,10 +538,13 @@ task_base() { # task_base <task-id>
 port_registry() { local u; u="$(user_tmp)" || return 1; echo "$u/ports"; }
 claim_live() { # claim_live <claim-file> <port>
   local orepo oid otid oport rj
-  IFS=$'\t' read -r orepo oid otid < "$1" 2>/dev/null || return 1
+  local ofield
+  IFS=$'\t' read -r orepo oid otid ofield < "$1" 2>/dev/null || return 1
+  # a claim written before claims named their field is the task's app port
+  case "$ofield" in port|port_api|port_db) ;; *) ofield=port;; esac
   rj="$orepo/.idleflow/runs/active/run.json"
   [ -f "$rj" ] && [ "$(idleflow_rt get "$rj" id 2>/dev/null)" = "$oid" ] || return 1
-  oport="$(idleflow_rt get "$rj" "tasks.$otid.port" 2>/dev/null || true)"
+  oport="$(idleflow_rt get "$rj" "tasks.$otid.$ofield" 2>/dev/null || true)"
   [ "$oport" = "$2" ] || [ -z "$oport" ] || [ "$oport" = null ]
 }
 # A lock is a folder (mkdir is atomic) holding its holder's pid: the shell that holds it, which inside
@@ -549,9 +563,9 @@ lock_dir() { # lock_dir <lock-folder>: 0 when this shell now holds it
   rmdir "$1.takeover"; return 1
 }
 unlock_dir() { rm -f "$1/pid"; rmdir "$1" 2>/dev/null || true; }
-claim_port() { # claim_port <registry> <port> <task-id> <run id> <listening-check: yes|no>
+claim_port() { # claim_port <registry> <port> <task-id> <run id> <listening-check: yes|no> [<field: port|port_api|port_db>]
   local reg="$1" p="$2" me rc=1
-  me="$(printf '%s\t%s\t%s' "$REPO" "$4" "$3")"
+  me="$(printf '%s\t%s\t%s\t%s' "$REPO" "$4" "$3" "${6:-port}")"
   lock_dir "$reg/$p.lock" || return 1
   if [ -f "$reg/$p" ] && [ "$(cat "$reg/$p")" != "$me" ] && claim_live "$reg/$p" "$p"; then
     :
@@ -564,19 +578,23 @@ claim_port() { # claim_port <registry> <port> <task-id> <run id> <listening-chec
 # The lowest PORT_BASE + n that no task of this run holds, no live claim on the machine holds and
 # nothing on the machine listens on. A task keeps its port when re-added, and claims it again in
 # case the claim was cleaned away.
-allocate_port() { # allocate_port <task-id>
-  local mine used p reg n=0 id; mine="$(task_port "$1")"
+allocate_port() { # allocate_port <task-id> [api|db]
+  local mine used p reg n=0 id field=port off=0
+  case "${2:-}" in api) field=port_api; off=1000;; db) field=port_db; off=2000;; esac
+  if [ -n "${2:-}" ]; then mine="$(task_port_of "$1" "$2")"; else mine="$(task_port "$1")"; fi
   reg="$(port_registry)" || return 1; mkdir -p "$reg"; id="$(active_id)"
   case "$mine" in ""|null) ;; *)
-    claim_port "$reg" "$mine" "$1" "$id" no || echo "[idleflow] $1 keeps port $mine, which another run on this machine also claims" >&2
+    claim_port "$reg" "$mine" "$1" "$id" no "$field" || echo "[idleflow] $1 keeps port $mine, which another run on this machine also claims" >&2
     echo "$mine"; return;; esac
-  used="$(idleflow_rt entries "$ACTIVE/run.json" tasks 2>/dev/null | sed -n 's/.*"port":\([0-9]*\).*/\1/p')"
+  # each kind has its own range of 1000 from PORT_BASE (the app's, then api, then db), so the app's
+  # ports read as before and a task's three ports are easy to tell apart
+  used="$(idleflow_rt entries "$ACTIVE/run.json" tasks 2>/dev/null | grep -oE "\"$field\":[0-9]+" | grep -oE '[0-9]+$' || true)"
   while [ "$n" -lt 1000 ]; do
-    p=$(( ${PORT_BASE:-4400} + n )); n=$((n + 1))
+    p=$(( ${PORT_BASE:-4400} + off + n )); n=$((n + 1))
     printf '%s\n' "$used" | grep -x -- "$p" >/dev/null && continue
-    if claim_port "$reg" "$p" "$1" "$id" yes; then echo "$p"; return 0; fi
+    if claim_port "$reg" "$p" "$1" "$id" yes "$field"; then echo "$p"; return 0; fi
   done
-  echo "allocate_port: no free port from ${PORT_BASE:-4400} to $(( ${PORT_BASE:-4400} + 999 ))" >&2; return 1
+  echo "allocate_port: no free port from $(( ${PORT_BASE:-4400} + off )) to $(( ${PORT_BASE:-4400} + off + 999 ))" >&2; return 1
 }
 # Gives back every claim the active run holds, or only those of one owner (`main` for preview main),
 # each under its lock.
@@ -626,8 +644,9 @@ clear_bytecode() { # clear_bytecode <checkout>
 in_task() { # in_task <task-id> <dir> <command...>
   local tid="$1" dir="$2" port tmp rc=0; shift 2
   port="$(task_port "$tid")"; tmp="$(task_tmp "$tid")" || return 1; mkdir -p "$tmp"
+  local papi pdb db; papi="$(task_port_of "$tid" api)"; pdb="$(task_port_of "$tid" db)"; db="$(task_db "$tid")"
   # the caller decides what a failure means; errexit is left as the caller set it
-  (cd "$dir" && without_agent_markers && clear_bytecode . && MAIN="$REPO" IDLEFLOW_TASK="$tid" IDLEFLOW_PORT="$port" IDLEFLOW_TMP="$tmp" TMPDIR="$tmp" "$@") || rc=$?
+  (cd "$dir" && without_agent_markers && clear_bytecode . && MAIN="$REPO" IDLEFLOW_TASK="$tid" IDLEFLOW_PORT="$port" IDLEFLOW_PORT_API="$papi" IDLEFLOW_PORT_DB="$pdb" IDLEFLOW_DB="$db" IDLEFLOW_TMP="$tmp" TMPDIR="$tmp" "$@") || rc=$?
   return "$rc"
 }
 
@@ -1467,6 +1486,10 @@ JSON
         idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.worktree" "$(json_str "$(native_path "$p")")"
         port="$(allocate_port "$tid")" || exit 1
         idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.port" "$port"
+        for kind in api db; do
+          kp="$(allocate_port "$tid" "$kind")" || exit 1
+          idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.port_$kind" "$kp"
+        done
         tmp="$(task_tmp "$tid")" || exit 1; mkdir -p "$tmp"
         # epoch seconds, so the retro's time log can subtract them without date parsing
         idleflow_rt set "$ACTIVE/run.json" "tasks.$tid.t_start" "$(date +%s)"
@@ -2436,7 +2459,7 @@ Task: $tid")
     fi
     if unset_key preview; then
       for t in dev start preview; do
-        if grep -qE "\"$t\"[[:space:]]*:" "$REPO/package.json" 2>/dev/null; then say preview "npm run $t" "package.json has a $t script; the design reviewer can serve the app to take screenshots (setup asks for its address)"; break; fi
+        if grep -qE "\"$t\"[[:space:]]*:" "$REPO/package.json" 2>/dev/null; then if [ -n "$(find "$REPO" -maxdepth 3 -type d \( -name migrations -o -path '*/db/migrate' \) -not -path '*/node_modules/*' -not -path '*/.git/*' 2>/dev/null | sed -n 1p)" ]; then say preview "npm run $t" "package.json has a $t script and the repo has migrations; a preview that shows a task's own work needs the worktree's API and its own migrated database too, so the command should start that stack with \$IDLEFLOW_PORT_API, \$IDLEFLOW_PORT_DB and \$IDLEFLOW_DB (setup asks for its address)"; else say preview "npm run $t" "package.json has a $t script; the design reviewer can serve the app to take screenshots (setup asks for its address)"; fi; break; fi
       done
     fi
     if unset_key gate; then
@@ -2583,7 +2606,10 @@ Task: $tid")
     command_approved preview "$cmd" || { echo "preview is not approved on this clone; nothing ran. The command is: $cmd" >&2; exit 7; }
     url="$(conventions_value preview_url)"
     # main is no task, so its port is claimed under the owner name `main`, live until stop or finish
-    if [ "$tid" = main ]; then port="$(allocate_port main)" || exit 1; else port="$(task_port "$tid")"; fi
+    if [ "$tid" = main ]; then
+      # the main checkout runs the repo's own stack, so only the app's port is given
+      port="$(allocate_port main)" || exit 1; papi=""; pdb=""; pdbname=""
+    else port="$(task_port "$tid")"; papi="$(task_port_of "$tid" api)"; pdb="$(task_port_of "$tid" db)"; pdbname="$(task_db "$tid")"; fi
     url="${url//\$\{IDLEFLOW_PORT\}/$port}"
     [[ "$url" =~ ^https?://(localhost|127\.0\.0\.1|\[::1\])(:[0-9]+)?(/[^[:space:]]*)?$ ]] \
       || { echo "preview_url must be a localhost address (got '$url')" >&2; exit 1; }
@@ -2592,7 +2618,7 @@ Task: $tid")
     echo "preview ($tid): $cmd" >&2
     ptmp="$(task_tmp "$tid")" || exit 1; mkdir -p "$ptmp"
     ( without_agent_markers; clear_bytecode "$dir"
-      MAIN="$REPO" IDLEFLOW_TASK="$tid" IDLEFLOW_PORT="$port" IDLEFLOW_TMP="$ptmp" TMPDIR="$ptmp" \
+      MAIN="$REPO" IDLEFLOW_TASK="$tid" IDLEFLOW_PORT="$port" IDLEFLOW_PORT_API="$papi" IDLEFLOW_PORT_DB="$pdb" IDLEFLOW_DB="$pdbname" IDLEFLOW_TMP="$ptmp" TMPDIR="$ptmp" \
         idleflow_rt detach "$dir" "$ACTIVE/tasks/$tid/preview.log" "$pidf" "$cmd" )
     printf '%s\n' "$url" > "$ACTIVE/tasks/$tid/preview.url"
     echo "preview $tid: serving at $url (log: $(native_path "$ACTIVE/tasks/$tid/preview.log"); stop with: run.sh preview $tid stop)"
