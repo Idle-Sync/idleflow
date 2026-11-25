@@ -153,6 +153,7 @@ preview_url: unset
 preview_in: worktree
 services: unset
 services_start: unset
+while_waiting: work
 code_map: none
 code_map_query: unset
 code_map_status: unset
@@ -198,6 +199,9 @@ code_map_status: unset
   with no prefix, merges `Merge <task title>`, for repos whose history reads that way). Only the
   `idleflow` format names the tool; every format puts the run and task ids in the body (`Run:`,
   `Task:`).
+- `while_waiting`: what a run does while a slow step's result is still to come. `work` goes on with
+  whatever needs nothing that result decides and touches no file the slow step uses; `wait` waits for
+  each result before going on, and a missing line means `wait`.
 - `code_map`, `code_map_query` and `code_map_status`: the code map a large repo accepted (the tool's
   name, or `none`), the command that searches it (the query is added as its last argument) and the
   command that brings its index up to date and says whether it is current; the query only reads it,

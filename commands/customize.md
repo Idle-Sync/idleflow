@@ -28,6 +28,7 @@ When `$ARGUMENTS` (or a suggestion that brought you here) already names the chan
   - **Model** (`MODEL_<AGENT>`, the agent's name in capitals with `_` for `-`): `haiku`, `sonnet`, `opus`, `fable`.
   - **Extra instructions (Recommended)**: written to `.idleflow/agents/<agent>.md` and added to the built-in prompt every time it runs; plugin updates keep reaching the agent. Write what the human wants as plain rules, no meta commentary.
   - **Full replacement**: `bash "$RUN" custom replace <agent>` copies the built-in prompt to `.claude/agents/idleflow-<agent>.md` and keeps a base copy so `/idleflow:doctor` can merge later plugin updates in (`run.sh custom merge <agent>`). Apply the human's edits to that file. Its output contract (output file, reply line, report fields) stays the built-in one: the orchestrator tells the agent so on every spawn. Tell the human the replacement takes effect after a Claude Code restart.
+- **While waiting.** `while_waiting:` under "Repo fit" in `.idleflow/conventions.md`: `work` (a run goes on with what does not depend on a slow step's result) or `wait`.
 - **Language, tone and explanation.** Edit `language:`, `tone:` and `explain:` under "Talking to the human" in `.idleflow/conventions.md` (`auto` or a language name; `plain`, `friendly` or `terse`; `novice`, `standard` or `expert`). These change only how idleflow talks to people, so they are committed with the change but not reported.
 - **Back to a default.** `bash "$RUN" custom unset <KEY>`, or `bash "$RUN" custom restore <agent>` for everything about one agent.
 
