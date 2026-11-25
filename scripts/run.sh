@@ -44,6 +44,8 @@
 #                                            acceptance name is in its owns: or shared_files, and no owns: glob covers a
 #                                            protected file, and every file a split task changed is owned by exactly
 #                                            one of its sub-tasks; prints one line per problem and exits 1, or exits 0
+#   run.sh commit-style                   -> the subject style commits follow here, conventional or plain: commit_format,
+#                                            else the style of the repo's history, else conventional
 #   run.sh extract <task-id>              -> the task's plan extract: the plan's Stack & style constraints and Interfaces
 #                                            sections, then the task's own ### <task-id>: section
 #   run.sh report <task-id>               -> copies the task's .idleflow-run/result.md into the run folder as report.md, prints its path
@@ -286,6 +288,31 @@ version_newer() { # version_newer <installed> <candidate>: true when candidate i
 # A missing conventions file or key reads as empty; under set -e a failing lookup must not end the script.
 conventions_value() { { sed -n "s/^$1: *//p" "$CONVENTIONS" 2>/dev/null || true; } | head -1 | tr -d '\r' | sed 's/ *$//'; }
 check_line() { printf '%s %s: %s%s\n' "$1" "$2" "$3" "${4:+ | fix: $4}"; }
+# The style of the last 50 commit subjects, as "<conventional|plain><TAB><evidence>", or nothing
+# when there are fewer than 10 or no style covers 80% of them.
+history_commit_style() {
+  local subjects total cc capital
+  subjects="$("${G[@]}" log --no-merges -50 --format=%s 2>/dev/null || true)"
+  total="$(printf '%s' "$subjects" | grep -c . || true)"
+  [ "${total:-0}" -ge 10 ] || return 0
+  cc="$(printf '%s\n' "$subjects" | grep -Ec '^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([A-Za-z0-9_./-]+\))?!?: ' || true)"
+  # plain sentences: no type prefix and no `<id>: ` prefix, starting with a capital letter
+  capital="$(printf '%s\n' "$subjects" | grep -Ev '^[A-Za-z0-9_()./!-]+: ' | grep -c '^[A-Z]' || true)"
+  if [ $((cc * 100 / total)) -ge 80 ]; then printf 'conventional\t%s of the last %s commit subjects are Conventional Commits\n' "$cc" "$total"
+  elif [ $((capital * 100 / total)) -ge 80 ]; then printf 'plain\t%s of the last %s commit subjects are plain sentences with no prefix\n' "$capital" "$total"; fi
+  return 0
+}
+# The subject style of every commit idleflow writes or asks for: the repo's answer in
+# commit_format, else the style its history already uses, else Conventional Commits. No style puts
+# a task or run id in the subject, since those mean nothing outside the ignored run folder; they
+# are body trailers (Task:, Run:). The retired `idleflow` value counts as no answer.
+commit_style() {
+  local v h
+  v="$(conventions_value commit_format)"
+  case "$v" in conventional|plain) echo "$v"; return 0;; esac
+  h="$(history_commit_style)"
+  if [ -n "$h" ]; then echo "${h%%$'\t'*}"; else echo conventional; fi
+}
 
 PROJECT_CONF="$IDLE/idleflow.conf"
 # Consent to post customization reports from one's own GitHub account is personal, so it lives in
@@ -978,16 +1005,16 @@ bring_split() { # bring_split <task-id> <split task-id> <worktree> <run id>
     echo "[idleflow] wt add: $1's base already holds $2's work on the files $1 owns; nothing to bring over" >&2
     ok=()
   elif [ "${#ok[@]}" -gt 0 ]; then
-    case "$(conventions_value commit_format)" in
-      conventional) subject="$(idleflow_rt clip 72 "chore: bring over $2's finished work on the files $1 owns")";;
-      plain) subject="$(idleflow_rt clip 72 "Bring over $2's finished work on the files $1 owns")";;
-      *) subject="$1: bring over $2's finished work on the files it owns";;
+    case "$(commit_style)" in
+      plain) subject="Bring over the split task's finished work";;
+      *) subject="chore: bring over the split task's finished work";;
     esac
-    # the files left out are named in the body too: the implementer reads this commit first
+    # which task the work came from goes in the body, beside the files left out: the implementer
+    # reads this commit first
     body="$(for spec in ${skipped[@]+"${skipped[@]}"}; do printf -- '- %s\n' "${spec#:(literal)}"; done)"
     [ -z "$body" ] || body="Left out, as they no longer apply to this base; build them from the plan:"$'\n'"$body"
     # --no-verify: the repo's hooks would run in a worktree nothing is installed in yet
-    if git -C "$wt" ${IDENTITY[@]+"${IDENTITY[@]}"} commit -q --no-verify -m "$subject" ${body:+-m "$body"} -m "Task: $1" >> "$log" 2>&1; then
+    if git -C "$wt" ${IDENTITY[@]+"${IDENTITY[@]}"} commit -q --no-verify -m "$subject" -m "$2's finished work on the files $1 owns." ${body:+-m "$body"} -m "Task: $1" >> "$log" 2>&1; then
       sha="\"$(git -C "$wt" rev-parse HEAD)\""
     else
       bring_reset
@@ -1818,6 +1845,9 @@ JSON
     rm -f "$problems"
     echo "plan-check: every file each task names is in its owns: or shared_files, and no task owns a protected file"
     ;;
+  commit-style)
+    commit_style
+    ;;
   extract)
     # What every agent working on one task reads of the plan: the sections every task is written
     # against, then the task's own section. Other tasks' sections stay out.
@@ -1931,15 +1961,13 @@ JSON
     # the "never merge an unapproved task" rule, enforced here and not only in the prompt
     st="$(idleflow_rt get "$ACTIVE/run.json" "tasks.$tid.status" 2>/dev/null || true)"
     [ "$st" = "approved" ] || { echo "refusing to merge $tid: status is '${st:-unset}', not approved" >&2; exit 4; }
-    # The subject follows the repo's style and says what merged; only the `idleflow` format, the
-    # tool's own, names it. `conventional` repos often check every subject in CI (at most 72
-    # characters), so ids live in the body, as trailers every format carries (gen_runs reads them).
+    # The subject follows the repo's style and says what merged, in at most 72 characters (repos
+    # often check every subject in CI); the ids live in the body, as trailers (gen_runs reads them).
     # --no-log: a merge.log setting would append a shortlog after them, and they would stop being
     # the message's trailers.
-    case "$(conventions_value commit_format)" in
-      conventional) subject="$(idleflow_rt clip 72 "chore: merge $title")";;
+    case "$(commit_style)" in
       plain) subject="$(idleflow_rt clip 72 "Merge $title")";;
-      *) subject="idleflow: merge $tid ($id)";;
+      *) subject="$(idleflow_rt clip 72 "chore: merge $title")";;
     esac
     merge_msg=(-m "$subject" -m "Run: $id
 Task: $tid")
@@ -2399,15 +2427,15 @@ Task: $tid")
     unset_key() { case "$(conventions_value "$1")" in ""|unset) return 0;; *) return 1;; esac; }
     # a suggestion the human declined stays quiet for every caller (setup, the doctor, a run's end)
     say() { grep -qF -- "- declined: $1 -> $2 " "$IDLE/suggestions.md" 2>/dev/null || echo "suggest $1: $2 — $3"; }
-    if unset_key commit_format; then
-      subjects="$("${G[@]}" log --no-merges -50 --format=%s 2>/dev/null || true)"
-      total="$(printf '%s' "$subjects" | grep -c . || true)"
-      cc="$(printf '%s\n' "$subjects" | grep -Ec '^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([A-Za-z0-9_./-]+\))?!?: ' || true)"
-      if [ "${total:-0}" -ge 10 ] && [ $((cc * 100 / total)) -ge 80 ]; then say commit_format conventional "$cc of the last $total commit subjects are Conventional Commits"; fi
-      # plain sentences: no type prefix and no `<id>: ` prefix, starting with a capital letter
-      capital="$(printf '%s\n' "$subjects" | grep -Ev '^[A-Za-z0-9_()./!-]+: ' | grep -c '^[A-Z]' || true)"
-      if [ "${total:-0}" -ge 10 ] && [ $((capital * 100 / total)) -ge 80 ]; then say commit_format plain "$capital of the last $total commit subjects are plain sentences with no prefix"; fi
-    fi
+    case "$(conventions_value commit_format)" in
+      conventional|plain) ;;
+      ""|unset|idleflow) hist="$(history_commit_style)"
+         if [ -n "$hist" ]; then say commit_format "${hist%%$'\t'*}" "${hist#*$'\t'}"
+         elif [ "$(conventions_value commit_format)" = idleflow ]; then
+           say commit_format conventional "commit_format: idleflow is retired, since its subjects start with a task id that means nothing outside the run folder"
+         fi;;
+      *) say commit_format "$(commit_style)" "commit_format: $(conventions_value commit_format) is not conventional or plain, so commits follow $(commit_style)";;
+    esac
     if unset_key lessons_in && [ -f "$REPO/lessons.md" ] && [ ! -f "$IDLE/lessons.md" ]; then say lessons_in lessons.md "the repo already keeps lessons.md"; fi
     if unset_key progress_file && [ ! -f "$REPO/progress.md" ] && [ -f "$REPO/docs/progress.md" ]; then say progress_file docs/progress.md "the repo keeps docs/progress.md"; fi
     if unset_key session_names; then
