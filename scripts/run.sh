@@ -433,7 +433,7 @@ gen_runs() { # the last ten idleflow runs merged here, newest first: merge commi
 gen_settings() {
   local k v
   for k in mode docs lessons_in progress_file index_file index_rewrite sessions_dir session_names time_log shared_files generated_docs \
-           worktrees_in worktree_setup commit_format gate gate_quick gate_runs preview preview_url preview_in services services_start language tone explain; do
+           worktrees_in worktree_setup commit_format gate gate_quick gate_runs preview preview_url preview_in services services_start language tone explain while_waiting; do
     v="$(conventions_value "$k")"; [ -n "$v" ] && echo "- \`$k\`: $(md_code "$v")"
   done
   [ -f "$PROJECT_CONF" ] && bash "$0" custom list 2>/dev/null | grep -v '^instructions:\|^replaced:' | sed 's/^/- `/; s/=/`: /'

@@ -135,6 +135,7 @@ preview_url: unset
 preview_in: worktree
 services: unset
 services_start: unset
+while_waiting: work
 
 - `worktrees_in`: `sibling` puts task worktrees next to the repo (`<repo>__wt/<task>`); `inside` puts
   them in `.idleflow/worktrees/` (ignored), for projects that must not write outside their own folder.
@@ -177,6 +178,9 @@ services_start: unset
   with no prefix, merges `Merge <task title>`, for repos whose history reads that way). Only the
   `idleflow` format names the tool; every format puts the run and task ids in the body (`Run:`,
   `Task:`).
+- `while_waiting`: what a run does while a slow step's result is still to come. `work` goes on with
+  whatever needs nothing that result decides and touches no file the slow step uses; `wait` waits for
+  each result before going on, and a missing line means `wait`.
 
 ## Ignore rules
 
