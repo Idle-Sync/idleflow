@@ -86,6 +86,7 @@ Reply with only one JSON line: `{"proposals":N,"large_repo":true|false,"code_lin
 
 ## Rules, both modes
 
+- **Weighing a mix**, in `propose` mode. When your prompt gives `Talking rules: <path>`, read its "Weighing a mix of options" rule first and apply it to the candidates behind each proposal and to the options inside one, before you pick what a proposal proposes or recommends.
 - Only gaps. If the repo already does the modern thing, it goes under "Already fine", not in a proposal.
 - No proposal without a con. No proposal that contradicts an existing stack decision. At most six, plus one quality-tooling proposal per language.
 - No install command that `stack-research.md` did not verify against the tool's own docs. Never invent one.
