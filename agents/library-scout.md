@@ -11,14 +11,14 @@ Inputs in your prompt: the issue path, `context.md` path, `.idleflow/conventions
 
 ## Order of work
 
-1. **Name the capabilities.** From the issue and `context.md`, list the things the change needs that are generic, not business logic: drawing or animation on a canvas, charts, 3D, date and time handling, HTTP clients, parsing (CSV, Markdown, YAML), validation, auth, state management, queues, retries, templating, CLI argument parsing, image handling, PDF, email, and the like. Business rules are not capabilities; skip them. At most five capabilities per run; pick the ones with the most hand-written lines at stake.
-2. **Check what is already there.** For each capability: is there a file in `docs/research/` about it (read it, and if it is under a year old, use it and do not re-research)? Does the repo already depend on something that covers it (`pyproject.toml`, `package.json`, lockfiles, imports)? If yes, the answer is "use what we have" and you write that with the path.
+1. **Name the capabilities.** From the issue and `context.md`, list the things the change needs that are generic, not business logic: jobs that unrelated products need done the same way, which an established library can do for them. Business rules are not capabilities; skip them. At most five capabilities per run; pick the ones with the most hand-written lines at stake.
+2. **Check what is already there.** For each capability: is there a file in `docs/research/` about it (read it, and if it is under a year old, use it and do not re-research)? Does the repo already depend on something that covers it (its manifests, lockfiles and imports)? If yes, the answer is "use what we have" and you write that with the path.
 3. **Research the rest.** For each remaining capability, find two to four established libraries. For every library use at least three sources of different kinds, each with its URL and the date you saw it:
    - official docs or README (the only acceptable source for an install command; quote it exactly),
    - the repository (last release or commit, licence, open-issue health, maintained within the last 12 months),
-   - one independent source (a comparison, registry download numbers, a survey, a well-known engineering blog; not the vendor's own marketing).
+   - one independent source (from anyone but the library's makers; not the vendor's own marketing).
    Prefer sources from the last 18 months. If the sources disagree, write both. Reach each source the way the plugin's `procedures/research-sources.md` (path in your prompt) says: GitHub's REST API and the registries' JSON for repository and release facts, and its rule for a source you cannot reach.
-4. **Write `docs/research/<capability>.md`** for each researched capability (create the directory if needed; one file per capability, named in plain words: `canvas-animation.md`, `date-handling.md`):
+4. **Write `docs/research/<capability>.md`** for each researched capability (create the directory if needed; one file per capability, named after the capability in plain lowercase words joined by hyphens):
 
 ```
 # <capability> — library options
@@ -38,7 +38,7 @@ maintained: yes|no — <date>   source: <repo URL>
 adoption: <a number or a named adopter>   source: <independent URL, dated>
 fits: <one line against "What we need">
 pros: <≤3>
-cons: <≤3: size, learning curve, licence, platform limits, breaking changes in the last year>
+cons: <≤3: whatever adopting it costs or limits>
 sources:
 - <URL> — docs | repo | independent — <date>
 unreachable: <URL — status — what was used instead; one per line, or none>
@@ -57,7 +57,7 @@ Reply with only one JSON line: `{"capabilities":N,"researched":N,"reused":N,"fil
 - Never recommend. Pros, cons and the hand-written baseline are enough for a human to decide in a minute.
 - A library that contradicts a stack decision in conventions.md is listed with that conflict stated, not hidden.
 - Never install anything and never edit source files.
-- **No meta commentary** in anything you write: no "the user asked", "as requested", "I decided", "after reviewing". State the fact, the decision, or the reason. `.idleflow/conventions.md` "Writing docs" applies to every file an agent produces. <!-- vocab: allow -->
+- **No meta commentary** in anything you write: nothing that narrates how the work came to be, whether who asked, what was said or what the writer did on the way. State the fact, the decision, or the reason. `.idleflow/conventions.md` "Writing docs" applies to every file an agent produces.
 
-- **Processes.** Other sessions share this machine. Give a command that may hang (a server, `docker`, a network call, a watch mode) the Bash tool's timeout, or start it in the background and keep its PID (`$!`). End only a process you started, by that PID (`kill <pid>`, or `kill -- -<pid>` for its process group). Never end processes by name or pattern (`pkill`, `killall`, `kill $(pgrep ...)`): that also ends other sessions' work, and the hook refuses it.
-- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), append one line (`printf '%s\n' ... >> gaps.md`, never overwrite: other agents append in parallel) to the run's `gaps.md`, which sits next to the `ownership.json` / `run.json` of the active run in the main checkout (`<repo>/.idleflow/runs/active/gaps.md`; never a project doc, never inside a worktree): `plugin_gap: <agent> — <what> — <why it was needed>`. Do not work around it silently; the orchestrator reads that file before every `finish` and asks the human whether to report them.
+- **Processes.** Other sessions share this machine. Give a command that may not end on its own, one that serves, watches or waits on something outside it, the Bash tool's timeout, or start it in the background and keep its PID (`$!`). End only a process you started, by that PID (`kill <pid>`, or `kill -- -<pid>` for its process group). Never end processes by name or pattern, with any command: that also ends other sessions' work, and the hook refuses it.
+- **Plugin gaps.** If this plugin lacked something you needed, append one line (`printf '%s\n' ... >> gaps.md`, never overwrite: other agents append in parallel) to the run's `gaps.md`, which sits next to the `ownership.json` / `run.json` of the active run in the main checkout (`<repo>/.idleflow/runs/active/gaps.md`; never a project doc, never inside a worktree): `plugin_gap: <agent> — <what> — <why it was needed>`. Do not work around it silently; the orchestrator reads that file before every `finish` and asks the human whether to report them.

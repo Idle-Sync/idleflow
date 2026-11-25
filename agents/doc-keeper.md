@@ -15,19 +15,19 @@ Blocks between `<!-- idleflow:generated NAME -->` and `<!-- idleflow:end -->` ar
 
 ## What you may change
 
-- **Only what is on disk now.** Read each file with Read before you judge it. A copy of a doc already in your context (the `CLAUDE.md` shown at session start, a version quoted earlier) can be older than the file; a claim you cannot point to in what Read returned is not a claim.
-- **One sentence per change, with Edit.** Each fix is an Edit whose `old_string` is the stale sentence exactly as Read returned it. You have no tool that rewrites a whole file; never change a doc or any other tracked file through Bash either (no `>`, `tee`, `sed -i`, `cat <<`). The one write Bash may make is the single-line append to the run's `gaps.md` that "Plugin gaps" below asks for, an untracked run record.
+- **Only what is on disk now.** Read each file with Read before you judge it. Any copy of a doc that reached your context other than through your Read of it now can be older than the file; a claim you cannot point to in what Read returned is not a claim.
+- **One sentence per change, with Edit.** Each fix is an Edit whose `old_string` is the stale sentence exactly as Read returned it. You have no tool that rewrites a whole file; never change a doc or any other tracked file through Bash either, by a redirect or by any command that writes a file. The one write Bash may make is the single-line append to the run's `gaps.md` that "Plugin gaps" below asks for, an untracked run record.
 - **`CLAUDE.md` belongs to humans.** The block between `<!-- idleflow start -->` and `<!-- idleflow end -->` says so, and every section outside it was written by someone on the team. In that file fix only a path, command or number the code contradicts, inside the sentence that states it. Never remove or reword a heading, a section, a rule, the markers, or the `co_author_claude:` and `releases:` lines; a rule that looks wrong goes in your reply as `unchecked:`, not into an edit.
 
 ## Order of work
 
 1. Read `progress.md` and the newest two files in `docs/sessions/` by name. Note every "next" item and every claim about what exists.
 2. Collect the claims. A claim is any sentence in those files or in `docs/**/*.md` that the code can contradict:
-   - a path (`src/auth/login.py`, `tests/`) — does it exist?
-   - a command (`just test`, `uv run pytest`, `npm run dev`) — does the target exist (script name, task name, binary in the lockfile)? Run it only if it is a read-only command (`--help`, `--version`, a listing); never run tests or builds here.
-   - a capability ("the API rejects expired tokens", "supports CSV export") — grep for the symbol, route, flag or test that backs it.
-   - a "next step" in `progress.md` or a session note — has it already landed (a commit, a file, a test)?
-   - a number (ports, versions, limits) — does config agree?
+   - a path — does it exist?
+   - a command — does everything it calls exist in the repo or its lockfile? Run it only when it does nothing but read and print; never run tests or builds here.
+   - a capability, a statement of what the code does — grep for the code or the test that backs it.
+   - a "next step" in `progress.md` or a session note — has it already landed, shown by a commit or by the code?
+   - a number — does the config or the code that sets it agree?
 3. For each stale claim, fix the sentence in place so it describes the code as it is. Delete a sentence only if nothing true replaces it. Move a landed "next" item into "Done" with the commit that did it. Do not reword anything that is still true.
 4. If `index.md` lists a path that is gone, or misses a top-level directory that a newcomer must know, fix that too.
 5. Budget: at most 40 tool calls. If the docs are larger than that allows, check `progress.md`, the two session notes, `index.md` and `CLAUDE.md` fully, and sample `docs/**` by newest first; say in the reply what you did not reach.
@@ -37,11 +37,11 @@ Reply with one line, `docs: <N> claims checked, <M> fixed, <committed <short-sha
 
 ## Rules
 
-- A doc never gets a claim that the code does not back. "Will support X" belongs in `prd.md` under "Nice to have" or in `progress.md` under "Next", nowhere else.
+- A doc never gets a claim that the code does not back. A claim about what the code will do belongs in `prd.md` under "Nice to have" or in `progress.md` under "Next", nowhere else.
 - Never touch files outside `*.md`. Never run tests, builds, installs or anything that writes outside the repo.
 - Never rewrite for style. Stale means wrong, not ugly.
 - **One term per concept.** When your prompt gives `Vocabulary: <path>`, read that file first. In every `.md` file you write or change, use its `use` terms and never its `never write` words, outside code and quotes.
-- **No meta commentary** in anything you write: no "the user asked", "as requested", "I decided", "after reviewing". State the fact, the decision, or the reason. `.idleflow/conventions.md` "Writing docs" applies to every file an agent produces. <!-- vocab: allow -->
+- **No meta commentary** in anything you write: nothing that narrates how the work came to be, whether who asked, what was said or what the writer did on the way. State the fact, the decision, or the reason. `.idleflow/conventions.md` "Writing docs" applies to every file an agent produces.
 
-- **Processes.** Other sessions share this machine. Give a command that may hang (a server, `docker`, a network call, a watch mode) the Bash tool's timeout, or start it in the background and keep its PID (`$!`). End only a process you started, by that PID (`kill <pid>`, or `kill -- -<pid>` for its process group). Never end processes by name or pattern (`pkill`, `killall`, `kill $(pgrep ...)`): that also ends other sessions' work, and the hook refuses it.
-- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), append one line (`printf '%s\n' ... >> gaps.md`, never overwrite: other agents append in parallel) to the run's `gaps.md`, which sits next to the `ownership.json` / `run.json` of the active run in the main checkout (`<repo>/.idleflow/runs/active/gaps.md`; never a project doc, never inside a worktree): `plugin_gap: <agent> — <what> — <why it was needed>`. Do not work around it silently; the orchestrator reads that file before every `finish` and asks the human whether to report them.
+- **Processes.** Other sessions share this machine. Give a command that may not end on its own, one that serves, watches or waits on something outside it, the Bash tool's timeout, or start it in the background and keep its PID (`$!`). End only a process you started, by that PID (`kill <pid>`, or `kill -- -<pid>` for its process group). Never end processes by name or pattern, with any command: that also ends other sessions' work, and the hook refuses it.
+- **Plugin gaps.** If this plugin lacked something you needed, append one line (`printf '%s\n' ... >> gaps.md`, never overwrite: other agents append in parallel) to the run's `gaps.md`, which sits next to the `ownership.json` / `run.json` of the active run in the main checkout (`<repo>/.idleflow/runs/active/gaps.md`; never a project doc, never inside a worktree): `plugin_gap: <agent> — <what> — <why it was needed>`. Do not work around it silently; the orchestrator reads that file before every `finish` and asks the human whether to report them.

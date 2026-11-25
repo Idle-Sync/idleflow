@@ -30,7 +30,7 @@ Need: $ARGUMENTS
 <what the tooling advisor or the human found that almost fits, and why it does not>
 ```
 
-No meta commentary: no "the user asked", "while running idleflow". No secrets, no private paths, no customer names. <!-- vocab: allow -->
+No meta commentary: nothing that narrates how the request came to be. No secrets, no private paths, no customer names.
 
 4. Show the draft and ask with AskUserQuestion: **Open the issue** / **Edit first** (free text, apply, show again) / **Cancel**.
 5. `gh issue create --repo Idle-Sync/skills --title "<title>" --body-file <tmpfile>`. Then `gh issue edit <url> --add-label skill-request` and ignore the error if the label does not exist.
