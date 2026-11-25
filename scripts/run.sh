@@ -90,6 +90,12 @@
 #   run.sh repo-gate <base|main|task> [--quick] -> runs the approved gate (or gate_quick) there, times it; 1 failed, 7 unapproved
 #   run.sh preview <task-id|main> start|stop -> serves the app from that worktree, or with preview_in: main from the main
 #                                            checkout after the merge, for screenshots (approved command, localhost only)
+#   run.sh api-docs check|stamp [--task <task-id> | --since <rev>] [<source file>...] -> the API reference
+#                                            kept true to the code: check lists each documented element one of
+#                                            whose source files changed since its docs were written (exit 1; with
+#                                            --task or --since, only the sources changed since that base), stamp
+#                                            records named sources as they are now once their docs are up to date;
+#                                            reads the `<docs file>.sources` lists in the folder `api_docs:` names
 #   run.sh vocab [--file <vocabulary>] [--all | --task <task-id> | --since <rev> | <file>...] -> one term per
 #                                            concept: every "never write" word of the vocabulary file (vocabulary_file
 #                                            in conventions, vocabulary.md by default) in the given Markdown files; with
@@ -1898,10 +1904,10 @@ JSON
     active_id >/dev/null
     for tid in "$@"; do
       [ "$tid" = merged ] || check_task_id "$tid"
-      for kind in correct conform design api security; do
+      for kind in correct conform design api security ux; do
         name="$tid-$kind.md"; f="$ACTIVE/review/$name"
         [ -f "$f" ] || continue
-        tr -d '\r' < "$f" | R="review/$name" T="$tid" awk '/^### [FDPS][0-9]+\. / { sub(/^### /, ""); print ENVIRON["T"] ": " $0 " (" ENVIRON["R"] ")" }'
+        tr -d '\r' < "$f" | R="review/$name" T="$tid" awk '/^### [FDPSU][0-9]+\. / { sub(/^### /, ""); print ENVIRON["T"] ": " $0 " (" ENVIRON["R"] ")" }'
       done
     done
     ;;
@@ -2059,7 +2065,7 @@ Task: $tid")
         "${G[@]}" branch -q -m "$br" "$kept"
       fi
       # its reviews, report and gate result were of the build that is gone
-      for rel in "review/$tid-correct.md" "review/$tid-conform.md" "review/$tid-design.md" "review/$tid-api.md" "review/$tid-security.md" "tasks/$tid/report.md" "tasks/$tid/gate.json"; do
+      for rel in "review/$tid-correct.md" "review/$tid-conform.md" "review/$tid-design.md" "review/$tid-api.md" "review/$tid-security.md" "review/$tid-ux.md" "tasks/$tid/report.md" "tasks/$tid/gate.json"; do
         [ ! -f "$ACTIVE/$rel" ] || bash "$0" keep --move "$rel" >/dev/null
       done
       idleflow_rt set "$ACTIVE/run.json" "tasks.$tid" '{}'
@@ -2635,6 +2641,100 @@ Task: $tid")
     printf '%s\n' "$url" > "$ACTIVE/tasks/$tid/preview.url"
     echo "preview $tid: serving at $url (log: $(native_path "$ACTIVE/tasks/$tid/preview.log"); stop with: run.sh preview $tid stop)"
     ;;
+  api-docs)
+    # The API reference /idleflow:api-docs writes. Beside each docs file in the folder `api_docs:` in
+    # conventions names sits its source list, `<docs file>.sources`, owned with the docs file, one line per
+    # documented element and each file its behaviour depends on:
+    #   <element> TAB <source file> TAB <git blob sha of that file when the element's docs were written>
+    # A changed source is a lead, not proof that the docs are wrong: whoever changed it brings the docs
+    # up to date, or confirms they still hold, and stamps it.
+    sub="${1:-}"; shift || true
+    case "$sub" in check|stamp) ;; *) echo "usage: run.sh api-docs check|stamp [--task <task-id> | --since <rev>] [<source file>...]" >&2; exit 2;; esac
+    top="$REPO"; since=""
+    case "${1:-}" in
+      --task)
+        tid="${2:-}"; ( check_task_id "$tid" ) || exit 2; ( active_id >/dev/null ) || exit 2
+        top="$(wt_path "$tid")"; [ -d "$top" ] || { echo "api-docs: no worktree for $tid" >&2; exit 2; }
+        since="$(task_base "$tid")" || exit 2; shift 2 ;;
+      --since)
+        since="$(git -C "$top" rev-parse -q --verify "${2:-}^{commit}")" || { echo "api-docs --since: '${2:-}' is not a commit" >&2; exit 2; }
+        shift 2 ;;
+    esac
+    raw="$(conventions_value api_docs)"
+    case "$raw" in ""|unset|none) echo "api-docs: none (api_docs: in conventions names no docs folder)"; exit 0;; esac
+    dir="$(repo_relative_path "$raw")" || { echo "api-docs: api_docs: must be a folder inside the repo, given relative to its root (got '$raw')" >&2; exit 2; }
+    [ -d "$top/$dir" ] || { echo "api-docs: $dir does not exist" >&2; exit 2; }
+    lists="$(cd "$top" && find "$dir" -type f -name '*.sources' | LC_ALL=C sort)"
+    [ -n "$lists" ] || { echo "api-docs: $dir has no source lists yet; /idleflow:api-docs writes them" >&2; exit 2; }
+    # a task answers only for the docs files it owns: another task's docs, or a list no task owns, are
+    # left to their owner and to the check on the main checkout after the merge
+    if [ -n "${tid:-}" ]; then
+      foreign="$(printf '%s\n' "$lists" | tr '\n' '\0' | idleflow_rt unowned "$ACTIVE/ownership.json" "$tid")" || exit 2
+      if [ -n "$foreign" ]; then
+        tchanged="$(git -C "$top" diff --name-only --no-renames "$since" HEAD --)" || exit 2
+        printf '%s\n' "$foreign" | while IFS= read -r f; do
+          tr -d '\r' < "$top/$f" | cut -f2 | grep -Fx -f <(printf '%s\n' "$tchanged") >/dev/null 2>&1 \
+            && echo "api-docs: $f names a source $tid changed, but is not $tid's to update; its owner or the check after the merge answers for it" >&2
+        done
+        lists="$(printf '%s\n' "$lists" | grep -Fxv -f <(printf '%s\n' "$foreign") || true)"
+        [ -n "$lists" ] || { echo "api-docs: current (no source list here is $tid's)"; exit 0; }
+      fi
+    fi
+    field() { printf '%s' "$1" | cut -f"$2"; }
+    if [ "$sub" = check ]; then
+      api_changed=""
+      if [ -n "$since" ]; then api_changed="$(git -C "$top" diff --name-only --no-renames "$since" HEAD --)" || exit 2; fi
+      n=0
+      while IFS= read -r list; do
+        doc="${list%.sources}"
+        while IFS= read -r line || [ -n "$line" ]; do
+          line="${line%$'\r'}"
+          case "$line" in ""|"#"*) continue;; esac
+          el="$(field "$line" 1)"; src="$(field "$line" 2)"; sha="$(field "$line" 3)"
+          if [ -n "$since" ]; then
+            printf '%s\n' "$api_changed" | grep -Fx -e "$src" -e "$doc" -e "$list" >/dev/null || continue
+          fi
+          if [ -n "$since" ]; then
+            git -C "$top" cat-file -e "HEAD:$doc" 2>/dev/null || { echo "missing: $el — its docs file $doc does not exist"; n=$((n+1)); continue; }
+            now="$(git -C "$top" rev-parse -q --verify "HEAD:$src")" || { echo "gone: $el — $src no longer exists (docs: $doc)"; n=$((n+1)); continue; }
+          else
+            if [ ! -f "$top/$doc" ]; then echo "missing: $el — its docs file $doc does not exist"; n=$((n+1)); continue; fi
+            if [ ! -f "$top/$src" ]; then echo "gone: $el — $src no longer exists (docs: $doc)"; n=$((n+1)); continue; fi
+            now="$(git -C "$top" hash-object -- "$src")" || exit 2
+          fi
+          [ "$now" = "$sha" ] || { echo "stale: $el — $src changed since $doc was written"; n=$((n+1)); }
+        done < <(if [ -n "$since" ]; then git -C "$top" show "HEAD:$list" 2>/dev/null; else cat "$top/$list"; fi)
+      done <<< "$lists"
+      if [ "$n" -gt 0 ]; then exit 1; fi
+      echo "api-docs: current"; exit 0
+    fi
+    [ "$#" -gt 0 ] || { echo "usage: run.sh api-docs stamp [--task <task-id>] <source file>..." >&2; exit 2; }
+    for src in "$@"; do
+      [ -f "$top/$src" ] || { echo "api-docs stamp: $src does not exist" >&2; exit 2; }
+      found=""
+      while IFS= read -r list; do
+        tr -d '\r' < "$top/$list" | cut -f2 | grep -Fx -- "$src" >/dev/null && { found=1; break; }
+      done <<< "$lists"
+      if [ -z "$found" ] && [ -n "${tid:-}" ]; then echo "api-docs stamp: no source list $tid owns names $src; the docs that do are another task's" >&2; exit 2; fi
+      [ -n "$found" ] || { echo "api-docs stamp: no source list in $dir names $src; add its elements first" >&2; exit 2; }
+    done
+    k=0
+    while IFS= read -r list; do
+      out="$top/$list.tmp.$$"; trap 'rm -f "$out"' EXIT; : > "$out"; touched=""
+      while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%$'\r'}"; src="$(field "$line" 2)"; hit=""
+        case "$line" in ""|"#"*) ;; *) for s in "$@"; do [ "$s" != "$src" ] || hit=1; done;; esac
+        if [ -n "$hit" ]; then
+          printf '%s\t%s\t%s\n' "$(field "$line" 1)" "$src" "$(git -C "$top" hash-object -- "$src")" >> "$out"; touched=1; k=$((k+1))
+        else
+          printf '%s\n' "$line" >> "$out"
+        fi
+      done < "$top/$list"
+      if [ -n "$touched" ]; then mv "$out" "$top/$list"; else rm -f "$out"; fi
+      trap - EXIT
+    done <<< "$lists"
+    echo "api-docs: stamped $k line(s) for $# source(s)"
+    ;;
   vocab)
     # the checkout it is run in, a task worktree included, never the main checkout behind it; with
     # --task, the task's own worktree, checked against the main checkout's vocabulary (no task owns
@@ -2969,7 +3069,7 @@ Task: $tid")
     fi
     ;;
   conf)
-    for v in DIFF_LIMIT DIFF_SLACK MAX_IMPLEMENTERS SIZE_M_IMPLEMENTERS DEBATE_ROUNDS MAX_RETRIES SIZE_S_MAX SIZE_M_MAX SIZE_S_OVERRUN LARGE_REPO_LOC STEP_DEBATE STEP_STACK STEP_LIBRARIES STEP_TOOLING STEP_DOC_KEEPER STEP_MUTATION STEP_DESIGN STEP_DESIGN_OPTIONS SLOW_GATE_SECONDS SERVICES_START_SECONDS PORT_BASE CI_EVIDENCE_MINUTES CI_EVIDENCE_TRIES; do
+    for v in DIFF_LIMIT DIFF_SLACK MAX_IMPLEMENTERS SIZE_M_IMPLEMENTERS DEBATE_ROUNDS MAX_RETRIES SIZE_S_MAX SIZE_M_MAX SIZE_S_OVERRUN LARGE_REPO_LOC STEP_DEBATE STEP_STACK STEP_LIBRARIES STEP_TOOLING STEP_DOC_KEEPER STEP_MUTATION STEP_DESIGN STEP_DESIGN_OPTIONS STEP_UX SLOW_GATE_SECONDS SERVICES_START_SECONDS PORT_BASE CI_EVIDENCE_MINUTES CI_EVIDENCE_TRIES; do
       echo "$v=${!v:-}"
     done
     echo "RUNTIME=$(idleflow_rt_name)"

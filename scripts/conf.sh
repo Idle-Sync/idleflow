@@ -56,7 +56,7 @@ idleflow_conf_valid() {
     EXEC_WAIT_SECONDS) _idleflow_number_in "$2" 1 110 ;;
     CI_EVIDENCE_MINUTES) _idleflow_number_in "$2" 1 720 ;;
     CI_EVIDENCE_TRIES) _idleflow_number_in "$2" 1 5 ;;
-    STEP_DEBATE|STEP_STACK|STEP_LIBRARIES|STEP_TOOLING|STEP_DOC_KEEPER|STEP_MUTATION|STEP_DESIGN|STEP_DESIGN_OPTIONS)
+    STEP_DEBATE|STEP_STACK|STEP_LIBRARIES|STEP_TOOLING|STEP_DOC_KEEPER|STEP_MUTATION|STEP_DESIGN|STEP_DESIGN_OPTIONS|STEP_UX)
       case "$2" in auto|on|off) ;; *) return 1;; esac ;;
     MODEL_*) [[ "${1#MODEL_}" =~ $agent_re ]] && case "$2" in haiku|sonnet|opus|fable) ;; *) return 1;; esac ;;
     REPLACED_*) [[ "${1#REPLACED_}" =~ $agent_re ]] && [[ "$2" =~ $version_re ]] ;;

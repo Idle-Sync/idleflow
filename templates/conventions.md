@@ -157,7 +157,9 @@ while_waiting: work
 code_map: none
 code_map_query: unset
 code_map_status: unset
+api_docs: unset
 
+- `api_docs`: the folder that holds the API and service reference `/idleflow:api-docs` writes and keeps, with a source list beside each docs file (`<docs file>.sources`); every run then keeps those docs true to the code. `none`: the repo keeps no such reference.
 - `worktrees_in`: `sibling` puts task worktrees next to the repo (`<repo>__wt/<task>`); `inside` puts
   them in `.idleflow/worktrees/` (ignored), for projects that must not write outside their own folder.
   Tools that scan hidden folders may then see the worktrees.
