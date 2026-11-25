@@ -650,6 +650,9 @@ check "exec runs the command without the agent's markers" '[ "$(CLAUDECODE=1 CLA
 check "exec passes the command's exit code"    'bash "$RUN" exec TA -- sh -c "exit 3"; [ $? = 3 ]'
 inside="$(cd "$wa" && bash "$RUN" exec TA -- sh -c 'echo "$IDLEFLOW_PORT"')"
 check "exec works from inside the task worktree" "[ '$inside' = 4400 ]"
+check "each task also gets an API and a database port of its own, in their own ranges" '[ "$(bash "$RUN" get tasks.TA.port_api)" = 5400 ] && [ "$(bash "$RUN" get tasks.TA.port_db)" = 6400 ] && [ "$(bash "$RUN" get tasks.TB.port_api)" = 5401 ] && [ "$(bash "$RUN" get tasks.TB.port_db)" = 6401 ]'
+stack="$(bash "$RUN" exec TB -- sh -c 'echo "$IDLEFLOW_PORT $IDLEFLOW_PORT_API $IDLEFLOW_PORT_DB $IDLEFLOW_DB"')"
+check "exec gives a task's command its whole stack's ports and a database name unique to the run and task" '[ "$(echo "$stack" | cut -d" " -f1-3)" = "4401 5401 6401" ] && echo "$stack" | cut -d" " -f4 | has -x "idleflow_[0-9]\{1,14\}_[0-9]*_tb"'
 # Ports are claimed across the machine: another repo's live run holds 4402, something else listens
 # on 4403, a claim left by a run that has ended holds 4404, and another run is deciding about 4405.
 o="$d-tmp/other"; mkdir -p "$o/.idleflow/runs/active" "$utmp/ports/4405.lock"
@@ -660,11 +663,15 @@ listen_args=(node -e 'const s=require("net").createServer().listen(4403,"127.0.0
 command -v node >/dev/null 2>&1 || listen_args=(python3 -c 'import socket,time;s=socket.socket();s.bind(("127.0.0.1",4403));s.listen();print("up",flush=True);time.sleep(20)')
 "${listen_args[@]}" > "$d-tmp/listen.out" 2>&1 & lpid=$!
 for _ in 1 2 3 4 5 6 7 8 9 10; do grep -q up "$d-tmp/listen.out" 2>/dev/null && break; sleep 0.3; done
+# an API port: 5402 holds a claim written before claims named their field (it reads as T9's app port,
+# which is 4402, so it is stale); 5403 holds T9's API claim, which T9 has not recorded yet (still live)
+printf '%s\tr1\tT9\n' "$o" > "$utmp/ports/5402"; printf '%s\tr1\tT9\tport_api\n' "$o" > "$utmp/ports/5403"
 bash "$RUN" wt add TC >/dev/null 2>&1; bash "$RUN" wt add TD >/dev/null 2>&1
 kill "$lpid" 2>/dev/null; wait "$lpid" 2>/dev/null; rmdir "$utmp/ports/4405.lock"
 check "a port another live run claims, something listens on, or another run is deciding about is skipped" '[ "$(bash "$RUN" get tasks.TC.port)" = 4404 ] && [ "$(bash "$RUN" get tasks.TD.port)" = 4406 ]'
 check "a stale claim is taken over, with this run as its owner" '[ "$(cut -f2,3 "$utmp/ports/4404")" = "$(bash "$RUN" get id)	TC" ] && [ ! -e "$utmp/ports/4403" ] && [ ! -e "$utmp/ports/4405" ]'
 check "the claim of a live run elsewhere stays its own" '[ "$(cut -f2,3 "$utmp/ports/4402")" = "r1	T9" ]'
+check "a claim names the port it holds, and only that field of its task decides whether it is live" '[ "$(cut -f4 "$utmp/ports/5400")" = port_api ] && [ "$(bash "$RUN" get tasks.TC.port_api)" = 5402 ] && [ "$(bash "$RUN" get tasks.TD.port_api)" = 5404 ] && [ "$(cut -f2,3,4 "$utmp/ports/5403")" = "r1	T9	port_api" ]'
 # a lock whose holder has died is taken over; 4403 is free again now its listener has gone
 sh -c 'exit 0' & dead=$!; wait "$dead"; mkdir -p "$utmp/ports/4403.lock"; echo "$dead" > "$utmp/ports/4403.lock/pid"
 bash "$RUN" wt add TE >/dev/null 2>&1
@@ -1103,7 +1110,7 @@ fi
 
 echo "--- preview for screenshots"
 cp .idleflow/conventions.md "$d-conv.bak"
-printf 'preview: sleep 30\npreview_url: http://example.com:4173\n' >> .idleflow/conventions.md
+printf 'preview: sh -c '"'"'echo "$IDLEFLOW_PORT_API $IDLEFLOW_PORT_DB $IDLEFLOW_DB" > "$IDLEFLOW_TMP/stack.txt"; sleep 30'"'"'\npreview_url: http://example.com:4173\n' >> .idleflow/conventions.md
 git add .idleflow/conventions.md && commit -q -m "preview"
 bash "$RUN" new preview >/dev/null 2>&1; bash "$RUN" wt add T2 >/dev/null 2>&1
 bash "$RUN" preview T2 start >/dev/null 2>&1; rc=$?
@@ -1113,6 +1120,9 @@ check "a preview address off this machine is refused" '! bash "$RUN" preview T2 
 sed -i.bak 's#^preview_url: .*#preview_url: http://localhost:4173#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak
 out="$(bash "$RUN" preview T2 start 2>/dev/null)"; pid="$(cat .idleflow/runs/active/tasks/T2/preview.pid 2>/dev/null)"
 check "an approved preview starts and records its process" 'echo "$out" | has "^preview T2: serving at http://localhost:4173" && kill -0 "$pid" 2>/dev/null'
+for _ in 1 2 3 4 5 6 7 8 9 10; do bash "$RUN" exec T2 -- sh -c 'test -s "$IDLEFLOW_TMP/stack.txt"' && break; sleep 0.3; done
+pstack="$(bash "$RUN" exec T2 -- sh -c 'cat "$IDLEFLOW_TMP/stack.txt"')"
+check "a task's preview gets its whole stack's ports and database name" 'read -r ps_api ps_db ps_name <<< "$pstack"; [ "$ps_api" = "$(bash "$RUN" get tasks.T2.port_api)" ] && [ "$ps_db" = "$(bash "$RUN" get tasks.T2.port_db)" ] && echo "$ps_name" | has -x "idleflow_[0-9]*_[0-9]*_t2"'
 bash "$RUN" preview T2 stop >/dev/null; sleep 1
 check "preview stop ends it" '! kill -0 "$pid" 2>/dev/null && [ ! -f .idleflow/runs/active/tasks/T2/preview.pid ]'
 check "preview main is refused while tasks preview their worktrees" '! bash "$RUN" preview main start >/dev/null 2>&1 && [ ! -f .idleflow/runs/active/tasks/main/preview.pid ]'
@@ -1254,7 +1264,7 @@ printf '{"id":"r1","tasks":{"T9":{"port":4402},"T8":{"port":4400}}}\n' > "$o/.id
 printf '%s\tr1\tT8\n' "$o" > "$utmp/ports/4400"
 out="$(bash "$RUN" preview main start 2>/dev/null)"; pid="$(cat .idleflow/runs/active/tasks/main/preview.pid 2>/dev/null)"; sleep 1
 check "preview main claims a free port of its own" '[ "$(cut -f2,3 "$utmp/ports/4401" 2>/dev/null)" = "$(bash "$RUN" get id)	main" ] && [ "$(cut -f3 "$utmp/ports/4400")" = T8 ]'
-check "a second preview main start reports the server already serving and claims nothing" 'again="$(bash "$RUN" preview main start 2>/dev/null)" && echo "$again" | has "^preview main: serving at http://localhost:4173 (already running" && [ "$(cat .idleflow/runs/active/tasks/main/preview.pid)" = "$pid" ] && [ "$(grep -ls "	main$" "$utmp"/ports/* | wc -l | tr -d " ")" = 1 ]'
+check "a second preview main start reports the server already serving and claims nothing" 'again="$(bash "$RUN" preview main start 2>/dev/null)" && echo "$again" | has "^preview main: serving at http://localhost:4173 (already running" && [ "$(cat .idleflow/runs/active/tasks/main/preview.pid)" = "$pid" ] && [ "$(grep -ls "	main	port$" "$utmp"/ports/* | wc -l | tr -d " ")" = 1 ]'
 check "under preview_in: main the preview of main starts and its process runs" 'echo "$out" | has "^preview main: serving at http://localhost:4173" && kill -0 "$pid" 2>/dev/null'
 # the server's own pwd may be in either form of one path on Git Bash (/c/... or /tmp/...), so both are resolved
 where="$(cat "$utmp"/*/main/where 2>/dev/null)"
@@ -1625,6 +1635,8 @@ f="$(mktemp -d)"; ( cd "$f" && git init -q && printf '{"scripts":{"dev":"vite"}}
 det="$(cd "$f" && bash "$RUN" detect)"; det_rc=$?
 check "detect works before the first commit" '[ "$det_rc" = 0 ] && echo "$det" | has "^suggest preview: npm run dev —"'
 check "doctor works before the first commit" '(cd "$f" && bash "$RUN" doctor >/dev/null 2>&1)'
+mkdir -p "$f/db/migrations"; det_m="$(cd "$f" && bash "$RUN" detect)"
+check "a repo with migrations is told its preview should start the worktree's whole stack" 'echo "$det_m" | has -F "and the repo has migrations" && echo "$det_m" | has -F "\$IDLEFLOW_PORT_API, \$IDLEFLOW_PORT_DB and \$IDLEFLOW_DB" && ! echo "$det" | has -F "and the repo has migrations"'
 fv="$(mktemp -d)"; ( cd "$fv" && git init -q && printf '| use | means | never write |\n|---|---|---|\n| main checkout | the working tree of the repo | `main repo` |\n' > vocabulary.md && printf 'Open the main repo first, the main repo again.\n' > notes.md && git add vocabulary.md notes.md && git -c user.name=t -c user.email=t@example.invalid commit -q -m docs )
 docv="$(cd "$fv" && bash "$RUN" doctor 2>/dev/null)"
 check "the doctor reports docs that use a spelling the vocabulary file bans, and points to the backfill" 'echo "$docv" | has -F "warn vocab: 1 line(s) in the repo" && echo "$docv" | has -F "s Markdown use a spelling vocabulary.md bans | fix: /idleflow:vocab backfill"'
@@ -1831,6 +1843,7 @@ check "a bug fix goes to where the bad state is produced" 'grep -q "Name it as \
 check "STEP_DESIGN is a setting" 'grep -q STEP_DESIGN "$HERE/conf.sh" && grep -q "^STEP_DESIGN=auto" "$HERE/../config/idleflow.conf"'
 check "the human chooses a design direction before the design system" 'grep -q "STEP_DESIGN_OPTIONS)" "$HERE/conf.sh" && grep -q "^STEP_DESIGN_OPTIONS=auto" "$HERE/../config/idleflow.conf" && [ -n "$(bash "$RUN" conf | grep -x "STEP_DESIGN_OPTIONS=auto")" ] && grep -q "^## Options mode$" "$HERE/../agents/designer.md" && grep -q "^\*\*Directions first\*\*, when \`STEP_DESIGN_OPTIONS\` is \`on\`" "$HERE/../commands/feature.md" && grep -q "design-direction: <n>-<slug>" "$HERE/../commands/feature.md" && grep -q "as \`Chosen direction\`" "$HERE/../commands/feature.md"'
 check "every command reads the talking rules" '[ -z "$(cd "$HERE/../commands" && grep -L "procedures/talking.md" *.md | grep -vx fix.md)" ]'
+check "a browser criterion stays in a task only when the task's own work can be served" 'grep -qF "stays in the task only when the repo can serve the task'"'"'s own work" "$HERE/../agents/planner.md" && grep -qF "the command starts the worktree'"'"'s whole stack" "$HERE/../templates/conventions.md"'
 check "the agents that propose options weigh a mix by the one rule in the talking rules" 'grep -q "^- \*\*Weighing a mix of options\.\*\* " "$HERE/../procedures/talking.md" && grep -qF "add \`Talking rules: <absolute path of this file>\` to its prompt" "$HERE/../procedures/talking.md" && [ -z "$(cd "$HERE/../agents" && grep -L "When your prompt gives \`Talking rules: <path>\`, read its \"Weighing a mix of options\" rule first" designer.md planner.md stack-advisor.md tooling-advisor.md)" ]'
 check "prompt text states rules, not examples, and the conformance reviewer holds new prompts to it" '! grep -n -i -E "\\be\\.g\\.|for example|for instance|such as" "$HERE"/../agents/*.md "$HERE"/../commands/*.md "$HERE"/../procedures/*.md && grep -qF "gives no concrete example as guidance" "$HERE/../agents/review-conform.md"'
 check "the conformance reviewer names every field the implementer's report has" 'fields="$(sed -n "/^## Report fields/,/^## /p" "$HERE/../agents/implementer.md" | grep -o "^[a-z_]*:" | tr -d :)"; [ -n "$fields" ] && missing_fields="$(for rf in $fields; do grep -qF "\`$rf\`" "$HERE/../agents/review-conform.md" || echo "$rf"; done)"; [ -z "$missing_fields" ]'
