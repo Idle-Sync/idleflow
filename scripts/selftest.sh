@@ -59,6 +59,12 @@ evidence() { # evidence <test>
 }
 
 native() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else echo "$1"; fi; }
+# Git Bash on Windows: no file names with " \ or a tab (NTFS), no POSIX mode bits, and ln -s copies
+# unless symlinks are enabled. A check that cannot hold there says so instead of failing.
+on_windows=""; case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) on_windows=1;; esac
+skip() { echo "  skip  $1 ($2)"; }
+# a checkout's top folder as git and run.sh print it (C:/... on Windows, where pwd says /c/... or /tmp/...)
+top() { native "$(git -C "$1" rev-parse --show-toplevel)"; }
 json_esc() { echo "$1" | sed 's/\\/\\\\/g'; }
 guard_rc() { # guard_rc <file_path> <cwd>  -> exit code of the hook
   printf '{"tool_name":"Write","cwd":"%s","tool_input":{"file_path":"%s","content":"x"}}' "$(json_esc "$2")" "$(json_esc "$1")" | bash "$GUARD" 2>/dev/null
@@ -68,6 +74,7 @@ commit() { git -c user.name=t -c user.email=t@t commit -q "$@"; }
 
 echo "runtime: $(idleflow_rt_name)"
 d="$(mktemp -d)"; d="$(cd "$d" && pwd)"
+can_symlink=""; ln -s "$d" "$d.probe" 2>/dev/null && [ -L "$d.probe" ] && can_symlink=1; rm -f "$d.probe"
 cleanup() { cd / ; rm -rf "$d" "$d-tmp" "${d}__wt" "$d.link" "${d}__wt.link" "$d-mig" "$d-human" "${d}-human__wt" "$d-stray" "$d-pin" 2>/dev/null || true; }
 trap cleanup EXIT
 # the suite's own root for task temp folders and port claims, so a suite running beside it never meets it
@@ -169,10 +176,14 @@ check "blocks run.json via editor"        '[ "$(guard_rc "$dn/.idleflow/runs/act
 check "blocks run state in parked runs"   '[ "$(guard_rc "$dn/.idleflow/runs/$id0/run.json" "$dn")" = "2" ]'
 check "blocks main checkout code while building" '[ "$(guard_rc "$dn/src/a.txt" "$dn")" = "2" ]'
 # the same checkout reached through a symlinked path must not slip past the guard
-ln -s "$d" "$d.link"; ln -s "${d}__wt" "${d}__wt.link"
-check "blocks main checkout via a symlink"  '[ "$(guard_rc "$d.link/src/a.txt" "$d.link")" = "2" ]'
-check "blocks unowned file via a symlink"   '[ "$(guard_rc "${d}__wt.link/T1/other.txt" "${d}__wt.link/T1")" = "2" ]'
-check "allows owned file via a symlink"     '[ "$(guard_rc "${d}__wt.link/T1/src/new.txt" "${d}__wt.link/T1")" = "0" ]'
+if [ -n "$can_symlink" ]; then
+  ln -s "$d" "$d.link"; ln -s "${d}__wt" "${d}__wt.link"
+  check "blocks main checkout via a symlink"  '[ "$(guard_rc "$d.link/src/a.txt" "$d.link")" = "2" ]'
+  check "blocks unowned file via a symlink"   '[ "$(guard_rc "${d}__wt.link/T1/other.txt" "${d}__wt.link/T1")" = "2" ]'
+  check "allows owned file via a symlink"     '[ "$(guard_rc "${d}__wt.link/T1/src/new.txt" "${d}__wt.link/T1")" = "0" ]'
+else
+  skip "the guard through a symlinked path" "ln -s makes no symlink here"
+fi
 check "allows main checkout plan.md while building" '[ "$(guard_rc "$dn/.idleflow/runs/active/plan.md" "$dn")" = "0" ]'
 check "allows root progress.md while building"      '[ "$(guard_rc "$dn/progress.md" "$dn")" = "0" ]'
 check "allows docs/ while building"                 '[ "$(guard_rc "$dn/docs/research/x.md" "$dn")" = "0" ]'
@@ -199,16 +210,20 @@ echo hooked > hooked.txt; git add hooked.txt; bash "$RUN" snapshot >/dev/null 2>
 check "the repo's hooks keep the repo's git settings" '[ -s "$scratch/hook.env" ] && ! grep -q quotePath "$scratch/hook.env"'
 rm -f "$hk/pre-commit"; ( cd "$wt" && git reset -q --hard HEAD~1 )
 # names git quotes even with quotePath off: a double quote, a backslash, a tab
-odd="$(printf 'src/a"b\\c\td.py')"
-printf 'x\ny\n' > "$wt/$odd"; ( cd "$wt" && git add -- "$odd" && commit -m "T1: odd name" )
-check "unowned reads any file name as it is"      '[ -z "$(bash "$RUN" unowned T1)" ]'
-check "the gate names any file as it is"          'bash "$RUN" gate T1 | has -F "\"src/a\\\"b\\\\c\\td.py\",2"'
-bs="$(printf 'src\\x.py')"; echo z > "$wt/$bs"; ( cd "$wt" && git add -- "$bs" && commit -m "T1: backslash" )
-check "a backslash in a name is not a folder"     '[ "$(bash "$RUN" unowned T1)" = "$bs" ]'
-( cd "$wt" && git reset -q --hard HEAD~1 )
+odd="$(printf 'src/a"b\\c\td.py')"; before_odd="$(git -C "$wt" rev-parse HEAD)"
+if [ -z "$on_windows" ]; then
+  printf 'x\ny\n' > "$wt/$odd"; ( cd "$wt" && git add -- "$odd" && commit -m "T1: odd name" )
+  check "unowned reads any file name as it is"      '[ -z "$(bash "$RUN" unowned T1)" ]'
+  check "the gate names any file as it is"          'bash "$RUN" gate T1 | has -F "\"src/a\\\"b\\\\c\\td.py\",2"'
+  bs="$(printf 'src\\x.py')"; echo z > "$wt/$bs"; ( cd "$wt" && git add -- "$bs" && commit -m "T1: backslash" )
+  check "a backslash in a name is not a folder"     '[ "$(bash "$RUN" unowned T1)" = "$bs" ]'
+  ( cd "$wt" && git reset -q --hard HEAD~1 )
+else
+  skip "file names with a double quote, a backslash or a tab" "NTFS allows none of them"
+fi
 printf '3\t1\t\0old/x.py\0new/x.py\0' > "$scratch/ns-rename"
 check "the gate reads a rename record as the new path" 'idleflow_rt gate 10 5 "$scratch/ns-rename" "$scratch/ns-rename" | has -F "\"files\":1," && idleflow_rt gate 10 5 "$scratch/ns-rename" "$scratch/ns-rename" | has -F "[[\"new/x.py\",4]]"'
-( cd "$wt" && git reset -q --hard HEAD~1 )
+( cd "$wt" && git reset -q --hard "$before_odd" )
 check "unowned fails on an unknown task"        '! bash "$RUN" unowned T9 >/dev/null 2>&1'
 bash "$RUN" own T1 '["src/**","tests/**"]'
 check "allows outside any repo"           '[ "$(guard_rc "/nowhere/x.txt" "/nowhere")" = "0" ]'
@@ -371,7 +386,8 @@ m="$(bash "$RUN" merge T1 2>"$scratch/merge.err")"
 check "merge stamps the task's merge"     '[[ "$(bash "$RUN" get tasks.T1.t_merge 2>/dev/null)" =~ ^[0-9]{10}$ ]]'
 check "merge reports merged"           '[ "$m" = "merged T1" ]'
 check "merged file on main"            '[ -f src/code.py ]'
-check "merge takes commits, never uncommitted work" '[ ! -e src/generated.py ] && [ "$(cat src/code.py)" = "$(printf "x\ny\nz")" ] && grep -q "not merged: .*src/generated.py" "$scratch/merge.err"'
+# the merged file is read as git stores it: a Windows checkout (core.autocrlf) gives it CRLF lines
+check "merge takes commits, never uncommitted work" '[ ! -e src/generated.py ] && [ "$(git show HEAD:src/code.py)" = "$(printf "x\ny\nz")" ] && git diff --quiet -- src/code.py && grep -q "not merged: .*src/generated.py" "$scratch/merge.err"'
 check "merge leaves untracked caches out" '[ ! -e .pytest_cache ] && ! git ls-files | has pytest_cache'
 check "merge keeps the human identity" '[ "$(git log -1 --format=%an)" = "Human" ]'
 bash "$RUN" wt add TL > "$scratch/wl" 2>/dev/null
@@ -566,7 +582,8 @@ check "the setup command ran in the worktree" '[ -f "$wi/shared-big/f" ]'
 bash "$RUN" own T9 '["src/**"]' >/dev/null; bash "$RUN" set tasks.T9.status '"building"'
 check "guard: an owned file in an inside worktree is allowed" '[ "$(guard_rc "$wi/src/keep.py" "$wi")" = "0" ]'
 check "guard: an unowned file in an inside worktree is blocked" '[ "$(guard_rc "$wi/other.py" "$wi")" = "2" ]'
-check "guard: the main checkout stays blocked while building" '[ "$(guard_rc "$PWD/src/keep.py" "$PWD")" = "2" ] && [ "$(guard_rc "$PWD/.idleflow/conventions.md" "$PWD")" = "2" ]'
+pn="$(native "$PWD")"
+check "guard: the main checkout stays blocked while building" '[ "$(guard_rc "$pn/src/keep.py" "$pn")" = "2" ] && [ "$(guard_rc "$pn/.idleflow/conventions.md" "$pn")" = "2" ]'
 st="$(git status --porcelain --untracked-files=all)"
 check "inside worktrees do not dirty the main checkout" '! echo "$st" | has "\.idleflow/worktrees"'
 bash "$RUN" set tasks.T9.status '"approved"'; bash "$RUN" wt rm T9; bash "$RUN" finish done >/dev/null
@@ -590,8 +607,12 @@ sed -i.bak 's#^worktree_setup: .*#worktree_setup: mkdir -p "$MAIN/node_modules" 
 git add .idleflow/conventions.md && commit -q -m "linking setup"; bash "$RUN" approve worktree_setup >/dev/null
 bash "$RUN" wt rm T7; bash "$RUN" finish done >/dev/null; bash "$RUN" new linking >/dev/null 2>&1
 mkdir -p node_modules && echo keep > node_modules/dep.js
-out="$(bash "$RUN" wt add T7 2>&1)"; rc=$?
-check "a setup that links main's node_modules is refused" '[ "$rc" = 6 ] && echo "$out" | has "linked node_modules to the main checkout" && [ ! -e .idleflow/worktrees/T7/node_modules ] && [ "$(cat node_modules/dep.js)" = keep ]'
+if [ -n "$can_symlink" ]; then
+  out="$(bash "$RUN" wt add T7 2>&1)"; rc=$?
+  check "a setup that links main's node_modules is refused" '[ "$rc" = 6 ] && echo "$out" | has "linked node_modules to the main checkout" && [ ! -e .idleflow/worktrees/T7/node_modules ] && [ "$(cat node_modules/dep.js)" = keep ]'
+else
+  skip "a setup that links main's node_modules is refused" "ln -s makes no symlink here"
+fi
 rm -rf node_modules
 bash "$RUN" wt rm T7; bash "$RUN" finish done >/dev/null
 rm -rf shared-big; cp "$d-conv.bak" .idleflow/conventions.md && rm -f "$d-conv.bak"; git add .idleflow/conventions.md && commit -q -m "restore conventions"
@@ -624,7 +645,7 @@ check "each task gets its own port"            "[ '$pa' = 4400 ] && [ '$pb' = 44
 bash "$RUN" wt add TA >/dev/null 2>&1
 check "a re-added task keeps its port"         '[ "$(bash "$RUN" get tasks.TA.port)" = 4400 ]'
 out="$(bash "$RUN" exec TA -- sh -c 'echo "$IDLEFLOW_TASK $IDLEFLOW_PORT"; echo "$TMPDIR"; pwd')"
-check "exec runs in the worktree with the task's port and temp folder" '[ "$(echo "$out" | sed -n 1p)" = "TA 4400" ] && echo "$out" | sed -n 2p | has "^$utmp/[0-9a-f]\{10\}/TA$" && [ "$(echo "$out" | sed -n 3p)" = "$(cd "$wa" && pwd)" ]'
+check "exec runs in the worktree with the task's port and temp folder" '[ "$(echo "$out" | sed -n 1p)" = "TA 4400" ] && echo "$out" | sed -n 2p | has "^$utmp/[0-9a-f]\{10\}/TA$" && [ "$(cd "$(echo "$out" | sed -n 3p)" && pwd -P)" = "$(cd "$wa" && pwd -P)" ]'
 check "exec runs the command without the agent's markers" '[ "$(CLAUDECODE=1 CLAUDE_CODE=1 AI_AGENT=claude CLAUDE_CODE_ENTRYPOINT=cli bash "$RUN" exec TA -- sh -c "echo \${CLAUDECODE-none} \${CLAUDE_CODE-none} \${AI_AGENT-none} \${CLAUDE_CODE_ENTRYPOINT-none}")" = "none none none none" ]'
 check "exec passes the command's exit code"    'bash "$RUN" exec TA -- sh -c "exit 3"; [ $? = 3 ]'
 inside="$(cd "$wa" && bash "$RUN" exec TA -- sh -c 'echo "$IDLEFLOW_PORT"')"
@@ -656,9 +677,17 @@ bash "$RUN" wt add TG >/dev/null 2>&1
 check "a dead lock another run is taking over is skipped" '[ "$(bash "$RUN" get tasks.TG.port)" = 4408 ] && [ "$(cat "$utmp/ports/4405.lock/pid")" = "$dead" ]'
 rm -f "$utmp/ports/4405.lock/pid"; rmdir "$utmp/ports/4405.lock" "$utmp/ports/4405.lock.takeover"
 check "a task's temp folder is short and outside the repo" 't="$(bash "$RUN" exec TA -- sh -c "echo \$TMPDIR")"; [ "${#t}" -eq $(( ${#utmp} + 14 )) ] && [ -d "$t" ] && case "$t" in "$d"/*) false;; *) true;; esac'
-mkdir -p "$d-tmp/r2" "$d-tmp/elsewhere"; ln -s "$d-tmp/elsewhere" "$d-tmp/r2/idleflow-$(id -u)"
-check "a user folder under the temp root that is a symlink is refused" '! IDLEFLOW_TMP_ROOT="$d-tmp/r2" bash "$RUN" exec TA -- true 2>/dev/null && [ -z "$(ls -A "$d-tmp/elsewhere")" ]'
-check "the user folder is private" '[ "$(ls -ld "$utmp" | cut -c1-10)" = drwx------ ]'
+if [ -n "$can_symlink" ]; then
+  mkdir -p "$d-tmp/r2" "$d-tmp/elsewhere"; ln -s "$d-tmp/elsewhere" "$d-tmp/r2/idleflow-$(id -u)"
+  check "a user folder under the temp root that is a symlink is refused" '! IDLEFLOW_TMP_ROOT="$d-tmp/r2" bash "$RUN" exec TA -- true 2>/dev/null && [ -z "$(ls -A "$d-tmp/elsewhere")" ]'
+else
+  skip "a user folder under the temp root that is a symlink is refused" "ln -s makes no symlink here"
+fi
+if [ -z "$on_windows" ]; then
+  check "the user folder is private" '[ "$(ls -ld "$utmp" | cut -c1-10)" = drwx------ ]'
+else
+  skip "the user folder is private" "NTFS has no POSIX mode bits; the temp root is the user's own"
+fi
 # Python reuses bytecode while a source keeps its size and whole-second mtime (pinned here to a stamp);
 # -I ignores PYTHON* variables, as tox's environments do, so only clearing the bytecode helps
 py_ok=no; _idleflow_py_ok python3 && py_ok=yes
@@ -678,7 +707,8 @@ if [ "$py_ok" = yes ]; then
   bash "$RUN" exec TA -- true >/dev/null 2>&1
   check "exec leaves bytecode the repo tracks alone" '[ -f "$wa/pkg/__pycache__/kept.cpython-0.pyc" ] && [ -z "$(git -C "$wa" status --porcelain --untracked-files=no)" ]'
   git -C "$wa" reset -q --hard HEAD~1
-  if [ "$(id -u)" != 0 ]; then
+  # a folder made read-only still allows deletes on Windows, so there is nothing to refuse there
+  if [ "$(id -u)" != 0 ] && [ -z "$on_windows" ]; then
     mkdir -p "$wa/pkg/__pycache__"; : > "$wa/pkg/stuck.py"; : > "$wa/pkg/__pycache__/stuck.cpython-0.pyc"; chmod a-w "$wa/pkg/__pycache__"
     out="$(bash "$RUN" exec TA -- echo ran 2>&1)"
     check "bytecode exec cannot remove is named and the command still runs" 'echo "$out" | has "could not remove stale bytecode: .*stuck.cpython-0.pyc" && echo "$out" | has -x ran'
@@ -696,6 +726,29 @@ bash "$RUN" exec TA -- sh -c 'sleep 60 & echo "$!" > child.pid; wait' >/dev/null
 job="$(sed -n 's/^\[idleflow\] job \([0-9]*\) of TA started$/\1/p' "$scratch/job.err")"
 bash "$RUN" stop TA "$job" >/dev/null
 check "stop ends the job and the processes it started" '! kill -0 "$(cat "$wa/child.pid")" 2>/dev/null && ! bash "$RUN" wait TA "$job" >/dev/null 2>&1'
+# a native program the job starts (a test runner's worker; on Git Bash, python.exe or node.exe is not a
+# Git Bash process) is stopped with it: it writes a heartbeat, which must change before the stop and not
+# after. It is the runtime in use, so each runtime's leg proves its own program, and it ends itself after
+# 60 s, so one that survives a failed stop does not outlive the suite. A failure prints all four readings.
+rt_bin="$(idleflow_rt_name)"; rt_bin="${rt_bin%% (*}"
+case "${rt_bin//\\//}" in
+  node|*/node|*/node.exe|node.exe)
+    beat_args=("$rt_bin" -e 'const f=require("fs");setInterval(()=>f.writeFileSync("beat",String(Date.now())),100);setTimeout(()=>process.exit(),60000)') ;;
+  *) beat_args=("$rt_bin" -c 'import time
+t0 = time.time()
+while time.time() - t0 < 60:
+    open("beat", "w").write(str(time.time())); time.sleep(0.1)') ;;
+esac
+rm -f "$wa/beat"
+bash "$RUN" exec TA -- sh -c '"$@" & wait' sh "${beat_args[@]}" >/dev/null 2> "$scratch/job.err"
+job="$(sed -n 's/^\[idleflow\] job \([0-9]*\) of TA started$/\1/p' "$scratch/job.err")"
+# a read can land while the file is being rewritten, and then it is empty
+b1=""; for _ in $(seq 1 40); do b1="$(cat "$wa/beat" 2>/dev/null)"; [ -n "$b1" ] && break; sleep 0.25; done
+sleep 1; b2="$(cat "$wa/beat" 2>/dev/null)"
+bash "$RUN" stop TA "$job" >/dev/null
+sleep 0.5; b3="$(cat "$wa/beat" 2>/dev/null)"; sleep 1; b4="$(cat "$wa/beat" 2>/dev/null)"
+check "stop ends a native program the job started" '[ -n "$b1" ] && [ "$b1" != "$b2" ] && [ "$b3" = "$b4" ]'
+rm -f "$wa/beat"
 # A job that outlives its limit, for the checks below of what happens after exec returns. Its number
 # comes from exec's "started" line, printed before anything else. Those checks need exec back before
 # the deadline (75). How long exec takes to come back depends on the machine's load, not on the limit,
@@ -726,13 +779,15 @@ sh -c 'exit 0' & dead=$!; wait "$dead"
 took=""; mkdir ".idleflow/runs/active/tasks/TA/jobs/$job/stopping" && echo "$dead" > ".idleflow/runs/active/tasks/TA/jobs/$job/stopping/pid" && took=1
 for _ in $(seq 1 $(( lim + 5 ))); do bash "$RUN" wait TA "$job" >/dev/null 2> "$scratch/job.err"; rc=$?; [ "$rc" = 75 ] || break; done
 check "a stop lock left by a process that died is taken over" '[ "$took" = 1 ] && [ "$rc" = 124 ] && grep -q "passed its limit of $lim s" "$scratch/job.err" && ! kill -0 "$(cat "$wa/child3.pid")" 2>/dev/null'
+# Windows cannot move a folder while a running job holds its log open, so the two checks below,
+# of a run folder moved away under a running job, cannot happen there
+if [ -z "$on_windows" ]; then
 # the run folder moves away while the job's own watcher waits (finish, or new after a crash): the
 # watcher still stops the hung command at the limit, then ends instead of waiting on a folder that is gone
 # (the folder moves as soon as exec returns, so the watcher may not have started yet; on Git Bash
 # watch.pid is a Windows pid kill cannot test, so there only the stopped child is checked)
 limit_job 4 child4.pid
 watcher="$(cat ".idleflow/runs/active/tasks/TA/jobs/$job/watch.pid" 2>/dev/null)"
-case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) watcher="";; esac
 mv .idleflow/runs/active "$scratch/moved-active"
 for _ in $(seq 1 $(( (lim + 30) * 4 ))); do
   { [ -n "$watcher" ] && kill -0 "$watcher" 2>/dev/null; } || kill -0 "$(cat "$wa/child4.pid")" 2>/dev/null || break; sleep 0.25
@@ -760,6 +815,9 @@ sleep 1; mv .idleflow/runs/active "$scratch/moved-active"; wait "$w6"; rc=$?; t6
 # at the deadline it was given, not at the job's own 30 s one, which a watcher reading the folder would use
 check "a watcher given no group takes it from the folder, and still stops the job after the folder moves" '[ "$rc" = 1 ] && [ "$t6" -lt 15 ] && has -F "its processes were stopped at the limit" "$scratch/late6.err" && ! kill -0 "$(cat "$wa/child6.pid")" 2>/dev/null'
 mv "$scratch/moved-active" .idleflow/runs/active
+else
+  skip "a run folder moved away under a running job" "Windows cannot move a folder a running process holds a file of"
+fi
 check "a job within its --limit passes its exit code" 'bash "$RUN" exec TA --limit 30 -- sh -c "exit 3" 2>/dev/null; [ $? = 3 ]'
 # The whole limit is proved by the deadline the job keeps, not by timing a command against it: the
 # start is recorded in whole seconds, so the deadline must be one second past start + limit. A timed
@@ -779,6 +837,8 @@ check "a command that exits 75 itself is told apart from a job still running" 'o
 check "exec refuses a --limit that is not whole seconds" '! bash "$RUN" exec TA --limit 0 -- true 2>/dev/null && ! bash "$RUN" exec TA --limit 1.5 -- true 2>/dev/null && ! bash "$RUN" exec TA --limit -- true 2>/dev/null'
 bash "$RUN" exec TA -- sh -c 'sleep 30 >/dev/null 2>&1 &' >/dev/null 2> "$scratch/job.err"; rc=$?
 job="$(sed -n 's/^\[idleflow\] job \([0-9]*\) of TA started$/\1/p' "$scratch/job.err")"
+# a slow start (node on Windows) can outlast EXEC_WAIT_SECONDS=1, so a job still starting is waited for again
+for _ in 1 2 3 4 5; do [ "$rc" = 75 ] || break; bash "$RUN" wait TA "$job" >/dev/null 2> "$scratch/job.err"; rc=$?; done
 check "a job that leaves a process behind ends with its code and says so" '[ "$rc" = 0 ] && grep -q "job $job of TA ended, but processes it started still run" "$scratch/job.err" && bash "$RUN" stop TA "$job" >/dev/null && [ -f .idleflow/runs/active/tasks/TA/jobs/$job/ended ]'
 sleep 300 >/dev/null 2>&1 & other=$!
 echo "$other" > ".idleflow/runs/active/tasks/TA/jobs/$job/pid"
@@ -826,13 +886,13 @@ check "finish gives back the run's port claims and no other" '! grep -qs "	$iso_
 echo "--- a run started in a linked checkout"
 hw="$d-human"; git worktree add -q -b human-work "$hw" 2>/dev/null
 ( cd "$hw" && bash "$RUN" new linked >/dev/null 2>&1 )
-check "the run lives in the linked checkout it was started from" '[ -f "$hw/.idleflow/runs/active/run.json" ] && [ ! -e .idleflow/runs/active ] && [ "$(cd "$hw" && bash "$RUN" path lessons)" = "$(cd "$hw" && pwd)/.idleflow/lessons.md" ]'
+check "the run lives in the linked checkout it was started from" '[ -f "$hw/.idleflow/runs/active/run.json" ] && [ ! -e .idleflow/runs/active ] && [ "$(cd "$hw" && bash "$RUN" path lessons)" = "$(top "$hw")/.idleflow/lessons.md" ]'
 ( cd "$hw" && bash "$RUN" wt add TH > "$scratch/hwt" 2>/dev/null )
-check "its task worktree finds that checkout, not the main one" '[ "$(cd "$(cat "$scratch/hwt")" && bash "$RUN" exec TH -- sh -c "echo \$MAIN" 2>/dev/null)" = "$(cd "$hw" && pwd)" ]'
+check "its task worktree finds that checkout, not the main one" '[ "$(cd "$(cat "$scratch/hwt")" && bash "$RUN" exec TH -- sh -c "echo \$MAIN" 2>/dev/null)" = "$(top "$hw")" ]'
 ( cd "$(cat "$scratch/hwt")" && git checkout -q --detach )
-check "a task worktree on a detached HEAD still finds it" '[ "$(cd "$(cat "$scratch/hwt")" && bash "$RUN" exec TH -- sh -c "echo \$MAIN" 2>/dev/null)" = "$(cd "$hw" && pwd)" ]'
+check "a task worktree on a detached HEAD still finds it" '[ "$(cd "$(cat "$scratch/hwt")" && bash "$RUN" exec TH -- sh -c "echo \$MAIN" 2>/dev/null)" = "$(top "$hw")" ]'
 git worktree add -q -b "idleflow/no-such-run/TX" "$d-stray" 2>/dev/null
-check "a branch named like a task's but of no active run is its own checkout" '[ "$(cd "$d-stray" && bash "$RUN" path lessons)" = "$(cd "$d-stray" && pwd)/.idleflow/lessons.md" ]'
+check "a branch named like a task's but of no active run is its own checkout" '[ "$(cd "$d-stray" && bash "$RUN" path lessons)" = "$(top "$d-stray")/.idleflow/lessons.md" ]'
 ( cd "$hw" && bash "$RUN" wt rm TH && bash "$RUN" finish "done" >/dev/null )
 check "wt rm forgets the task worktree" '! git config --local --get-regexp "^idleflow\\.worktree\\..*/TH\\.checkout$" >/dev/null 2>&1'
 git worktree remove --force "$d-stray"; git worktree remove --force "$hw"; git branch -q -D human-work "idleflow/no-such-run/TX"
@@ -1081,22 +1141,38 @@ bash "$RUN" wt rm T3; rm -f .idleflow/idleflow.conf; [ ! -f "$scratch/conf.bak" 
 bash "$RUN" new leftover >/dev/null 2>&1; jl=".idleflow/runs/active/tasks/TL/jobs/1"; mkdir -p "$jl"
 sleep 60 & stranger=$!; echo "$stranger" > "$jl/pid"; touch -t "$(date -d @$(( $(date +%s) - 3600 )) +%Y%m%d%H%M 2>/dev/null || date -r $(( $(date +%s) - 3600 )) +%Y%m%d%H%M)" "$jl/pid"
 lrid="$(bash "$RUN" get id)"; bash "$RUN" new after-leftover >/dev/null 2>&1
-check "parking a leftover run never signals a process that only reuses its job's pid" 'kill -0 "$stranger" 2>/dev/null && [ -f ".idleflow/runs/$lrid/tasks/TL/jobs/1/ended" ]'
+if [ -z "$on_windows" ]; then check "parking a leftover run never signals a process that only reuses its job's pid" 'kill -0 "$stranger" 2>/dev/null && [ -f ".idleflow/runs/$lrid/tasks/TL/jobs/1/ended" ]'
+else skip "parking a leftover run never signals a process that only reuses its job's pid" "Git Bash's ps has no -o etime, so a pid that names a later process cannot be told from the job's"; fi
 kill "$stranger" 2>/dev/null; wait "$stranger" 2>/dev/null; bash "$RUN" finish "done" >/dev/null
 # new and resume park a run only once nothing of it still runs, since parking ends its jobs: another
 # session may still be building it. --park parks it anyway, for a run the human knows is over
 bash "$RUN" new busy >/dev/null 2>&1; brid="$(bash "$RUN" get id)"; jb=".idleflow/runs/active/tasks/TB/jobs/1"; mkdir -p "$jb"
-idleflow_rt detach "$PWD" /dev/null "$jb/pid" "sleep 60"; live="$(cat "$jb/pid")"
+busy_job() { # busy_job <job dir>: a live stand-in job; on Git Bash the runtime records a native pid kill -0 cannot test
+  if [ -n "$on_windows" ]; then sleep 60 & echo "$!" > "$1/pid"; live=$!
+  else idleflow_rt detach "$PWD" /dev/null "$1/pid" "sleep 60"; live="$(cat "$1/pid")"; fi
+}
+busy_job "$jb"
 nruns="$(find .idleflow/runs -mindepth 1 -maxdepth 1 | wc -l)"; out="$(bash "$RUN" new after-busy 2>&1)"; rc=$?
 check "new refuses while a job of the run it would park still runs, and moves nothing" '[ "$rc" = 1 ] && [ "$(find .idleflow/runs -mindepth 1 -maxdepth 1 | wc -l)" = "$nruns" ] && [ "$(bash "$RUN" get id)" = "$brid" ] && has -F "new: the active run, which a new run would park, may still be built by another session: job 1 of TB still runs" <<< "$out" && has -F "new --park <slug>" <<< "$out" && kill -0 "$live" 2>/dev/null'
-nid="$(bash "$RUN" new --park after-busy 2>/dev/null)"
-check "new --park parks it anyway and ends its job" '[ -n "$nid" ] && [ "$(bash "$RUN" get id)" = "$nid" ] && [ "$(idleflow_rt get ".idleflow/runs/$brid/run.json" status)" = abandoned ] && ! kill -0 "$live" 2>/dev/null'
+nid="$(bash "$RUN" new --park after-busy 2>"$scratch/park.err")"
+if [ -z "$on_windows" ]; then
+  check "new --park parks it anyway and ends its job" '[ -n "$nid" ] && [ "$(bash "$RUN" get id)" = "$nid" ] && [ "$(idleflow_rt get ".idleflow/runs/$brid/run.json" status)" = abandoned ] && ! kill -0 "$live" 2>/dev/null'
+else
+  # Git Bash's ps cannot say when a pid started, so parking leaves a job it cannot judge alone
+  check "new --park parks it anyway, and leaves a job it cannot judge running and says so" '[ -n "$nid" ] && [ "$(bash "$RUN" get id)" = "$nid" ] && [ "$(idleflow_rt get ".idleflow/runs/$brid/run.json" status)" = abandoned ] && kill -0 "$live" 2>/dev/null && has -F "nothing could tell, so it was left as it is" "$scratch/park.err"'
+  kill "$live" 2>/dev/null; wait "$live" 2>/dev/null
+fi
 printf '## Tasks\n' > ".idleflow/runs/$brid/plan.md"; jb=".idleflow/runs/active/tasks/TB/jobs/1"; mkdir -p "$jb"
-idleflow_rt detach "$PWD" /dev/null "$jb/pid" "sleep 60"; live="$(cat "$jb/pid")"
+busy_job "$jb"
 nruns="$(find .idleflow/runs -mindepth 1 -maxdepth 1 | wc -l)"; out="$(bash "$RUN" resume "$brid" 2>&1)"; rc=$?
 check "resume refuses while a job of the run it would park still runs, and moves nothing" '[ "$rc" = 1 ] && [ "$(find .idleflow/runs -mindepth 1 -maxdepth 1 | wc -l)" = "$nruns" ] && [ "$(bash "$RUN" get id)" = "$nid" ] && [ -d ".idleflow/runs/$brid" ] && has -F "resume: the active run, which resuming $brid would park, may still be built by another session: job 1 of TB still runs" <<< "$out" && has -F "resume --park $brid" <<< "$out" && kill -0 "$live" 2>/dev/null'
-bash "$RUN" resume --park "$brid" >/dev/null 2>&1; rc=$?
-check "resume --park parks it anyway and resumes" '[ "$rc" = 0 ] && [ "$(bash "$RUN" get id)" = "$brid" ] && [ "$(idleflow_rt get ".idleflow/runs/$nid/run.json" status)" = abandoned ] && ! kill -0 "$live" 2>/dev/null'
+bash "$RUN" resume --park "$brid" >/dev/null 2>"$scratch/park.err"; rc=$?
+if [ -z "$on_windows" ]; then
+  check "resume --park parks it anyway and resumes" '[ "$rc" = 0 ] && [ "$(bash "$RUN" get id)" = "$brid" ] && [ "$(idleflow_rt get ".idleflow/runs/$nid/run.json" status)" = abandoned ] && ! kill -0 "$live" 2>/dev/null'
+else
+  check "resume --park parks it anyway and resumes, and leaves a job it cannot judge running and says so" '[ "$rc" = 0 ] && [ "$(bash "$RUN" get id)" = "$brid" ] && [ "$(idleflow_rt get ".idleflow/runs/$nid/run.json" status)" = abandoned ] && kill -0 "$live" 2>/dev/null && has -F "nothing could tell, so it was left as it is" "$scratch/park.err"'
+  kill "$live" 2>/dev/null; wait "$live" 2>/dev/null
+fi
 bash "$RUN" finish "done" >/dev/null 2>&1
 # a job's shell may start well after its started stamp (a large repo's bytecode sweep runs between):
 # finish still stops it, judged by when its pid file was written
@@ -1130,7 +1206,8 @@ printf '## Tasks\n' > ".idleflow/runs/$orid/plan.md"
 bash "$RUN" new leftover2 >/dev/null 2>&1; lrid2="$(bash "$RUN" get id)"; jl=".idleflow/runs/active/tasks/TL/jobs/1"; mkdir -p "$jl"
 sleep 60 & stranger=$!; echo "$stranger" > "$jl/pid"; touch -t "$(date -d @$(( $(date +%s) - 3600 )) +%Y%m%d%H%M 2>/dev/null || date -r $(( $(date +%s) - 3600 )) +%Y%m%d%H%M)" "$jl/pid"
 bash "$RUN" resume "$orid" >/dev/null 2> "$scratch/resume.err"; rc=$?
-check "a resume parks a leftover run whose job pid names a later process, and never signals it" '[ "$rc" = 0 ] && ! has -F "may still be built" "$scratch/resume.err" && kill -0 "$stranger" 2>/dev/null && [ "$(idleflow_rt get ".idleflow/runs/$lrid2/run.json" status)" = abandoned ]'
+if [ -z "$on_windows" ]; then check "a resume parks a leftover run whose job pid names a later process, and never signals it" '[ "$rc" = 0 ] && ! has -F "may still be built" "$scratch/resume.err" && kill -0 "$stranger" 2>/dev/null && [ "$(idleflow_rt get ".idleflow/runs/$lrid2/run.json" status)" = abandoned ]'
+else skip "a resume parks a leftover run whose job pid names a later process, and never signals it" "Git Bash's ps has no -o etime, so a pid that names a later process cannot be told from the job's"; fi
 kill "$stranger" 2>/dev/null; wait "$stranger" 2>/dev/null; [ ! -f .idleflow/runs/active/run.json ] || bash "$RUN" finish "done" >/dev/null 2>&1
 # a preview pid that now leads an unrelated group of its own (a shell, a daemon) is never signalled
 bash "$RUN" new leftover3 >/dev/null 2>&1; mkdir -p .idleflow/runs/active/tasks/TP
@@ -1138,7 +1215,8 @@ idleflow_rt detach "$PWD" /dev/null "$scratch/leader.pid" "sleep 60"; leader="$(
 echo "$leader" > .idleflow/runs/active/tasks/TP/preview.pid
 touch -t "$(date -d @$(( $(date +%s) - 3600 )) +%Y%m%d%H%M 2>/dev/null || date -r $(( $(date +%s) - 3600 )) +%Y%m%d%H%M)" .idleflow/runs/active/tasks/TP/preview.pid
 bash "$RUN" finish "done" >/dev/null 2>&1
-check "finish never signals a group a stale preview pid now leads" 'kill -0 "$leader" 2>/dev/null'
+if [ -z "$on_windows" ]; then check "finish never signals a group a stale preview pid now leads" 'kill -0 "$leader" 2>/dev/null'
+else skip "finish never signals a group a stale preview pid now leads" "Git Bash's ps has no -o etime, so a pid that names a later process cannot be told from the job's"; fi
 kill -- "-$leader" 2>/dev/null || kill "$leader" 2>/dev/null
 # stop, preview stop and wait never take a pid that now names a later process for the job or the
 # preview: nothing of either is left, so they say so, and the job is marked ended
@@ -1149,11 +1227,14 @@ for f in "$js/1/pid" "$js/2/pid" "$js/3/pid" .idleflow/runs/active/tasks/TS/prev
   echo "$stranger" > "$f"; touch -t "$(date -d @$(( $(date +%s) - 3600 )) +%Y%m%d%H%M 2>/dev/null || date -r $(( $(date +%s) - 3600 )) +%Y%m%d%H%M)" "$f"
 done
 out="$(bash "$RUN" stop TS 1 2>&1)"; rc=$?
-check "stop never signals a job pid that names a later process, and marks the job ended" '[ "$rc" = 0 ] && has -F "job 1 of TS: had already ended; nothing was signalled" <<< "$out" && kill -0 "$stranger" 2>/dev/null && [ -f "$js/1/ended" ] && [ "$(cat "$js/1/status")" = 1 ]'
+if [ -z "$on_windows" ]; then check "stop never signals a job pid that names a later process, and marks the job ended" '[ "$rc" = 0 ] && has -F "job 1 of TS: had already ended; nothing was signalled" <<< "$out" && kill -0 "$stranger" 2>/dev/null && [ -f "$js/1/ended" ] && [ "$(cat "$js/1/status")" = 1 ]'
+else skip "stop never signals a job pid that names a later process, and marks the job ended" "Git Bash's ps has no -o etime, so a pid that names a later process cannot be told from the job's"; fi
 out="$(bash "$RUN" wait TS 2 2>&1)"; rc=$?
-check "a wait on a job whose pid names a later process reports it ended, never still running" '[ "$rc" = 1 ] && has -F "job 2 of TS ended without an exit code" <<< "$out" && kill -0 "$stranger" 2>/dev/null'
+if [ -z "$on_windows" ]; then check "a wait on a job whose pid names a later process reports it ended, never still running" '[ "$rc" = 1 ] && has -F "job 2 of TS ended without an exit code" <<< "$out" && kill -0 "$stranger" 2>/dev/null'
+else skip "a wait on a job whose pid names a later process reports it ended, never still running" "Git Bash's ps has no -o etime, so a pid that names a later process cannot be told from the job's"; fi
 out="$(bash "$RUN" preview TS stop 2>&1)"; rc=$?
-check "preview stop never signals a pid that names a later process" '[ "$rc" = 0 ] && has -F "preview TS: was not running; nothing was signalled" <<< "$out" && kill -0 "$stranger" 2>/dev/null && [ ! -f .idleflow/runs/active/tasks/TS/preview.pid ]'
+if [ -z "$on_windows" ]; then check "preview stop never signals a pid that names a later process" '[ "$rc" = 0 ] && has -F "preview TS: was not running; nothing was signalled" <<< "$out" && kill -0 "$stranger" 2>/dev/null && [ ! -f .idleflow/runs/active/tasks/TS/preview.pid ]'
+else skip "preview stop never signals a pid that names a later process" "Git Bash's ps has no -o etime, so a pid that names a later process cannot be told from the job's"; fi
 # a stop by hand that finds the group gone while a limit stop holds the job's lock leaves the code to
 # that stop; a limit stop that finds the group gone with no code writes the 1 itself
 sh -c 'exit 0' & dead=$!; wait "$dead"
@@ -1164,7 +1245,8 @@ echo "$dead" > "$js/5/pid"; echo $(( $(date +%s) - 5 )) > "$js/5/deadline"
 bash "$RUN" wait TS 5 > /dev/null 2> "$scratch/w5.err"; rc=$?
 check "a limit stop of a job whose group is already gone writes its 1" '[ "$rc" = 1 ] && has -F "job 5 of TS ended with exit code 1" "$scratch/w5.err" && [ "$(cat "$js/5/status")" = 1 ] && [ -f "$js/5/stop-done" ] && [ ! -f "$js/5/limit-stopped" ]'
 bash "$RUN" finish "done" >/dev/null 2>&1
-check "finish never signals a group a stale job pid now leads, and marks the job ended" 'kill -0 "$stranger" 2>/dev/null && [ -f ".idleflow/runs/$sid/tasks/TS/jobs/3/ended" ]'
+if [ -z "$on_windows" ]; then check "finish never signals a group a stale job pid now leads, and marks the job ended" 'kill -0 "$stranger" 2>/dev/null && [ -f ".idleflow/runs/$sid/tasks/TS/jobs/3/ended" ]'
+else skip "finish never signals a group a stale job pid now leads, and marks the job ended" "Git Bash's ps has no -o etime, so a pid that names a later process cannot be told from the job's"; fi
 kill -- "-$stranger" 2>/dev/null || kill "$stranger" 2>/dev/null
 bash "$RUN" new previewmain >/dev/null 2>&1
 # another repo's live run holds PORT_BASE, so preview main takes the next port, under the owner main
@@ -1173,7 +1255,10 @@ printf '%s\tr1\tT8\n' "$o" > "$utmp/ports/4400"
 out="$(bash "$RUN" preview main start 2>/dev/null)"; pid="$(cat .idleflow/runs/active/tasks/main/preview.pid 2>/dev/null)"; sleep 1
 check "preview main claims a free port of its own" '[ "$(cut -f2,3 "$utmp/ports/4401" 2>/dev/null)" = "$(bash "$RUN" get id)	main" ] && [ "$(cut -f3 "$utmp/ports/4400")" = T8 ]'
 check "a second preview main start reports the server already serving and claims nothing" 'again="$(bash "$RUN" preview main start 2>/dev/null)" && echo "$again" | has "^preview main: serving at http://localhost:4173 (already running" && [ "$(cat .idleflow/runs/active/tasks/main/preview.pid)" = "$pid" ] && [ "$(grep -ls "	main$" "$utmp"/ports/* | wc -l | tr -d " ")" = 1 ]'
-check "under preview_in: main the main checkout is served" 'echo "$out" | has "^preview main: serving at http://localhost:4173" && kill -0 "$pid" 2>/dev/null && [ "$(cat "$utmp"/*/main/where 2>/dev/null)" = "$(pwd -P)" ]'
+check "under preview_in: main the preview of main starts and its process runs" 'echo "$out" | has "^preview main: serving at http://localhost:4173" && kill -0 "$pid" 2>/dev/null'
+# the server's own pwd may be in either form of one path on Git Bash (/c/... or /tmp/...), so both are resolved
+where="$(cat "$utmp"/*/main/where 2>/dev/null)"
+check "under preview_in: main the main checkout is served" '[ -n "$where" ] && [ "$(cd "$where" && pwd -P)" = "$(pwd -P)" ]'
 bash "$RUN" preview main stop >/dev/null; sleep 1
 check "preview main stop ends it" '! kill -0 "$pid" 2>/dev/null'
 check "preview main stop gives its port back and leaves other claims" '[ ! -e "$utmp/ports/4401" ] && [ "$(cut -f3 "$utmp/ports/4400")" = T8 ]'
@@ -1584,8 +1669,12 @@ check "detect suggests plain subjects for a plain history" 'echo "$det" | has "^
 check "detect suggests generated blocks for a hand-kept index" 'echo "$det" | has "^suggest generated_docs: index.md —"'
 ( cd "$f" && git checkout -q -- index.md 2>/dev/null; printf '# Index\n<!-- idleflow:generated files -->\n<!-- idleflow:end -->\n' > index.md && echo x > é.txt && git add -A && git commit -qm "é" && bash "$RUN" docs >/dev/null )
 check "the files block names non-ASCII files as they are" 'grep -qxF -- "- \`é.txt\` — (describe)" "$f/index.md"'
-( cd "$f" && printf '# Index\n<!-- idleflow:generated files -->\n<!-- idleflow:end -->\n' > index.md && echo x > 'q"uote.txt' && git add -A && git commit -qm quote && bash "$RUN" docs >/dev/null )
-check "the files block names any file as it is" 'grep -qxF -- "- \`q\"uote.txt\` — (describe)" "$f/index.md"'
+if [ -z "$on_windows" ]; then
+  ( cd "$f" && printf '# Index\n<!-- idleflow:generated files -->\n<!-- idleflow:end -->\n' > index.md && echo x > 'q"uote.txt' && git add -A && git commit -qm quote && bash "$RUN" docs >/dev/null )
+  check "the files block names any file as it is" 'grep -qxF -- "- \`q\"uote.txt\` — (describe)" "$f/index.md"'
+else
+  skip "the files block names a file with a double quote" "NTFS allows no such name"
+fi
 rm -rf "$f"
 
 echo "--- a first run fills Commands and can propose the gate"
@@ -1603,7 +1692,9 @@ f="$(mktemp -d)"; ( cd "$f" && git init -q && mkdir -p .idleflow .venv && printf
 check "detect suggests a worktree venv when main has one" '(cd "$f" && bash "$RUN" detect) | has "^suggest worktree_setup: py=.*-m venv .venv.*\.venv/Scripts/python\.exe.* -m pip install -q -e \. — the main checkout has .venv/"'
 # a Windows-style python: no python3 on PATH, and its venv keeps the interpreter in Scripts/
 cmd="$(cd "$f" && bash "$RUN" detect | sed -n 's/^suggest worktree_setup: \(.*\) — the main.*/\1/p')"
-t="$(mktemp -d)"; mkdir -p "$t/bin" "$t/w"; ln -s "$(command -v mkdir)" "$t/bin/mkdir"; ln -s "$(command -v chmod)" "$t/bin/chmod"
+# mkdir and chmod as wrappers, not links: a copied Git Bash program cannot find its DLLs
+t="$(mktemp -d)"; mkdir -p "$t/bin" "$t/w"
+for tool in mkdir chmod; do printf '#!/bin/sh\nexec "%s" "$@"\n' "$(command -v "$tool")" > "$t/bin/$tool"; chmod +x "$t/bin/$tool"; done
 cat > "$t/bin/python" <<'PY'
 #!/bin/sh
 if [ "$1" = -m ] && [ "$2" = venv ]; then
