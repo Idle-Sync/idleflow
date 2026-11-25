@@ -57,6 +57,13 @@ For work an end user sees (the classifier reports `ui: true`, or `STEP_DESIGN=on
   the practice the published guidance agrees on (`procedures/security-review.md`): each finding traces where
   outside data enters and where it is used, is rated with the OWASP Risk Rating and carries its CWE id, and
   only what the diff introduced counts.
+- **`idleflow:review-ux`** uses the app the way its end users would, journey by journey, at phone and desktop
+  widths, asking at each step whether an end user would know what to do, find it, connect it with their goal and
+  see that it worked (`procedures/ux-review.md`). Each place an end user gets stuck, confused or misled is a
+  finding with a screenshot, the step, the cause and the smallest change that removes it. It runs after the
+  design reviewer on `ui` tasks when the repo has an approved preview (`STEP_UX`), after the merge when the app
+  runs only from the main checkout, and on its own as `/idleflow:ux`, which can fix the findings through a run
+  and walk the journeys again.
 
 ## What it adds over plain Claude Code
 
@@ -85,6 +92,7 @@ For work an end user sees (the classifier reports `ui: true`, or `STEP_DESIGN=on
 | Design | designer before planning and a design reviewer on `ui` tasks; a lasting design system per repo | `STEP_DESIGN`, `STEP_DESIGN_OPTIONS`, `agents/designer.md`, `agents/review-design.md`, `procedures/design.md` |
 | API review | an API reviewer on `api` tasks: the API's own conventions first, compatibility only once it has callers | plan `api:`, `agents/review-api.md`, `procedures/api-design.md` |
 | Security review | a security reviewer on `security` tasks: the repo's own controls first, a traced source and use for every finding, OWASP risk rating with CWE ids | plan `security:`, `agents/review-security.md`, `procedures/security-review.md` |
+| UX review | a reviewer walks the app's journeys as an end user on `ui` tasks with a preview, and on its own; each place an end user gets stuck is a finding with its screenshot | `STEP_UX`, `agents/review-ux.md`, `procedures/ux-review.md`, `commands/ux.md` |
 | Placeholders | code that cannot do its job yet fails loudly; a plausible default is a blocking finding | implementer, correctness reviewer |
 | Checkable findings | each review finding says whether a deterministic check would have caught it; repeats become a lesson | reviewers, `agents/retro.md` |
 | Known base failures | a failure already on the commit a task started from is shown there with `run.sh exec --base`, never argued; the gate's baseline and every task's proven ones go into the run's `known-failures.md`, which later implementers and the correctness reviewer get, with or without a gate | step 5 of `commands/feature.md`, `agents/implementer.md` |
@@ -182,7 +190,7 @@ suggestions until they are answered. A repo already on idleflow changes nothing 
 
 Every number in `config/idleflow.conf` is a default. `/idleflow:customize` overrides it for one repo in
 `.idleflow/idleflow.conf`, turns a step on or off (`STEP_DEBATE`, `STEP_STACK`, `STEP_LIBRARIES`,
-`STEP_TOOLING`, `STEP_DOC_KEEPER`, `STEP_MUTATION`, `STEP_DESIGN`, `STEP_DESIGN_OPTIONS`), sets an agent's model (`MODEL_<AGENT>`), adds instructions to an
+`STEP_TOOLING`, `STEP_DOC_KEEPER`, `STEP_MUTATION`, `STEP_DESIGN`, `STEP_DESIGN_OPTIONS`, `STEP_UX`), sets an agent's model (`MODEL_<AGENT>`), adds instructions to an
 agent (`.idleflow/agents/<agent>.md`), or replaces an agent's prompt (`.claude/agents/idleflow-<agent>.md`,
 with a base copy so `/idleflow:doctor` can merge later plugin updates into it). A replaced agent keeps the
 built-in output contract. Everything is committed, so the team shares it. The project file is parsed, never
@@ -203,6 +211,7 @@ commands/feature.md             the orchestrator — the run procedure lives her
 procedures/design.md            idleflow's design handbook; design-data.md beside it holds the reference values
 procedures/api-design.md        the API reviewer's principles; the cited research is docs/research/api-dx.md
 procedures/security-review.md   the security reviewer's rules; the cited research is docs/research/security-review.md
+procedures/ux-review.md         how the UX reviewer walks journeys: the four questions per step, the paths beyond the expected one, severities
 procedures/talking.md           how every command talks to the human: plain language, language, tone and explanation settings
 procedures/repo-setup.md        setup steps R1–R6 shared by feature and init (mode, docs, stack, libraries, tooling, snapshot)
 commands/fix.md                 same, bug-biased
@@ -215,6 +224,7 @@ commands/setup.md               set idleflow up in a project that already has co
 commands/progress.md            where the project stands: milestones ticked and open, who landed what, what is next, what waits on a human
 commands/customize.md           per-project settings, step toggles, agent models, extra instructions, agent replacement; reports each change
 commands/doctor.md              check the repo's idleflow setup and for a newer release; offers the safe fixes
+commands/ux.md                  use the app as its end users would, report where they get stuck, fix on a yes and walk again
 skills/vocab/SKILL.md           one term per concept: check, fix, backfill and add a term; /idleflow:vocab, used inside and outside a run
 agents/                         one file per role; frontmatter sets the model
 hooks/hooks.json                PreToolUse → ownership-guard
