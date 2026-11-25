@@ -2908,6 +2908,15 @@ Task: $tid")
       fi
     fi
 
+    # docs that predate the vocabulary file, or a newly banned word, are reported until the backfill runs
+    if [ -f "$REPO/$(vocabulary_rel)" ]; then
+      vrc=0; vout="$(cd "$REPO" && bash "$0" vocab --all 2>&1)" || vrc=$?
+      if [ "$vrc" = 1 ]; then
+        vlines="$(printf '%s\n' "$vout" | cut -d: -f1,2 | sort -u | grep -c . || true)"
+        check_line warn vocab "$vlines line(s) in the repo's Markdown use a spelling $(vocabulary_rel) bans" "/idleflow:vocab backfill"
+      elif [ "$vrc" != 0 ]; then check_line warn vocab "$(vocabulary_rel) could not be checked: $(printf '%s\n' "$vout" | sed -n 1p)" "fix $(vocabulary_rel)"; fi
+    fi
+
     # only a repo with a UI keeps a design system file, so a backend or tool repo gets no line
     ui_file="$(ui_evidence)"
     if [ -n "$ui_file" ]; then

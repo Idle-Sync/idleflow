@@ -18,7 +18,7 @@ RUN="${CLAUDE_PLUGIN_ROOT}/scripts/run.sh"     # keep the quotes: the path may c
 4. Ask once with AskUserQuestion, `multiSelect: true`, one option per `warn` or `fail` line that has a fix (label = the check name; description = the detail and the fix). Leave out an `update` fix while `.idleflow/runs/active/` exists: a plugin update mid-run mixes versions. Selected means fix it.
 5. Apply the selected fixes in this order, and show each command's output:
    - `run.sh <args>` → `bash "$RUN" <args>`. `migrate` runs before every other fix.
-   - `/idleflow:<command>` → read `${CLAUDE_PLUGIN_ROOT}/commands/<command>.md` and follow it.
+   - `/idleflow:<command>` → read `${CLAUDE_PLUGIN_ROOT}/commands/<command>.md` and follow it, or `${CLAUDE_PLUGIN_ROOT}/skills/<command>/SKILL.md` when the name is a skill; the word after the name picks its step.
    - an update → run the quoted commands exactly, then tell the human the new version takes effect after a Claude Code restart, not before.
    - the `generated` fixes → `bash "$RUN" docs`, then replace each `(describe)` with one line read from the code; commit the regenerated files alone: `docs: regenerate generated sections`.
    - the `milestones` fix → `procedures/repo-setup.md` R2 step 5 (it shows the diff and asks before committing).

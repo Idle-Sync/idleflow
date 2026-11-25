@@ -214,6 +214,7 @@ commands/setup.md               set idleflow up in a project that already has co
 commands/progress.md            where the project stands: milestones ticked and open, who landed what, what is next, what waits on a human
 commands/customize.md           per-project settings, step toggles, agent models, extra instructions, agent replacement; reports each change
 commands/doctor.md              check the repo's idleflow setup and for a newer release; offers the safe fixes
+skills/vocab/SKILL.md           one term per concept: check, fix, backfill and add a term; /idleflow:vocab, used inside and outside a run
 agents/                         one file per role; frontmatter sets the model
 hooks/hooks.json                PreToolUse → ownership-guard
 scripts/run.sh                  run lifecycle: new / wt / own / get / set / inc / report / keep / gate / merge / snapshot / finish / loc /
