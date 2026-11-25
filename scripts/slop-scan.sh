@@ -117,10 +117,13 @@ function props(seg) {
   if (seg ~ /letter-spacing:[ ]*[0-9.]*[1-9]/) ls = 1
   if (seg ~ /border-(left|right|top):[ ]*([2-9]|[1-9][0-9])px/ || seg ~ /border-(left|right|top)-width:[ ]*([2-9]|[1-9][0-9])px/) side = 1
   if (seg ~ /border-radius:/) rad = 1
+  if (seg ~ /(linear|radial|conic)-gradient\(/ && grad == "") grad = where
+  if (seg ~ /background-clip:[ ]*text/) clip = 1
 }
 function endrule() {
   if (up && ls) hit("eyebrow-label", rstart, "uppercase with letter-spacing in one rule")
   if (side && rad) hit("side-stripe", rstart, "a thick one-side border on a rounded box in one rule")
+  if (grad != "" && !clip) hit("gradient-surface", grad, "a gradient on a surface in one rule")
   inrule = 0
 }
 FNR == 1 {
@@ -141,6 +144,8 @@ FNR == 1 {
   if (line ~ /(bg|text|from|via|to|border|ring|shadow|fill|stroke)-(indigo|violet|purple)-[0-9]/) hit("violet-accent", where, line)
   if (!comment && oklch_violet(cl)) hit("violet-accent", where, line)
   if (line ~ /bg-clip-text|background-clip:[ ]*text|-webkit-background-clip:[ ]*text/) hit("gradient-text", where, line)
+  # a CSS gradient is judged per rule (the clip that makes it gradient text may sit on another line)
+  if (!comment && !css && line !~ /bg-clip-text|background-clip:[ ]*text/ && line ~ /(linear|radial|conic)-gradient\(|bg-gradient-to-|bg-linear-|bg-radial|bg-conic/) hit("gradient-surface", where, line)
   if (line ~ /box-shadow:[ ]*0(px)?[ ]+0(px)?[ ]+[0-9][0-9]+px/ || line ~ /shadow-[a-z]+-[0-9]+\/[0-9]+/ || line ~ /drop-shadow-\[0_0_/) hit("neon-glow", where, line)
   if (line ~ /blur-(2xl|3xl)/ || line ~ /filter:[ ]*blur\(([4-9][0-9]|[1-9][0-9][0-9])px\)/) hit("blur-orbs", where, line)
   if (line ~ /backdrop-blur|backdrop-filter:[ ]*blur/) hit("glass-cards", where, line)
@@ -182,7 +187,7 @@ FNR == 1 {
     while (rest != "") {
       o = index(rest, "{"); c = index(rest, "}")
       if (!o && !c) { if (inrule) props(rest); break }
-      if (o && (!c || o < c)) { if (inrule) props(substr(rest, 1, o - 1)); inrule = 1; rstart = where; up = 0; ls = 0; side = 0; rad = 0; rest = substr(rest, o + 1) }
+      if (o && (!c || o < c)) { if (inrule) props(substr(rest, 1, o - 1)); inrule = 1; rstart = where; up = 0; ls = 0; side = 0; rad = 0; grad = ""; clip = 0; rest = substr(rest, o + 1) }
       else { if (inrule) { props(substr(rest, 1, c - 1)); endrule() }; rest = substr(rest, c + 1) }
     }
   }

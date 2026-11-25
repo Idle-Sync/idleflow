@@ -74,8 +74,11 @@ commit() { git -c user.name=t -c user.email=t@t commit -q "$@"; }
 
 echo "runtime: $(idleflow_rt_name)"
 d="$(mktemp -d)"; d="$(cd "$d" && pwd)"
+# checks run through eval in this shell, so one that assigns `d` would turn the cleanup on whatever it
+# names; the cleanup keeps its own copy, which nothing can change
+readonly SUITE_ROOT="$d"
 can_symlink=""; ln -s "$d" "$d.probe" 2>/dev/null && [ -L "$d.probe" ] && can_symlink=1; rm -f "$d.probe"
-cleanup() { cd / ; rm -rf "$d" "$d-tmp" "${d}__wt" "$d.link" "${d}__wt.link" "$d-mig" "$d-human" "${d}-human__wt" "$d-stray" "$d-pin" 2>/dev/null || true; }
+cleanup() { local r="$SUITE_ROOT"; cd / ; rm -rf "$r" "$r-tmp" "${r}__wt" "$r.link" "${r}__wt.link" "$r-mig" "$r-human" "${r}-human__wt" "$r-stray" "$r-pin" 2>/dev/null || true; }
 trap cleanup EXIT
 # the suite's own root for task temp folders and port claims, so a suite running beside it never meets it
 export IDLEFLOW_TMP_ROOT="$d-tmp"; mkdir -p "$IDLEFLOW_TMP_ROOT"; utmp="$IDLEFLOW_TMP_ROOT/idleflow-$(id -u)"
@@ -1905,6 +1908,9 @@ ax="$scratch/auditfx"; mkdir -p "$ax" && git -C "$ax" init -q && git -C "$ax" -c
 check "an audit run may serve the main checkout and an ordinary run may not" '(cd "$ax" && bash "$RUN" new --audit unslopify >/dev/null && [ "$(bash "$RUN" get kind)" = audit ] && [ -d .idleflow/runs/active/slop ] && bash "$RUN" preview main start | has -x "preview: none" && bash "$RUN" finish done >/dev/null && bash "$RUN" new plain >/dev/null && ! bash "$RUN" preview main start 2>/dev/null; r=$?; bash "$RUN" finish done >/dev/null; [ "$r" = 0 ])'
 check "unslopify audits, asks, fixes through a run and checks the fixed pages again" 'f="$HERE/../commands/unslopify.md"; has -F "new --audit unslopify" "$f" && has -F "idleflow:slop-auditor" "$f" && has -F "Check mode" "$f" && has -F "Talking rules:" "$f" && has -F "directions: yes" "$f" && has -F "the issue has the line \`directions: yes\`" "$HERE/../commands/feature.md" && has -F "or the issue has \`directions: yes\`" "$HERE/../commands/feature.md" && [ -f "$HERE/../agents/slop-auditor.md" ] && [ -s "$HERE/../docs/research/ui-slop.md" ]'
 check "a palette is only a note, and each page gets a verdict on craft calibrated on human-made sites" 'n=0; for id in violet-accent cream-paper terracotta-accent acid-accent hue-clash; do grep -q "^| $id |.*| note |" "$HERE/../procedures/slop.md" && n=$((n+1)); done; [ "$n" = 5 ] && has -F "## The verdict: how the page feels" "$HERE/../procedures/slop.md" && has -F "Judge **craft, not taste**" "$HERE/../procedures/slop.md" && has -F "docs/research/human-made.md" "$HERE/../agents/slop-auditor.md" && has -F "docs/research/human-made.md" "$HERE/../commands/unslopify.md" && has -F "feel: <made by people | mixed | generated>" "$HERE/../agents/slop-auditor.md" && [ -s "$HERE/../docs/research/human-made.md" ]'
+
+# one catalogue of generic patterns: design.md points at it, the designer and design reviewer use it
+check "the designer and design reviewer use the one slop catalogue unslopify checks" 'dm="$HERE/../procedures/design.md"; has -F "The signs are the catalogue in \`procedures/slop.md\`" "$dm" && ! has -F "a gradient chosen without a reason" "$dm" && has -F "against the catalogue in \`procedures/slop.md\`" "$HERE/../agents/designer.md" && has -F "against the catalogue in \`procedures/slop.md\`" "$HERE/../agents/review-design.md" && has -F "scripts/slop-scan.sh" "$HERE/../agents/review-design.md" && has -F "scripts/slop-page.js" "$HERE/../agents/review-design.md" && n=0; for id in template-sequence gradient-surface pill-everything stock-shadow stock-display-face stock-icons icon-for-words fake-proof idle-decoration; do grep -q "^| $id |" "$HERE/../procedures/slop.md" && n=$((n+1)); done; [ "$n" = 9 ] && has -F "running checks 1 and 5, and of check 4 only its rendered and judged part" "$HERE/../agents/review-design.md"'
 
 echo
 if [ "$fails" -eq 0 ]; then echo "PASS ($(idleflow_rt_name))"; else echo "FAIL: $fails check(s)"; exit 1; fi
