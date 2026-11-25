@@ -10,7 +10,7 @@ The guides disagree on several choices, so applying one guide to another API pro
 2. **Otherwise the unchanged API is the convention.** Derive, for each kind of element the change touches, the pattern the existing API uses most, and note the count behind it.
 3. **New and changed elements are judged against that convention.** A mismatch is a finding even when the new element follows a published guide better.
 4. **A change that only adds to the API never migrates a convention.** Migrating one is a separate decision, and on an API with outside callers it is itself a breaking change. Record it as an observation at most.
-5. **With no convention yet** (a first endpoint, a new API), recommend the standards-based default and ask that the choice be written down as the API's convention. Where the guides disagree (section 3), present the options and their trade-offs, not one answer.
+5. **With no convention yet**, recommend the standards-based default and ask that the choice be written down as the API's convention. Where the guides disagree (section 3), present the options and their trade-offs, not one answer.
 6. **Conventions that conflict with each other** are flagged, and new code follows the majority.
 7. **Some findings hold whatever the house style:** a security weakness, a breaking change on an API with outside callers, and new code that violates a requirement of a protocol the API claims to follow. When the house style itself does the wrong thing throughout, report that as an observation; do not ask the new element alone to differ, since that adds inconsistency.
 
@@ -34,7 +34,7 @@ Casing of fields, where a version goes (or whether there is one), the error body
 
 ## 4. Outside callers
 
-Compatibility rules apply when the API has a caller the change cannot update in the same commit. That is so when any of these holds: a release tag or a published package exists, the contract names a production server, a stability marker says beta or stable, other repositories or installed clients call it, data or messages in the API's format are already stored, or a receiver has registered for its events. When none holds, the API has no outside callers yet:
+Compatibility rules apply when the API has a caller the change cannot update in the same commit. `release:` in `.idleflow/conventions.md` decides first: `unreleased` means it has none, apart from stored data (below). With `live`, or with no answer, it has one when any of these holds: a release tag or a published package exists, the contract names a production server, a stability marker says beta or stable, other repositories or installed clients call it, data or messages in the API's format are already stored, or a receiver has registered for its events. When none holds, the API has no outside callers yet:
 
 - The compatibility checks in section 2 (removal, rename, retype, changed defaults, deprecation work, breaking-change tools) are skipped.
 - Every other check still applies.

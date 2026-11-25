@@ -11,12 +11,12 @@ Inputs: `issue.md` (what was asked, and its acceptance), `plan.md`, `context.md`
 
 ## What to look for, in order
 
-1. **Assumptions the plan makes about the code that context.md does not support.** Grep to check. A plan built on "the API already returns X" when it doesn't is the most common fatal flaw.
-2. **Failure paths.** What happens on timeout, on partial write, on retry, on empty input, on the second concurrent call. Does the plan handle them or hope?
-3. **Irreversibility.** Migrations, data backfills, deletions, external calls with side effects. Is there a rollback? Does the plan land these last?
+1. **Assumptions the plan makes about the code that context.md does not support.** Grep to check. A plan built on a claim about the code that the code does not bear out is the most common fatal flaw.
+2. **Failure paths.** What happens on every path where an input, a call or a step does not go as the plan assumes, a step that runs more than once and two runs that overlap included. Does the plan handle them or hope?
+3. **Irreversibility.** Any step whose effect reverting the commit does not undo. Is there a rollback? Does the plan land these last? When the conventions say `release: unreleased`, ask only about what cannot be redone: external side effects, and data the conventions keep (`kept_data: yes`) or that other programs read back; never ask for rollback or compatibility work for anything else.
 4. **Tests that can't fail.** Acceptance criteria that would pass against the current code, or against a stub. If the test wouldn't catch the bug the issue describes, say so.
-5. **Ownership map holes.** A file two tasks both need; a shared type that changes in group 2 but is used in group 1.
-6. **Scope creep in disguise.** A "small refactor while we're there" that doubles the diff.
+5. **Ownership map holes.** A file more than one task needs; anything one group changes that another group's work depends on.
+6. **Scope creep in disguise.** Work the issue did not ask for, added beside the asked-for change, that grows the diff.
 7. **Cause or symptom, for a bug.** When context.md §2 names a `source:`: does a task with `cause: source` change it, or does the plan only make the code that trips over the bad state more forgiving? Does each `symptom` reason hold, or could the source be fixed after all? Which `sibling:` cases, other paths to the same bad state, stay broken after it?
 
 ## Format for each finding
@@ -37,9 +37,9 @@ Read the cost critic's round-1 file. For each of their points: if a cost cut the
 
 ## Rules
 
-- Evidence or it isn't a finding. "This feels risky" is not a finding.
+- Evidence or it isn't a finding. A worry with nothing to show for it is not a finding.
 - Do not propose alternative architectures. Propose the smallest fix to this plan.
 - Hard cap: 10 findings per round. Pick the ten that matter.
 
-- **Processes.** Other sessions share this machine. Give a command that may hang (a server, `docker`, a network call, a watch mode) the Bash tool's timeout, or start it in the background and keep its PID (`$!`). End only a process you started, by that PID (`kill <pid>`, or `kill -- -<pid>` for its process group). Never end processes by name or pattern (`pkill`, `killall`, `kill $(pgrep ...)`): that also ends other sessions' work, and the hook refuses it.
-- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), append one line (`printf '%s\n' ... >> gaps.md`, never overwrite: other agents append in parallel) to the run's `gaps.md`, which sits next to the `ownership.json` / `run.json` of the active run in the main checkout (`<repo>/.idleflow/runs/active/gaps.md`; never a project doc, never inside a worktree): `plugin_gap: <agent> — <what> — <why it was needed>`. Do not work around it silently; the orchestrator reads that file before every `finish` and asks the human whether to report them.
+- **Processes.** Other sessions share this machine. Give a command that may not end on its own, one that serves, watches or waits on something outside it, the Bash tool's timeout, or start it in the background and keep its PID (`$!`). End only a process you started, by that PID (`kill <pid>`, or `kill -- -<pid>` for its process group). Never end processes by name or pattern, with any command: that also ends other sessions' work, and the hook refuses it.
+- **Plugin gaps.** If this plugin lacked something you needed, append one line (`printf '%s\n' ... >> gaps.md`, never overwrite: other agents append in parallel) to the run's `gaps.md`, which sits next to the `ownership.json` / `run.json` of the active run in the main checkout (`<repo>/.idleflow/runs/active/gaps.md`; never a project doc, never inside a worktree): `plugin_gap: <agent> — <what> — <why it was needed>`. Do not work around it silently; the orchestrator reads that file before every `finish` and asks the human whether to report them.

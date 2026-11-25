@@ -2905,6 +2905,12 @@ Task: $tid")
       if [ -f "$REPO/$(design_system_rel)" ]; then check_line ok design "$(design_system_rel)"
       else check_line warn design "the repo has a UI ($ui_file) and no design system file ($(design_system_rel))" "/idleflow:setup"; fi
     fi
+
+    # unreleased software skips compatibility work; a release tag says that may no longer hold
+    if [ "$(conventions_value release)" = unreleased ] && ! grep -qF -- "- declined: release -> live " "$IDLE/suggestions.md" 2>/dev/null; then
+      tag="$("${G[@]}" tag -l --sort=-creatordate 'v[0-9]*' '[0-9]*.[0-9]*' 2>/dev/null | sed -n 1p)"
+      if [ -n "$tag" ]; then check_line suggest release "conventions say release: unreleased, but the repo has a release tag ($tag)" "set release: live in .idleflow/conventions.md once the software has end users or outside callers"; fi
+    fi
     ;;
   conf)
     for v in DIFF_LIMIT DIFF_SLACK MAX_IMPLEMENTERS SIZE_M_IMPLEMENTERS DEBATE_ROUNDS MAX_RETRIES SIZE_S_MAX SIZE_M_MAX SIZE_S_OVERRUN LARGE_REPO_LOC STEP_DEBATE STEP_STACK STEP_LIBRARIES STEP_TOOLING STEP_DOC_KEEPER STEP_MUTATION STEP_DESIGN STEP_DESIGN_OPTIONS SLOW_GATE_SECONDS SERVICES_START_SECONDS PORT_BASE CI_EVIDENCE_MINUTES CI_EVIDENCE_TRIES; do

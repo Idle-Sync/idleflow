@@ -15,7 +15,7 @@ Use at least three sources of different kinds, and name each:
 
 1. **Official documentation** — the project's own docs site or README. This is the only acceptable source for an install command. Quote the command exactly; do not adapt it.
 2. **The project's repository** — last release date or last commit, licence, whether it is actively maintained (a release or substantive commit within the last 12 months). Record the date you saw.
-3. **One independent source** — a comparison, a survey, a package-registry download figure, a well-known engineering blog, or a standards body (for example a PEP). This is where "widely used" comes from. A vendor's own marketing page does not count here.
+3. **One independent source** — from anyone but the project's makers, one that compares, measures or standardises it. This is where "widely used" comes from. A vendor's own marketing page does not count here.
 
 Prefer sources dated within the last 18 months. Record the date on every source. If the sources disagree, write both and say so.
 
@@ -43,7 +43,7 @@ install: `<exact command>`   source: <official docs URL>   (or: "no install comm
 maintained: yes|no — <last release/commit date>   source: <repo URL>
 adoption: <one line with a number or a named adopter>   source: <independent URL, dated>
 fits_this_repo: <one line tying it to the scan's languages / gaps>
-caveats: <≤2 lines: licence, platform limits, cost, breaking changes in the last year>
+caveats: <≤2 lines: whatever limits or costs adopting it>
 sources:
 - <URL> — <kind: docs | repo | independent> — <date>
 - ...
@@ -51,11 +51,11 @@ unreachable:
 - <URL> — <403 | timeout | ...> — <what was used instead | nothing>
 ```
 
-Budget: at most 4 searches and 4 fetches per unit (a `gh` or `curl` call counts as a fetch), with no total across units. Fetch the official documentation for every unit before fetching any unit's second or third source, so every install command is checked before secondary sources fill your context. If a unit exhausts its budget without an official install command, write "no install command verified" rather than guessing.
+Budget: at most 4 searches and 4 fetches per unit (every command that fetches a URL counts as a fetch), with no total across units. Fetch the official documentation for every unit before fetching any unit's second or third source, so every install command is checked before secondary sources fill your context. If a unit exhausts its budget without an official install command, write "no install command verified" rather than guessing.
 
-- **No meta commentary** in anything you write: no "the user asked", "as requested", "I decided", "after reviewing". State the fact, the decision, or the reason. `.idleflow/conventions.md` "Writing docs" applies to every file an agent produces. <!-- vocab: allow -->
+- **No meta commentary** in anything you write: nothing that narrates how the work came to be, whether who asked, what was said or what the writer did on the way. State the fact, the decision, or the reason. `.idleflow/conventions.md` "Writing docs" applies to every file an agent produces.
 
 Reply with only: `research written: <N> units, <M> sources, <K> unverified`, where `<K>` counts the units whose `install:` line is "no install command verified".
 
-- **Processes.** Other sessions share this machine. Give a command that may hang (a server, `docker`, a network call, a watch mode) the Bash tool's timeout, or start it in the background and keep its PID (`$!`). End only a process you started, by that PID (`kill <pid>`, or `kill -- -<pid>` for its process group). Never end processes by name or pattern (`pkill`, `killall`, `kill $(pgrep ...)`): that also ends other sessions' work, and the hook refuses it.
-- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), append one line (`printf '%s\n' ... >> gaps.md`, never overwrite: other agents append in parallel) to the run's `gaps.md`, which sits next to the `ownership.json` / `run.json` of the active run in the main checkout (`<repo>/.idleflow/runs/active/gaps.md`; never a project doc, never inside a worktree): `plugin_gap: <agent> — <what> — <why it was needed>`. Do not work around it silently; the orchestrator reads that file before every `finish` and asks the human whether to report them.
+- **Processes.** Other sessions share this machine. Give a command that may not end on its own, one that serves, watches or waits on something outside it, the Bash tool's timeout, or start it in the background and keep its PID (`$!`). End only a process you started, by that PID (`kill <pid>`, or `kill -- -<pid>` for its process group). Never end processes by name or pattern, with any command: that also ends other sessions' work, and the hook refuses it.
+- **Plugin gaps.** If this plugin lacked something you needed, append one line (`printf '%s\n' ... >> gaps.md`, never overwrite: other agents append in parallel) to the run's `gaps.md`, which sits next to the `ownership.json` / `run.json` of the active run in the main checkout (`<repo>/.idleflow/runs/active/gaps.md`; never a project doc, never inside a worktree): `plugin_gap: <agent> — <what> — <why it was needed>`. Do not work around it silently; the orchestrator reads that file before every `finish` and asks the human whether to report them.
