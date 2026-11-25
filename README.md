@@ -57,6 +57,13 @@ For work an end user sees (the classifier reports `ui: true`, or `STEP_DESIGN=on
   the practice the published guidance agrees on (`procedures/security-review.md`): each finding traces where
   outside data enters and where it is used, is rated with the OWASP Risk Rating and carries its CWE id, and
   only what the diff introduced counts.
+- **`/idleflow:lifecycle`** hunts the bugs that appear only over time (**`idleflow:lifecycle-hunter`**,
+  `procedures/lifecycle-hunt.md`): it maps every lifecycle that depends on time or on a sequence of states, plays
+  each out over long simulated use with a controlled clock in the project's own tests, checks its rules after
+  every step, and probes time and order boundaries, interrupted and repeated steps and failing outside services.
+  Each bug comes back as a scenario with a test that fails on it, fixed through `/idleflow:fix` on a yes. A plan that
+  changes a lifecycle gives the task a played-out test in its acceptance, and the red team, when the plan is
+  debated, checks the plan against the same procedure.
 - **`/idleflow:unslopify`** audits any project's UI for what makes it read as AI-generated, against a cited
   catalogue (`procedures/slop.md`; the research is `docs/research/ui-slop.md`). `scripts/slop-scan.sh` finds the
   patterns in the source, `scripts/slop-page.js` measures them in the rendered page, and the
@@ -230,6 +237,7 @@ procedures/api-design.md        the API reviewer's principles; the cited researc
 procedures/security-review.md   the security reviewer's rules; the cited research is docs/research/security-review.md
 procedures/slop.md              the UI slop catalogue, scoring and fix rules; the cited research is docs/research/ui-slop.md
 procedures/ux-review.md         how the UX reviewer walks journeys: the four questions per step, the paths beyond the expected one, severities
+procedures/lifecycle-hunt.md    how lifecycles are mapped, played out over time and probed, and what a lifecycle bug report holds
 procedures/talking.md           how every command talks to the human: plain language, language, tone and explanation settings
 procedures/repo-setup.md        setup steps R1–R6 shared by feature and init (mode, docs, stack, libraries, tooling, snapshot)
 commands/fix.md                 same, bug-biased
@@ -242,6 +250,7 @@ commands/setup.md               set idleflow up in a project that already has co
 commands/progress.md            where the project stands: milestones ticked and open, who landed what, what is next, what waits on a human
 commands/customize.md           per-project settings, step toggles, agent models, extra instructions, agent replacement; reports each change
 commands/doctor.md              check the repo's idleflow setup and for a newer release; offers the safe fixes
+commands/lifecycle.md           hunt the bugs that appear over time; each comes back with a failing test, fixed on a yes
 commands/unslopify.md           audit a UI for what reads as AI-generated, then fix it at the level the human picks
 commands/ux.md                  use the app as its end users would, report where they get stuck, fix on a yes and walk again
 commands/api-docs.md            write the API and service reference from the code; `check` reports docs that no longer match
