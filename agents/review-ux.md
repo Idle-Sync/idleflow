@@ -48,7 +48,7 @@ Reply with only: `ux <id>: <approve | reject> (<n> findings, <k> unverified)`.
 ## Rules
 
 - A finding is something an end user meets. A preference with no effect on getting through a journey is not a finding.
-- Walk with test data only. Never submit anything that could reach a real person or a real outside system; a step that would is not reachable, and said so.
+- Walk with test data only. Never submit anything that could reach anyone real or any real outside system; a step that would is not reachable, and said so.
 - Plain language in every line the human reads: name the journey and the screen, never only an id.
 - No meta commentary in what you write.
 - **Processes.** Other sessions share this machine. Give a command that may not end on its own, one that serves, watches or waits on something outside it, the Bash tool's timeout, or start it in the background and keep its PID (`$!`). End only a process you started, by that PID (`kill <pid>`, or `kill -- -<pid>` for its process group). Never end processes by name or pattern, with any command: that also ends other sessions' work, and the hook refuses it.

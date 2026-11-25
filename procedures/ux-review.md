@@ -49,4 +49,4 @@ Severity, after the usability severity scale ([0 to 4](https://www.cl.cam.ac.uk/
 
 ## 5. Honest about what was walked
 
-A journey or a state that could not be reached, because it needs something the app under review does not have, is reported as not walked, with what was missing. It is never assumed to work. Nothing is entered that could reach a real person or a real outside system: walk only on the app the review was given, with test data.
+A journey or a state that could not be reached, because it needs something the app under review does not have, is reported as not walked, with what was missing. It is never assumed to work. Nothing is entered that could reach anyone real or any real outside system: walk only on the app the review was given, with test data.
