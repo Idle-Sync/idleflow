@@ -77,7 +77,7 @@
 #   run.sh loc                            -> prints hand-written code lines in the repo (DIFF_EXCLUDE applied)
 #   run.sh ui                             -> `yes <file>` when the repo has a UI (the file that shows it), else `no`
 #   run.sh conf                           -> prints resolved config values and the runtime in use
-#   run.sh path <name>                    -> where a record lives here: conventions, lessons, progress, index, sessions, time-log, design-system, runs
+#   run.sh path <name>                    -> where a record lives here: conventions, lessons, progress, index, sessions, time-log, design-system, runs, blueprints (the personal library)
 #   run.sh path --relative <name>         -> the same, relative to the repo root: progress, index, sessions, time-log, design-system
 #   run.sh migrate                        -> moves files a pre-.idleflow/ version kept under .claude/ and commits the move
 #   run.sh doctor                         -> checks the repo's idleflow setup, one "ok|warn|fail|suggest <check>: <detail> | fix: <how>" line each
@@ -96,6 +96,8 @@
 #                                            --task or --since, only the sources changed since that base), stamp
 #                                            records named sources as they are now once their docs are up to date;
 #                                            reads the `<docs file>.sources` lists in the folder `api_docs:` names
+#   run.sh blueprint-check <file>          -> a blueprint holds ideas, not code: lists each line with code, a
+#                                            code fence, a file name or path, an identifier or a call (exit 1)
 #   run.sh vocab [--file <vocabulary>] [--all | --task <task-id> | --since <rev> | <file>...] -> one term per
 #                                            concept: every "never write" word of the vocabulary file (vocabulary_file
 #                                            in conventions, vocabulary.md by default) in the given Markdown files; with
@@ -2255,7 +2257,7 @@ Task: $tid")
       esac
       exit 0
     fi
-    case "${1:?conventions|lessons|progress|index|vocabulary|sessions|time-log|design-system|runs}" in
+    case "${1:?conventions|lessons|progress|index|vocabulary|sessions|time-log|design-system|runs|blueprints}" in
       conventions) native_path "$CONVENTIONS";;
       lessons) native_path "$(lessons_path)";;
       progress) native_path "$REPO/$(progress_rel)";;
@@ -2265,6 +2267,8 @@ Task: $tid")
       time-log) native_path "$REPO/$(time_log_rel)";;
       design-system) native_path "$REPO/$(design_system_rel)";;
       runs) native_path "$RUNS";;
+      # the human's own blueprint library, outside every repo, so any project can build from it
+      blueprints) native_path "$HOME/.idleflow/blueprints";;
       *) echo "unknown path name: $1" >&2; exit 1;;
     esac
     ;;
@@ -2734,6 +2738,27 @@ Task: $tid")
       trap - EXIT
     done <<< "$lists"
     echo "api-docs: stamped $k line(s) for $# source(s)"
+    ;;
+  blueprint-check)
+    # A blueprint is read by a project on any stack, so it carries ideas only. A line that names code
+    # is a hit; a line that has to quote such a word ends with <!-- blueprint: allow -->.
+    f="${1:?usage: run.sh blueprint-check <file>}"
+    [ -f "$f" ] || { echo "blueprint-check: no file $f" >&2; exit 2; }
+    tr -d '\r' < "$f" | LC_ALL=C awk -v file="$f" '
+      function hit(kind) { printf "%s:%d: %s: %s\n", file, NR, kind, substr($0, 1, 100); n++ }
+      /<!-- blueprint: allow -->/ { next }
+      /^[ ]*(```|~~~)/ { hit("code fence"); next }
+      {
+        line = $0
+        if (index(line, "`")) hit("code")
+        else if (line ~ /(^|[^A-Za-z0-9_])[A-Za-z_][A-Za-z0-9_.-]*\/[A-Za-z0-9_.\/-]*[A-Za-z0-9_-]\.[A-Za-z0-9]+([^A-Za-z0-9]|$)/ || line ~ /(^|[^A-Za-z0-9_])[A-Za-z0-9_-]+\.(js|jsx|ts|tsx|mjs|cjs|py|rb|go|rs|java|kt|swift|php|cs|cpp|c|h|hpp|sql|json|ya?ml|toml|ini|sh|ps1|html?|css|scss|vue|svelte|astro|md)([^A-Za-z0-9]|$)/) hit("file name")
+        else if (line ~ /(^|[^A-Za-z0-9_])[a-z][a-z0-9]+[A-Z][A-Za-z0-9]*([^A-Za-z0-9_]|$)/ || line ~ /(^|[^A-Za-z0-9_])[A-Z][a-z0-9]+[A-Z][a-z0-9]+[A-Za-z0-9]*([^A-Za-z0-9_]|$)/) hit("identifier")
+        else if (line ~ /(^|[^A-Za-z0-9_])[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]+([^A-Za-z0-9_]|$)/) hit("identifier")
+        else if (line ~ /[A-Za-z_][A-Za-z0-9_]*\(\)/ || line ~ /[A-Za-z_][A-Za-z0-9_]*\([^) ]*[,_=][^)]*\)/ || line ~ /[A-Za-z_][A-Za-z0-9_]*\([A-Za-z_][A-Za-z0-9_]+\)/) hit("call")
+        else if (line ~ /https?:\/\//) hit("link")
+      }
+      END { exit (n > 0) }
+    '
     ;;
   vocab)
     # the checkout it is run in, a task worktree included, never the main checkout behind it; with

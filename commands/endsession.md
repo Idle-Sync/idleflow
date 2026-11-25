@@ -64,5 +64,5 @@ Print the session report, then stop. It writes nothing new; every number and cla
 3. **What broke**: everything that went wrong, Claude's own mistakes first (anything Claude got wrong or had to redo), then retries, gate trips, review rejections, blocked tasks and failed gates. Each with its evidence (commit, `file:line`, review file, log) and what was done about it. Nothing is softened or left out because it was fixed.
 4. **What went right**: what worked and the evidence for it.
 5. **Lessons**: each lesson the session recorded, one line; then any lesson the session showed that nothing records yet, marked `not recorded`.
-6. **Waiting on the human**: open decisions and questions, each with a recommendation.
+6. **Waiting on the human**: open decisions and questions, each with a recommendation. When the session built a part worth a blueprint by the rule in `agents/retro.md` (step 5), that no run's retro already named and that is not in `$HOME/.idleflow/blueprints/`, it is one of them: save it with `/idleflow:blueprint <the part>`.
 7. **Next**: the first three items of the handoff, in order.
