@@ -2,8 +2,9 @@
 # Run lifecycle helper. Called by the orchestrator (the /idleflow:* commands).
 # Everything is plain git + files so a run can be inspected or resumed by hand.
 #
-#   run.sh new [--park] <slug>            -> creates .idleflow/runs/active/ for a new run, prints its <id>; refuses while
+#   run.sh new [--park] [--audit] <slug>  -> creates .idleflow/runs/active/ for a new run, prints its <id>; refuses while
 #                                            a job or preview of the run it would park still runs (--park: park anyway)
+#                                            --audit: a run that builds nothing and may serve the main checkout
 #   run.sh services                       -> runs the approved `services:` check (the database, cache or queue the
 #                                            repo's tests need); exit 1 and its last lines when one is down, 7 unapproved
 #   run.sh services start                 -> runs the approved `services_start:` command once, from the main checkout, then
@@ -1413,7 +1414,9 @@ vocab_check() { # vocab_check <vocabulary file> <file>...
 cmd="${1:-}"; shift || true
 case "$cmd" in
   new)
-    park=""; if [ "${1:-}" = --park ]; then park=1; shift; fi
+    # --audit: a run that only looks (/idleflow:unslopify): no task, and it may serve the main checkout
+    park=""; kind=""
+    while :; do case "${1:-}" in --park) park=1; shift;; --audit) kind=audit; shift;; *) break;; esac; done
     slug="${1:?slug}"
     safe="$(echo "$slug" | tr -cs 'a-zA-Z0-9' '-' | sed 's/^-//;s/-$//' | cut -c1-40)"
     id="$(date +%Y%m%d-%H%M%S)-$safe"
@@ -1423,8 +1426,9 @@ case "$cmd" in
     # Both work on an unborn branch (fresh `git init`, no commits yet): base falls back to HEAD, sha to "".
     base="$("${G[@]}" symbolic-ref --short -q HEAD || echo HEAD)"
     base_sha="$("${G[@]}" rev-parse -q --verify HEAD 2>/dev/null || true)"
+    kj=""; [ -z "$kind" ] || kj=",\"kind\":\"$kind\""
     cat > "$ACTIVE/run.json" <<JSON
-{"id":"$id","plugin_version":$(json_str "$(plugin_version)"),"by":$(json_str "$(git config user.name || echo unknown)"),"slug":"$safe","base":$(json_str "$base"),"base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"fixes":0,"gate_trips":0,"review_findings":0}
+{"id":"$id","plugin_version":$(json_str "$(plugin_version)"),"by":$(json_str "$(git config user.name || echo unknown)"),"slug":"$safe","base":$(json_str "$base"),"base_sha":"$base_sha","started":"$(date -u +%FT%TZ)","status":"planning","size":null,"tasks":{},"retries":0,"fixes":0,"gate_trips":0,"review_findings":0${kj}}
 JSON
     echo "{\"repo\":$(json_str "$(native_path "$REPO")"),\"shared\":[],\"tasks\":{}}" > "$ACTIVE/ownership.json"
     conventions_to_run
@@ -1432,6 +1436,7 @@ JSON
     # worktree marker dir: excluded locally (shared by all worktrees), never committed or merged
     add_ignore "$(exclude_file)" '.idleflow-run/'
     add_ignore "$(exclude_file)" '.idleflow/worktrees/'
+    [ "$kind" != audit ] || mkdir -p "$ACTIVE/slop"
     echo "$id"
     ;;
   wt)
@@ -2565,7 +2570,7 @@ Task: $tid")
     where="$(conventions_value preview_in)"; case "$where" in ""|unset) where=worktree;; esac
     if [ "$act" = start ]; then
       if [ "$where" = main ] && [ "$tid" != main ]; then echo "preview: this repo serves its app only from the main checkout (preview_in: main); preview main after the merge" >&2; exit 1; fi
-      if [ "$where" != main ] && [ "$tid" = main ]; then echo "preview main: this repo previews each task's worktree (preview_in: $where)" >&2; exit 1; fi
+      if [ "$where" != main ] && [ "$tid" = main ] && [ "$(idleflow_rt get "$ACTIVE/run.json" kind 2>/dev/null || true)" != audit ]; then echo "preview main: this repo previews each task's worktree (preview_in: $where)" >&2; exit 1; fi
     fi
     pidf="$ACTIVE/tasks/$tid/preview.pid"
     if [ "$act" = stop ]; then

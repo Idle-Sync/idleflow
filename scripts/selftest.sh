@@ -1847,5 +1847,41 @@ check "vocab passes a file with no hit, and a call with no file" 'printf "the ma
 
 check "a verify: ci criterion is shown red and green in its CI job, from the task's own commits" 'n=0; for a in implementer implementer-hard; do has -F "Name that commit under \`ci_red:\`" "$HERE/../agents/$a.md" && has "^ci_red: " "$HERE/../agents/$a.md" && n=$((n + 1)); done; [ "$n" = 2 ] && has -F "**CI evidence for a task**, after the gate, before the review" "$HERE/../commands/feature.md" && has -F "When your prompt gives \`CI evidence: <paths>\`" "$HERE/../agents/review-correct.md" && has -F "The implementer commits that test alone first" "$HERE/../agents/planner.md"'
 
+# /idleflow:unslopify: the static scan, the catalogue the scan and the page measure share, the audit run
+SCAN="$HERE/slop-scan.sh"; sx="$scratch/slopfx"; T="$(printf '\t')"
+mkdir -p "$sx/src" && git -C "$sx" init -q
+printf '%s\n' '<h1 className="bg-indigo-600">Build your <em>dream</em> today</h1>' '<p className="uppercase tracking-widest">Seamless setup</p>' '<a href="#">More</a>' '<div className="border-l-4 rounded-xl">x</div>' '<p className="bg-violet-500">kept slop-ignore</p>' > "$sx/src/Hero.tsx"
+printf '<button>Go \360\237\232\200</button>\n' >> "$sx/src/Hero.tsx"
+printf '%s\n' '.e {' '  text-transform: uppercase;' '  letter-spacing: 0.1em;' '}' '@keyframes f { from { opacity: 0 } }' > "$sx/src/app.css"
+printf '%s\n' '<p class="bg-violet-500">x</p> slop-ignore-file' > "$sx/src/skip.html"
+printf '%s\n' '<p>Plain words.</p>' > "$sx/src/clean.html"
+git -C "$sx" add -A
+bash "$SCAN" --repo "$sx" > "$scratch/slop.tsv" 2>&1 || true
+check "slop-scan finds catalogue patterns in UI source, each with its file and line" 'all=1; for want in "violet-accent${T}src/Hero.tsx:1" "generic-hero${T}src/Hero.tsx:1" "accent-word${T}src/Hero.tsx:1" "eyebrow-label${T}src/Hero.tsx:2" "buzzwords${T}src/Hero.tsx:2" "fake-controls${T}src/Hero.tsx:3" "side-stripe${T}src/Hero.tsx:4" "emoji-icons${T}src/Hero.tsx:6" "eyebrow-label${T}src/app.css:1" "no-reduced-motion${T}-"; do has -F "$want" "$scratch/slop.tsv" || all=0; done; [ "$all" = 1 ]'
+check "slop-scan skips a slop-ignore line, a slop-ignore-file file and a file with no pattern" '! has -F "src/Hero.tsx:5" "$scratch/slop.tsv" && ! has -F "skip.html" "$scratch/slop.tsv" && ! has -F "clean.html" "$scratch/slop.tsv"'
+check "slop-scan scans only the files it is given, and exits 2 for a folder that does not exist" '(cd "$sx" && bash "$SCAN" src/app.css) > "$scratch/slop1.tsv" && ! has -F "Hero.tsx" "$scratch/slop1.tsv" && has -F "eyebrow-label" "$scratch/slop1.tsv" && { bash "$SCAN" --repo "$scratch/no-such-folder" >/dev/null 2>&1; rc=$?; [ "$rc" = 2 ]; }'
+sy="$scratch/slopfx2"; mkdir -p "$sy/src/__tests__" && git -C "$sy" init -q
+printf '%s\n' '.a { color: oklch(0.554 0.046 257.417); }' '.b { color: oklch(0.546 0.245 262.881); }' '.c { color: oklch(0.627 0.265 303.9); }' '.d { color: #6366f1; }' '.f { color: #8b5cf6ff; }' '/* fixes #123 and #abc */' '.g { margin: 0 } .h {' '  text-transform: uppercase;' '  letter-spacing: 1px; }' > "$sy/src/c.css"
+printf '%s\n' '.x { transition: all 1s; }' > "$sy/src/a.css"
+printf '%s\n' '@media (prefers-reduced-motion: reduce) { .x { transition: none } }' > "$sy/src/b.css"
+printf '%s\n' '<p>&#169; &#160; ok</p>' > "$sy/src/p.html"
+printf '%s\n' 'mutex.unlock();' 'const xs = ["01", "02"];' 'const s = useTransition();' > "$sy/src/lib.ts"
+printf '%s\n' 'const n = "John Doe";' > "$sy/src/__tests__/x.tsx"
+git -C "$sy" add -A
+bash "$SCAN" --repo "$sy" > "$scratch/slop2.tsv" 2>&1 || true
+check "slop-scan takes violet from hue and chroma, and reads no colour in a comment or an entity" 'has -F "violet-accent${T}src/c.css:3" "$scratch/slop2.tsv" && has -F "violet-accent${T}src/c.css:4" "$scratch/slop2.tsv" && has -F "violet-accent${T}src/c.css:5" "$scratch/slop2.tsv" && ! has -F "src/c.css:1" "$scratch/slop2.tsv" && ! has -F "src/c.css:2" "$scratch/slop2.tsv" && ! has -F "src/c.css:6" "$scratch/slop2.tsv" && ! has -F "p.html" "$scratch/slop2.tsv"'
+check "slop-scan sees a rule opened on the line that closes another, and leaves script code and tests alone" 'has -F "eyebrow-label${T}src/c.css:7" "$scratch/slop2.tsv" && ! has -F "lib.ts" "$scratch/slop2.tsv" && ! has -F "__tests__" "$scratch/slop2.tsv"'
+check "slop-scan finds the reduced-motion rule in any file of the repo, even when it scans one" '! has -F "no-reduced-motion" "$scratch/slop2.tsv" && (cd "$sy" && bash "$SCAN" src/a.css) > "$scratch/slop3.tsv" && ! has -F "no-reduced-motion" "$scratch/slop3.tsv"'
+check "slop-scan refuses a folder that is not a git repository rather than report it clean" 'ng="$(mktemp -d)" && { bash "$SCAN" --repo "$ng" >/dev/null 2>&1; rc=$?; rmdir "$ng"; [ "$rc" = 2 ]; }'
+grep -E '^\| [a-z][a-z-]+ \| ' "$HERE/../procedures/slop.md" | grep -v '^| id |' | awk -F'|' '{gsub(/ /, "", $2); print $2 "\t" $4}' > "$scratch/slop-cat.tsv"
+grep -o 'hit("[a-z-]*"' "$HERE/slop-scan.sh" | cut -d'"' -f2 | sort -u > "$scratch/slop-scan-ids"
+grep -o "flag('[a-z-]*'" "$HERE/slop-page.js" | cut -d"'" -f2 | sort -u > "$scratch/slop-page-ids"
+check "every pattern the scan or the page measure reports is in the catalogue, and every static or rendered row has its check" 'cut -f1 "$scratch/slop-cat.tsv" | sort -u > "$scratch/slop-cat-ids" && [ -z "$(cat "$scratch/slop-scan-ids" "$scratch/slop-page-ids" | sort -u | comm -23 - "$scratch/slop-cat-ids")" ] && [ -z "$(grep "static" "$scratch/slop-cat.tsv" | cut -f1 | sort -u | comm -23 - "$scratch/slop-scan-ids")" ] && [ -z "$(grep "rendered" "$scratch/slop-cat.tsv" | grep -v "static" | cut -f1 | sort -u | comm -23 - "$scratch/slop-page-ids")" ] && [ -s "$scratch/slop-cat-ids" ]'
+if command -v node >/dev/null 2>&1; then check "slop-page.js parses as the one expression a browser tool evaluates" 'node --check "$HERE/slop-page.js"'; fi
+ax="$scratch/auditfx"; mkdir -p "$ax" && git -C "$ax" init -q && git -C "$ax" -c user.name=t -c user.email=t@t commit -q --allow-empty -m base
+check "an audit run may serve the main checkout and an ordinary run may not" '(cd "$ax" && bash "$RUN" new --audit unslopify >/dev/null && [ "$(bash "$RUN" get kind)" = audit ] && [ -d .idleflow/runs/active/slop ] && bash "$RUN" preview main start | has -x "preview: none" && bash "$RUN" finish done >/dev/null && bash "$RUN" new plain >/dev/null && ! bash "$RUN" preview main start 2>/dev/null; r=$?; bash "$RUN" finish done >/dev/null; [ "$r" = 0 ])'
+check "unslopify audits, asks, fixes through a run and checks the fixed pages again" 'f="$HERE/../commands/unslopify.md"; has -F "new --audit unslopify" "$f" && has -F "idleflow:slop-auditor" "$f" && has -F "Check mode" "$f" && has -F "Talking rules:" "$f" && has -F "directions: yes" "$f" && has -F "the issue has the line \`directions: yes\`" "$HERE/../commands/feature.md" && has -F "or the issue has \`directions: yes\`" "$HERE/../commands/feature.md" && [ -f "$HERE/../agents/slop-auditor.md" ] && [ -s "$HERE/../docs/research/ui-slop.md" ]'
+check "a palette is only a note, and each page gets a verdict on craft calibrated on human-made sites" 'n=0; for id in violet-accent cream-paper terracotta-accent acid-accent hue-clash; do grep -q "^| $id |.*| note |" "$HERE/../procedures/slop.md" && n=$((n+1)); done; [ "$n" = 5 ] && has -F "## The verdict: how the page feels" "$HERE/../procedures/slop.md" && has -F "Judge **craft, not taste**" "$HERE/../procedures/slop.md" && has -F "docs/research/human-made.md" "$HERE/../agents/slop-auditor.md" && has -F "docs/research/human-made.md" "$HERE/../commands/unslopify.md" && has -F "feel: <made by people | mixed | generated>" "$HERE/../agents/slop-auditor.md" && [ -s "$HERE/../docs/research/human-made.md" ]'
+
 echo
 if [ "$fails" -eq 0 ]; then echo "PASS ($(idleflow_rt_name))"; else echo "FAIL: $fails check(s)"; exit 1; fi
