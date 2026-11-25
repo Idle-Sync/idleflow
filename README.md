@@ -102,6 +102,7 @@ For work an end user sees (the classifier reports `ui: true`, or `STEP_DESIGN=on
 | Tooling | skills from Idle-Sync/skills, marketplace plugins, workflows; installed only when accepted by name | `agents/tooling-advisor.md`, "Tooling" in conventions.md |
 | Pushback | once, with evidence, then the human's call stands | `templates/CLAUDE.md`, planner, both orchestrators |
 | Release | `unreleased`: no compatibility work for end users or callers who do not exist yet, a change replaces the old thing outright; `live` (and unset): every rule that protects them applies; the doctor suggests `live` once a release tag appears | `release:` and `kept_data:` in conventions.md, planner, red team, conformance reviewer, `procedures/api-design.md` |
+| While waiting | `work`: while CI, the gate, a long job or an agent runs, the run goes on with what does not depend on its result; `wait`: it waits; a missing line waits | `while_waiting:` in conventions.md, `commands/feature.md` |
 | Project docs | on for greenfield; doc-keeper before, retro after every run | `docs:` in conventions.md, `agents/doc-keeper.md`, `agents/retro.md`, `templates/CLAUDE.md` |
 
 ## Working as a team
