@@ -45,7 +45,7 @@ Written in OKLCH (lightness, chroma, hue) because equal lightness steps look equ
 | bank vault | hue 250, chroma 0.01 | navy, L 0.35 C 0.08 H 260, with gold L 0.75 C 0.12 H 85 | gold for highlights only |
 | studio pop | hue 300, chroma 0.01 | two accents at equal lightness, H 330 and H 180 | playful; keep text neutral |
 
-Contrast ratio, WCAG 2.x: for each colour take the sRGB channels c in 0..1, linearise with `c <= 0.04045 ? c/12.92 : ((c+0.055)/1.055)^2.4`, luminance `L = 0.2126 R + 0.7152 G + 0.0722 B`, ratio `(L_lighter + 0.05) / (L_darker + 0.05)`. Text needs at least 4.5, large text (24 px, or 19 px bold) and UI boundaries at least 3. A few lines of Python or Node compute it; never estimate it.
+Contrast ratio, WCAG 2.x: for each colour take the sRGB channels c in 0..1, linearise with `c <= 0.04045 ? c/12.92 : ((c+0.055)/1.055)^2.4`, luminance `L = 0.2126 R + 0.7152 G + 0.0722 B`, ratio `(L_lighter + 0.05) / (L_darker + 0.05)`. Text needs at least 4.5, large text (24 px, or 19 px bold) and UI boundaries at least 3. A short script computes it; never estimate it.
 
 ## Spacing, radius, elevation
 

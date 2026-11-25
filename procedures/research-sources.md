@@ -3,8 +3,7 @@
 Read by `idleflow:market-researcher`, `idleflow:stack-researcher` and `idleflow:library-scout`. Many
 sites refuse a plain page fetch (GitHub, review sites, Reddit, some news sites answer 403), so reach a
 source through its machine endpoint first, with Bash and `curl -s` or `gh`, and fall back to the
-page only after that. Cite the page a human can open (the release page, the thread, the package
-page) and add `via <endpoint>` when the fact came from the endpoint.
+page only after that. Cite the page a human can open for that fact and add `via <endpoint>` when the fact came from the endpoint.
 
 ## Routes, first choice first
 
@@ -37,6 +36,5 @@ the project.
 
 Do not retry the same URL. Write it in your output under `unreachable:` with the status (`403`,
 `timeout`) and what you used instead. A fact that only the unreachable source had stays out, or is
-marked `unverified`. Evidence from the vendor itself (its blog, its landing page, a post it wrote
-about a competitor) is never first-hand: label it `vendor-sourced`, and say in the summary how many
+marked `unverified`. Evidence from the vendor itself, anything it wrote or published, is never first-hand: label it `vendor-sourced`, and say in the summary how many
 of the sources behind a conclusion are first-hand.

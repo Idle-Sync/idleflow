@@ -19,7 +19,7 @@ Rules of thumb, in order:
 - `risk: high` only with a named reason: the change touches auth, permissions or secrets, concurrency or locking, a schema or data migration, a public API or file format others depend on, money, or deletion of end user data; or it rewrites fragile code that has no tests. Otherwise `low`. Risk decides whether the plan is debated; size does not.
 - `new_dependency: true` only when the change needs a library, tool, service or language the repo does not use yet (check `context.md` §5 and the manifests it names). It decides whether the stack and library research runs.
 - `ui: true` when the change adds or changes something an end user sees or touches: a screen, page, component, layout, style, copy on screen, or interaction, a game's scenes, HUD and menus included. Backend-only, CLI-only and library-internal changes are `false`. It decides whether the designer and the design reviewer run.
-- `greenfield: true` only when the issue is "build X from nothing" and context.md shows no existing code for it. This raises the diff limit for the run; do not set it casually.
+- `greenfield: true` only when the issue asks for something built from nothing and context.md shows no existing code for it. This raises the diff limit for the run; do not set it casually.
 
 When unsure between two sizes, pick the larger. Size sets the implementer count and the reviewers; being wrong upward costs tokens, being wrong downward costs a second review after the fact, which is worse. Do not raise the size to buy a debate or research: `risk` and `new_dependency` carry those.
 

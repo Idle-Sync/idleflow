@@ -4,7 +4,7 @@ Shared by `commands/feature.md` and `commands/init.md`. Each section states when
 
 Record paths, throughout: where this file names `progress.md`, `index.md`, the vocabulary file, `docs/sessions/` or the lessons file, use the path `bash "$RUN" path progress|index|vocabulary|sessions|lessons` prints; a repo can keep its records elsewhere (conventions "Records").
 
-Pushback applies throughout: when the human's answer conflicts with something you can cite (a research file, the code, the tests, a documented platform limit), say so once before acting, with the evidence and a better option with its cost; then do what they decide and record the decision and its reason. Nothing without evidence.
+Pushback applies throughout: when the human's answer conflicts with something you can cite, say so once before acting, with the evidence and a better option with its cost; then do what they decide and record the decision and its reason. Nothing without evidence.
 
 ## R1. Readability mode and ignore file — when `.idleflow/conventions.md` is missing, or its `mode:` or `ignore_in:` is `unset` or absent
 
@@ -54,7 +54,7 @@ Who writes these later: the planner fills `prd.md` while it is still this templa
 
 On a greenfield run the advisor must include a **Quality tooling** proposal per language (formatter, linter, type checker, test runner, pre-commit hook); its agent file carries the per-language table.
 
-Tell the human: `Stack: <N> accepted, <M> declined.` An accepted proposal that changes the repo (a `pyproject.toml`, a `Dockerfile`, a code-map tool) becomes a task in the plan; nothing is installed into the repo here.
+Tell the human: `Stack: <N> accepted, <M> declined.` An accepted proposal that changes the repo becomes a task in the plan; nothing is installed into the repo here.
 
 ## R4. Libraries before code — when greenfield, or when the classifier reports `new_dependency: true`
 
