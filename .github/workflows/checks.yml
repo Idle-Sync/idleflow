@@ -37,6 +37,34 @@ jobs:
           IDLEFLOW_RUNTIME: ${{ matrix.runtime }}
         run: bash scripts/selftest.sh
 
+  selftest-windows:
+    # Git Bash: jobs and their process groups behave differently there (#143), and native programs
+    # (python.exe, node.exe) are not Git Bash processes
+    name: selftest (windows, ${{ matrix.runtime }})
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [python, node]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "20"
+      - name: scripts/selftest.sh
+        env:
+          IDLEFLOW_RUNTIME: ${{ matrix.runtime }}
+        run: |
+          bash --version | head -1
+          bash scripts/selftest.sh
+
   selftest-bash32:
     # macOS ships bash 3.2 as /bin/bash; the scripts must parse and run there too
     name: selftest (bash 3.2, ${{ matrix.runtime }})

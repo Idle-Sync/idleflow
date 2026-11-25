@@ -158,7 +158,9 @@ function realPath(p) {
   let cur = p;
   for (;;) {
     try {
-      return path.join(fs.realpathSync(cur), ...tail);
+      // .native expands Windows 8.3 short names (RUNNER~1), as Python's realpath does, so one folder
+      // reached by its short and its long name is the same folder
+      return path.join(fs.realpathSync.native(cur), ...tail);
     } catch {
       const parent = path.dirname(cur);
       if (parent === cur) return p;
