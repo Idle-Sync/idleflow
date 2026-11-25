@@ -199,7 +199,7 @@ commands/feature.md             the orchestrator — the run procedure lives her
 procedures/design.md            idleflow's design handbook; design-data.md beside it holds the reference values
 procedures/api-design.md        the API reviewer's principles; the cited research is docs/research/api-dx.md
 procedures/security-review.md   the security reviewer's rules; the cited research is docs/research/security-review.md
-procedures/talking.md           how every command talks to the human: plain language, language and tone settings
+procedures/talking.md           how every command talks to the human: plain language, language, tone and explanation settings
 procedures/repo-setup.md        setup steps R1–R6 shared by feature and init (mode, docs, stack, libraries, tooling, snapshot)
 commands/fix.md                 same, bug-biased
 commands/init.md                first session for an empty folder: brainstorm, market research, rules, PRD, first commit

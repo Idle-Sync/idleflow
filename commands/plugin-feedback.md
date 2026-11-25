@@ -4,7 +4,7 @@ argument-hint: "<what went wrong or what you want>"
 allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion
 ---
 
-How you talk to the human (plain language, `language:` and `tone:` from conventions): `${CLAUDE_PLUGIN_ROOT}/procedures/talking.md`; read it now.
+How you talk to the human (plain language, `language:`, `tone:` and `explain:` from conventions): `${CLAUDE_PLUGIN_ROOT}/procedures/talking.md`; read it now.
 
 Feedback: $ARGUMENTS
 

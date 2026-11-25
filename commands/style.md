@@ -4,7 +4,7 @@ argument-hint: "[repo|balanced|explicit|idiomatic]"
 allowed-tools: Read, Write, Edit, Bash, AskUserQuestion
 ---
 
-How you talk to the human (plain language, `language:` and `tone:` from conventions): `${CLAUDE_PLUGIN_ROOT}/procedures/talking.md`; read it now.
+How you talk to the human (plain language, `language:`, `tone:` and `explain:` from conventions): `${CLAUDE_PLUGIN_ROOT}/procedures/talking.md`; read it now.
 
 Plugin root: `${CLAUDE_PLUGIN_ROOT}`.
 
