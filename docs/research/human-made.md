@@ -63,14 +63,14 @@ Sources on the fuzzy boundary (used in section 3):
    - It shows a dark ground with neon-tinted imagery, a palette the slop catalogue associates with generated pages. Here it does not read that way.
 7. **Irene Butenko**, https://www.irene-butenko.com/. Made by Irene Butenko. Named in S1, which praises the awards table that links each claim to its source.
    - The screenshot caught a "100%" preloader bar.
-   - The intro copy is generic ("I specialize in crafting user-centric designs that are visually striking and intuitive"). This is a counter-example within the set: an award-judged portfolio whose copy would not pass a voice test.
+   - The intro copy is generic ("I specialize in crafting user-centric designs that are visually striking and intuitive"). This is a counter-example within the set: an award-judged portfolio whose copy would not pass a voice test. <!-- vocab: allow -->
 8. **Paco Coursey**, https://paco.me/. Made by Paco Coursey. Named in S5.
    - A narrow text column at small sizes, with no imagery and no hero. Söhne is paired with an italic serif (Newsreader) for single phrases ("Crafting interfaces", "everything around me is someone's life work").
    - The personal detail is specific: a "Now" paragraph about dance music, and the sign-off "Shine, constantly and steadily."
    - It is entirely restrained. The craft shows in the spacing, the alignment and the linked projects (⌘K, Next Themes), not in decoration.
 9. **Emil Kowalski**, https://emilkowal.ski/. Made by Emil Kowalski. Named in S5.
    - A single left-aligned list of projects and essays in small grey sans, with no images.
-   - The copy is first-person and plain: "Currently taking a break from work." The essay titles take positions ("You Don't Need Animations").
+   - The copy speaks as "I" and is plain: "Currently taking a break from work." The essay titles take positions ("You Don't Need Animations").
    - The markup records no web fonts, and the type renders in a system sans stack.
 10. **Rauno Freiberg**, https://rauno.me/. Made by Rauno Freiberg. Named in S5.
     - A large bio sentence is set with staggered indents over a flat yellow circle, with a tick-mark scrubber at the top.
@@ -98,7 +98,7 @@ Sources on the fuzzy boundary (used in section 3):
     - The type is Geist and Geist Mono, a common default face, used by a studio celebrated for craft.
 16. **Drexler**, https://drxlr.com/. Named in S2.
     - A giant cropped "Dr" wordmark fills the black viewport and runs off the right edge.
-    - The copy is specific: "A few skilled humans doing the work of many.™" It names a contact person and gives a street address in Baltimore with a phone number.
+    - The copy is specific: "A few skilled humans doing the work of many.™" It names a contact and gives a street address in Baltimore with a phone number.
 17. **Thingy & Thingy**, https://www.thingyandthingy.com/. Named in S2.
     - A full-bleed archival photograph of a 1970s couple is overlaid with "A MULTINATIONAL NETWORK OF IDIOTS" in condensed lime type.
     - The tagline is "INSPIRING BRANDS TO FART ABOUT A BIT". The irreverence is the brand, with no hedging.
@@ -200,7 +200,7 @@ Counts are out of the 39 references kept. A site is counted only where the trait
 
 | Trait | Count | Examples |
 |---|---|---|
-| **Copy that is specific to this business or person**: names, places, prices, dates, an origin story, an opinion, a joke the owner would make. This is the most consistent separator. | ~27 | 1, 6, 8, 16, 17, 19 (prices), 25, 31, 33, 35, 36, 37, 38 |
+| **Copy that is specific to this business or the people behind it**: names, places, prices, dates, an origin story, an opinion, a joke the owner would make. This is the most consistent separator. | ~27 | 1, 6, 8, 16, 17, 19 (prices), 25, 31, 33, 35, 36, 37, 38 |
 | **Typefaces chosen for the subject, or custom**: a reading serif for a reader app, book-cover faces for a publisher, a didone for a French restaurant, scanline type for a type-process project, faces named after the owner | ~31 use a distinct licensed or custom family; ~8 rely mainly on Inter, Geist, Fira or system stacks (2, 7, 9, 12, 13, 15, and partly 8 and 11) | 3, 4, 14, 24, 25, 28, 33, 37 |
 | **Imagery made for this site**: own photography of the product, venue, building or work; commissioned illustration; artworks; hand-drawn sketches. No stock "team at laptop" images. | ~22 | 1, 12, 24, 27, 29, 30, 31, 32, 36, 37 |
 | **Composition that departs from centred hero, then feature-card grid**: cropped or split wordmarks, staggered grids, type masking photos, table-of-contents homepages, rotated cards | ~20 | 3, 10, 14, 16, 28, 29, 32, 36, 37 |
