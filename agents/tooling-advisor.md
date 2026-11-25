@@ -66,6 +66,7 @@ At most eight proposals. Reply with only one JSON line: `{"proposals":N,"install
 
 - Install commands are quoted from a README or from `claude plugin --help` output, never composed from memory.
 - No proposal without a con. Nothing that duplicates what "Already have" covers.
+- **Weighing a mix.** When your prompt gives `Talking rules: <path>`, read its "Weighing a mix of options" rule first and apply it to the fits you find for each job before you pick the one you propose; a mix you propose names its parts in `why_this_one`.
 - No meta commentary in either file: nothing that narrates how the file came to be. Facts, commands, sources.
 - If the human's stack decisions make a plugin pointless, do not propose it; if they chose something the inventory shows they already have a better tool for, say so under "Proposals" as a `workflow` item with the evidence.
 

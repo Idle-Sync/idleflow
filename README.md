@@ -114,6 +114,7 @@ For work an end user sees (the classifier reports `ui: true`, or `STEP_DESIGN=on
 | Release | `unreleased`: no compatibility work for end users or callers who do not exist yet, a change replaces the old thing outright; `live` (and unset): every rule that protects them applies; the doctor suggests `live` once a release tag appears | `release:` and `kept_data:` in conventions.md, planner, red team, conformance reviewer, `procedures/api-design.md` |
 | While waiting | `work`: while CI, the gate, a long job or an agent runs, the run goes on with what does not depend on its result; `wait`: it waits; a missing line waits | `while_waiting:` in conventions.md, `commands/feature.md` |
 | Code map | on a large repo, the stack advisor proposes code maps, semantic search with a local model among them; an accepted one is searched first by every agent that searches the repo, its hits confirmed by grep or a read | `code_map`, `code_map_query`, `code_map_status` in conventions.md, `LARGE_REPO_LOC`, `agents/stack-advisor.md` |
+| UI preview of a task's own work | each task gets three ports (`IDLEFLOW_PORT`, `IDLEFLOW_PORT_API`, `IDLEFLOW_PORT_DB`) and a database name (`IDLEFLOW_DB`), so `preview:` can start the worktree's whole stack; without a worktree preview, browser criteria wait for the check after merge | `preview:` in conventions.md, `run.sh preview`, planner §2 |
 | Project docs | on for greenfield; doc-keeper before, retro after every run | `docs:` in conventions.md, `agents/doc-keeper.md`, `agents/retro.md`, `templates/CLAUDE.md` |
 
 ## Working as a team
@@ -226,6 +227,7 @@ commands/progress.md            where the project stands: milestones ticked and 
 commands/customize.md           per-project settings, step toggles, agent models, extra instructions, agent replacement; reports each change
 commands/doctor.md              check the repo's idleflow setup and for a newer release; offers the safe fixes
 commands/unslopify.md           audit a UI for what reads as AI-generated, then fix it at the level the human picks
+skills/vocab/SKILL.md           one term per concept: check, fix, backfill and add a term; /idleflow:vocab, used inside and outside a run
 agents/                         one file per role; frontmatter sets the model
 hooks/hooks.json                PreToolUse → ownership-guard
 scripts/run.sh                  run lifecycle: new / wt / own / get / set / inc / report / keep / gate / merge / snapshot / finish / loc /
