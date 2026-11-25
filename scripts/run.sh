@@ -464,7 +464,7 @@ wt_path() {
 
 # Repo commands come from whoever pushed the repo: they run only as committed at HEAD, and only once
 # this person approved that exact text (a hash in local git config; any change asks again).
-REPO_COMMANDS="worktree_setup gate gate_quick preview services services_start"
+REPO_COMMANDS="worktree_setup gate gate_quick preview services services_start code_map_query code_map_status"
 repo_command() { # the committed value of a command key, empty when unset
   local v
   v="$({ "${G[@]}" show "HEAD:.idleflow/conventions.md" 2>/dev/null || true; } | sed -n "s/^$1: *//p" | head -1 | tr -d '\r' | sed 's/ *$//')"
@@ -2923,6 +2923,15 @@ Task: $tid")
       for f in prd.md "$(progress_rel)" "$(index_rel)" "$(vocabulary_rel)"; do [ -f "$REPO/$f" ] || gone+=("$f"); done
       grep -q '<!-- idleflow start -->' "$REPO/CLAUDE.md" 2>/dev/null || gone+=("CLAUDE.md block")
       if [ "${#gone[@]}" -gt 0 ]; then check_line warn docs "missing: ${gone[*]}" "/idleflow:setup"; else check_line ok docs "prd.md, $(progress_rel), $(index_rel), $(vocabulary_rel) and the CLAUDE.md block are present"; fi
+    fi
+
+    # a large repo with no code map is told once; a declined suggestion stays quiet
+    case "$(conventions_value code_map)" in ""|none|unset) cm_none=1;; *) cm_none="";; esac
+    if [ -n "$cm_none" ]; then
+      if ! grep -qF -- "- declined: code_map -> " "$IDLE/suggestions.md" 2>/dev/null; then
+        n="$(bash "$0" loc 2>/dev/null || echo 0)"
+        if [ "${n:-0}" -ge "${LARGE_REPO_LOC:-100000}" ]; then check_line suggest code_map "$n hand-written code lines (LARGE_REPO_LOC $LARGE_REPO_LOC) and no code map" "/idleflow:setup researches the code-map options"; fi
+      fi
     fi
 
     # only a repo with a UI keeps a design system file, so a backend or tool repo gets no line

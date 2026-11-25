@@ -137,7 +137,7 @@ on their own in any tone.
 ## Repo fit
 
 How idleflow fits a repo that already has its own rules. Unset or missing lines keep idleflow's
-defaults. A command here (`worktree_setup`, `gate`, `services`, `services_start`) runs only as committed, and only after each
+defaults. A command here (`worktree_setup`, `gate`, `services`, `services_start`, `code_map_query`, `code_map_status`) runs only as committed, and only after each
 human approved that exact text on their own clone (`run.sh approve <key>`, kept in local git
 config); a changed command is asked about again. `unset` means nobody has decided yet, so setup and
 the end of a run may propose one; `none` means the repo has decided to go without.
@@ -154,6 +154,9 @@ preview_in: worktree
 services: unset
 services_start: unset
 while_waiting: work
+code_map: none
+code_map_query: unset
+code_map_status: unset
 
 - `worktrees_in`: `sibling` puts task worktrees next to the repo (`<repo>__wt/<task>`); `inside` puts
   them in `.idleflow/worktrees/` (ignored), for projects that must not write outside their own folder.
@@ -203,6 +206,12 @@ while_waiting: work
 - `while_waiting`: what a run does while a slow step's result is still to come. `work` goes on with
   whatever needs nothing that result decides and touches no file the slow step uses; `wait` waits for
   each result before going on, and a missing line means `wait`.
+- `code_map`, `code_map_query` and `code_map_status`: the code map a large repo accepted (the tool's
+  name, or `none`), the command that searches it (the query is added as its last argument) and the
+  command that brings its index up to date and says whether it is current; the query only reads it,
+  since agents query it in parallel. Agents search with it to find where to look and
+  confirm every hit with a text search or by reading the file; when it fails, they search without it.
+  Its index stays out of git.
 
 ## Ignore rules
 
