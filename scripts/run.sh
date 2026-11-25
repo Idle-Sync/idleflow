@@ -1898,10 +1898,10 @@ JSON
     active_id >/dev/null
     for tid in "$@"; do
       [ "$tid" = merged ] || check_task_id "$tid"
-      for kind in correct conform design api security; do
+      for kind in correct conform design api security ux; do
         name="$tid-$kind.md"; f="$ACTIVE/review/$name"
         [ -f "$f" ] || continue
-        tr -d '\r' < "$f" | R="review/$name" T="$tid" awk '/^### [FDPS][0-9]+\. / { sub(/^### /, ""); print ENVIRON["T"] ": " $0 " (" ENVIRON["R"] ")" }'
+        tr -d '\r' < "$f" | R="review/$name" T="$tid" awk '/^### [FDPSU][0-9]+\. / { sub(/^### /, ""); print ENVIRON["T"] ": " $0 " (" ENVIRON["R"] ")" }'
       done
     done
     ;;
@@ -2059,7 +2059,7 @@ Task: $tid")
         "${G[@]}" branch -q -m "$br" "$kept"
       fi
       # its reviews, report and gate result were of the build that is gone
-      for rel in "review/$tid-correct.md" "review/$tid-conform.md" "review/$tid-design.md" "review/$tid-api.md" "review/$tid-security.md" "tasks/$tid/report.md" "tasks/$tid/gate.json"; do
+      for rel in "review/$tid-correct.md" "review/$tid-conform.md" "review/$tid-design.md" "review/$tid-api.md" "review/$tid-security.md" "review/$tid-ux.md" "tasks/$tid/report.md" "tasks/$tid/gate.json"; do
         [ ! -f "$ACTIVE/$rel" ] || bash "$0" keep --move "$rel" >/dev/null
       done
       idleflow_rt set "$ACTIVE/run.json" "tasks.$tid" '{}'
@@ -2969,7 +2969,7 @@ Task: $tid")
     fi
     ;;
   conf)
-    for v in DIFF_LIMIT DIFF_SLACK MAX_IMPLEMENTERS SIZE_M_IMPLEMENTERS DEBATE_ROUNDS MAX_RETRIES SIZE_S_MAX SIZE_M_MAX SIZE_S_OVERRUN LARGE_REPO_LOC STEP_DEBATE STEP_STACK STEP_LIBRARIES STEP_TOOLING STEP_DOC_KEEPER STEP_MUTATION STEP_DESIGN STEP_DESIGN_OPTIONS SLOW_GATE_SECONDS SERVICES_START_SECONDS PORT_BASE CI_EVIDENCE_MINUTES CI_EVIDENCE_TRIES; do
+    for v in DIFF_LIMIT DIFF_SLACK MAX_IMPLEMENTERS SIZE_M_IMPLEMENTERS DEBATE_ROUNDS MAX_RETRIES SIZE_S_MAX SIZE_M_MAX SIZE_S_OVERRUN LARGE_REPO_LOC STEP_DEBATE STEP_STACK STEP_LIBRARIES STEP_TOOLING STEP_DOC_KEEPER STEP_MUTATION STEP_DESIGN STEP_DESIGN_OPTIONS STEP_UX SLOW_GATE_SECONDS SERVICES_START_SECONDS PORT_BASE CI_EVIDENCE_MINUTES CI_EVIDENCE_TRIES; do
       echo "$v=${!v:-}"
     done
     echo "RUNTIME=$(idleflow_rt_name)"
