@@ -1637,6 +1637,15 @@ check "detect works before the first commit" '[ "$det_rc" = 0 ] && echo "$det" |
 check "doctor works before the first commit" '(cd "$f" && bash "$RUN" doctor >/dev/null 2>&1)'
 mkdir -p "$f/db/migrations"; det_m="$(cd "$f" && bash "$RUN" detect)"
 check "a repo with migrations is told its preview should start the worktree's whole stack" 'echo "$det_m" | has -F "and the repo has migrations" && echo "$det_m" | has -F "\$IDLEFLOW_PORT_API, \$IDLEFLOW_PORT_DB and \$IDLEFLOW_DB" && ! echo "$det" | has -F "and the repo has migrations"'
+fv="$(mktemp -d)"; ( cd "$fv" && git init -q && printf '| use | means | never write |\n|---|---|---|\n| main checkout | the working tree of the repo | `main repo` |\n' > vocabulary.md && printf 'Open the main repo first, the main repo again.\n' > notes.md && git add vocabulary.md notes.md && git -c user.name=t -c user.email=t@example.invalid commit -q -m docs )
+docv="$(cd "$fv" && bash "$RUN" doctor 2>/dev/null)"
+check "the doctor reports docs that use a spelling the vocabulary file bans, and points to the backfill" 'echo "$docv" | has -F "warn vocab: 1 line(s) in the repo" && echo "$docv" | has -F "s Markdown use a spelling vocabulary.md bans | fix: /idleflow:vocab backfill"'
+printf 'Open the main checkout first.\n' > "$fv/notes.md"
+check "the doctor is quiet once the docs use the vocabulary" '! (cd "$fv" && bash "$RUN" doctor 2>/dev/null) | has "^warn vocab:"'
+printf '# Vocabulary\n' > "$fv/vocabulary.md"
+check "the doctor reports a vocabulary file it cannot check" '(cd "$fv" && bash "$RUN" doctor 2>/dev/null) | has "^warn vocab: vocabulary.md could not be checked"'
+rm -r -- "$fv"
+check "one vocab skill holds the check, fix, backfill and add steps, and every caller uses its fix" 'sk="$HERE/../skills/vocab/SKILL.md"; grep -q "^name: vocab\$" "$sk" && [ "$(grep -cE "^## (Check|Fix|Backfill|Add a term)\$" "$sk")" = 4 ] && grep -qF "\"Fix\" section of \`\${CLAUDE_PLUGIN_ROOT}/skills/vocab/SKILL.md\` says" "$HERE/../commands/feature.md" && grep -qF "\`Fix mode: edit\`, that path and \`\${CLAUDE_PLUGIN_ROOT}/skills/vocab/SKILL.md\`" "$HERE/../commands/feature.md" && grep -qF "\"Backfill\" section of \`\${CLAUDE_PLUGIN_ROOT}/skills/vocab/SKILL.md\`" "$HERE/../commands/setup.md" && grep -qF "A \`vocab.txt\` among those paths lists vocabulary hits" "$HERE/../agents/implementer.md"'
 rm -rf "$f"
 
 echo "--- docs kept by code"
