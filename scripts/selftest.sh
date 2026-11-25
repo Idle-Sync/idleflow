@@ -483,6 +483,22 @@ git rm -q --cached dist/app.css tests/fixtures/page.html docs/_templates/layout.
 rm -f dist/app.css tests/fixtures/page.html docs/_templates/layout.html ProjectSettings/ProjectVersion.txt; rmdir dist tests/fixtures tests docs/_templates docs ProjectSettings 2>/dev/null || true
 check "init and setup make the design system file only for a project people look at" 'grep -q "^## 5b. Design system (Opus), for a project people look at" "$HERE/../commands/init.md" && grep -q "gets no design system file" "$HERE/../commands/init.md" && grep -q "^## 5b. Design system, for a repo with a UI" "$HERE/../commands/setup.md" && grep -qF "the \`design\` line is \`ok\` or absent" "$HERE/../commands/setup.md" && grep -qF "bash \"\$RUN\" ui\` prints \`yes <file>\`" "$HERE/../commands/setup.md" && grep -q "^## System mode" "$HERE/../agents/designer.md" && grep -qF "\`DESIGN_SYSTEM\` is the path \`bash \"\$RUN\" path design-system\` prints." "$HERE/../commands/feature.md"'
 check "the design system template has every section the designer fills" '[ "$(grep -cE "^## (Direction|Type|Colour roles|Space and layout|Shape and depth|Motion|Components|Libraries|Looks this project avoids|Game)\$" "$HERE/../templates/design-system.md")" = 10 ]'
+cp .idleflow/conventions.md "$d-conv-cm.bak"; [ -f .idleflow/idleflow.conf ] && cp .idleflow/idleflow.conf "$d-conf-cm.bak"
+printf 'LARGE_REPO_LOC=1\n' >> .idleflow/idleflow.conf
+check "a large repo with no code map is told once" 'bash "$RUN" doctor | has "^suggest code_map: [0-9]* hand-written code lines (LARGE_REPO_LOC 1) and no code map | fix: /idleflow:setup researches the code-map options\$"'
+if grep -q '^code_map:' .idleflow/conventions.md; then sed -i.bak 's#^code_map: .*#code_map: unset#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak; else printf 'code_map: unset\n' >> .idleflow/conventions.md; fi
+check "a code map left unset counts as none" 'bash "$RUN" doctor | has "^suggest code_map:"'
+printf -- '- declined: code_map -> none (doctor, 2026-01-01)\n' >> .idleflow/suggestions.md
+check "a declined code map suggestion stays quiet" '! bash "$RUN" doctor | has "^suggest code_map:"'
+sed -i.bak '/^- declined: code_map -> none/d' .idleflow/suggestions.md && rm -f .idleflow/suggestions.md.bak; [ -s .idleflow/suggestions.md ] || rm -f .idleflow/suggestions.md
+if grep -q '^code_map:' .idleflow/conventions.md; then sed -i.bak 's#^code_map: .*#code_map: ck#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak; else printf 'code_map: ck\n' >> .idleflow/conventions.md; fi
+printf 'code_map_query: ck --sem\n' >> .idleflow/conventions.md
+git add .idleflow/conventions.md && git commit -q -m 'test: a code map' && cm_committed=1
+check "a repo with a code map is not told, and its query command is approved like any repo command" '! bash "$RUN" doctor | has "^suggest code_map:" && bash "$RUN" commands | has -xF "unapproved code_map_query: ck --sem" && bash "$RUN" approve code_map_query >/dev/null && bash "$RUN" commands | has -xF "approved code_map_query: ck --sem"'
+git config --local --unset idleflow.approved-code-map-query 2>/dev/null || true
+[ -z "${cm_committed:-}" ] || git reset -q --mixed HEAD~1
+cp "$d-conv-cm.bak" .idleflow/conventions.md && rm -f "$d-conv-cm.bak"; if [ -f "$d-conf-cm.bak" ]; then cp "$d-conf-cm.bak" .idleflow/idleflow.conf && rm -f "$d-conf-cm.bak"; else rm -f .idleflow/idleflow.conf; fi
+check "agents that search the repo search the accepted code map first and confirm its hits" 'grep -q "^code_map: none\$" "$HERE/../templates/conventions.md" && grep -qF "**Code map**, everywhere in this run" "$HERE/../commands/feature.md" && grep -qF "semantic code search over an embedding index" "$HERE/../agents/stack-advisor.md" && missing_cm="$(for a in explorer planner implementer implementer-hard review-correct review-conform; do grep -qF "**Code map**, when your prompt gives \`Code map: <command>\`" "$HERE/../agents/$a.md" || echo "$a"; done)"; [ -z "$missing_cm" ]'
 cp .idleflow/conventions.md "$d-conv-rel.bak"
 printf 'release: unreleased\nkept_data: no\n' >> .idleflow/conventions.md
 check "unreleased software with no release tag gets no release suggestion" '! bash "$RUN" doctor | has "^suggest release:"'

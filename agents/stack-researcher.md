@@ -28,7 +28,7 @@ Some units are short names. Read them like this:
 - `docker-compose-dev`, `devcontainer` → Docker Compose for dev/test; Dev Containers.
 - `pnpm`, `justfile`, `github-actions-ci` → the tools of those names.
 - A formatter, linter, type checker, test runner or hook manager → its official install and configuration command for a new project.
-- Graphify (knowledge graph of a codebase for Claude Code agents), Serena MCP (language-server-backed symbol navigation), Sourcegraph (code search and navigation at scale), universal-ctags, and a maintained repo map file → what it indexes, how it is installed or connected to Claude Code, its scaling limits, and who is known to use it.
+- Graphify (knowledge graph of a codebase for Claude Code agents), Serena MCP (language-server-backed symbol navigation), Sourcegraph (code search and navigation at scale), universal-ctags, a maintained repo map file, and semantic code search over an embedding index (the tools that run their model and index on this machine first, then hosted ones) → what it indexes, how it is installed or connected to Claude Code, its scaling limits, how its index is kept current, who is known to use it, and whether code or queries leave this machine.
 
 If a unit turns out to be unmaintained, renamed, or superseded, say so and name the successor with its sources.
 
