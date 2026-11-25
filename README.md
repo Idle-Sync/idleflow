@@ -57,6 +57,15 @@ For work an end user sees (the classifier reports `ui: true`, or `STEP_DESIGN=on
   the practice the published guidance agrees on (`procedures/security-review.md`): each finding traces where
   outside data enters and where it is used, is rated with the OWASP Risk Rating and carries its CWE id, and
   only what the diff introduced counts.
+- **`/idleflow:unslopify`** audits any project's UI for what makes it read as AI-generated, against a cited
+  catalogue (`procedures/slop.md`; the research is `docs/research/ui-slop.md`). `scripts/slop-scan.sh` finds the
+  patterns in the source, `scripts/slop-page.js` measures them in the rendered page, and the
+  **`idleflow:slop-auditor`** judges the rest from screenshots. A pattern the project's design system or a recorded
+  waiver chose is reported as chosen and never fixed; pages are scored on how many patterns occur together, not on
+  any single one, and a palette is only a note. The verdict on each page, made by people, mixed or generated, is a
+  judgement of craft (choices that follow from the page's own subject) calibrated against researched human-made
+  sites (`docs/research/human-made.md`), never of taste. The human picks report, polish, restyle or redesign; the fix runs as an idleflow run with the
+  project's own tokens, and the fixed pages are checked again so one generic look is not traded for another.
 - **`/idleflow:api-docs`** writes a project's API and service reference from its code in one step
   (**`idleflow:api-docs`**): every element callers use, its inputs, outputs, errors and authentication, and an
   example run against the service where one is served, in the repo's own docs format. A source list beside each
@@ -91,6 +100,7 @@ For work an end user sees (the classifier reports `ui: true`, or `STEP_DESIGN=on
 | Design | designer before planning and a design reviewer on `ui` tasks; a lasting design system per repo | `STEP_DESIGN`, `STEP_DESIGN_OPTIONS`, `agents/designer.md`, `agents/review-design.md`, `procedures/design.md` |
 | API review | an API reviewer on `api` tasks: the API's own conventions first, compatibility only once it has callers | plan `api:`, `agents/review-api.md`, `procedures/api-design.md` |
 | Security review | a security reviewer on `security` tasks: the repo's own controls first, a traced source and use for every finding, OWASP risk rating with CWE ids | plan `security:`, `agents/review-security.md`, `procedures/security-review.md` |
+| AI-looking UI | `/idleflow:unslopify`: a cited catalogue, static and rendered checks, chosen looks kept, pages scored on combinations of patterns, fixes at the level the human picks and checked again | `procedures/slop.md`, `agents/slop-auditor.md`, `scripts/slop-scan.sh`, `scripts/slop-page.js` |
 | API docs | written from the code by one step, each element's source recorded; a task that changes a source updates its docs before review | `api_docs:` in conventions, `agents/api-docs.md`, `commands/api-docs.md`, `run.sh api-docs` |
 | Placeholders | code that cannot do its job yet fails loudly; a plausible default is a blocking finding | implementer, correctness reviewer |
 | Checkable findings | each review finding says whether a deterministic check would have caught it; repeats become a lesson | reviewers, `agents/retro.md` |
@@ -210,6 +220,7 @@ commands/feature.md             the orchestrator — the run procedure lives her
 procedures/design.md            idleflow's design handbook; design-data.md beside it holds the reference values
 procedures/api-design.md        the API reviewer's principles; the cited research is docs/research/api-dx.md
 procedures/security-review.md   the security reviewer's rules; the cited research is docs/research/security-review.md
+procedures/slop.md              the UI slop catalogue, scoring and fix rules; the cited research is docs/research/ui-slop.md
 procedures/talking.md           how every command talks to the human: plain language, language, tone and explanation settings
 procedures/repo-setup.md        setup steps R1–R6 shared by feature and init (mode, docs, stack, libraries, tooling, snapshot)
 commands/fix.md                 same, bug-biased
@@ -222,6 +233,7 @@ commands/setup.md               set idleflow up in a project that already has co
 commands/progress.md            where the project stands: milestones ticked and open, who landed what, what is next, what waits on a human
 commands/customize.md           per-project settings, step toggles, agent models, extra instructions, agent replacement; reports each change
 commands/doctor.md              check the repo's idleflow setup and for a newer release; offers the safe fixes
+commands/unslopify.md           audit a UI for what reads as AI-generated, then fix it at the level the human picks
 commands/api-docs.md            write the API and service reference from the code; `check` reports docs that no longer match
 skills/vocab/SKILL.md           one term per concept: check, fix, backfill and add a term; /idleflow:vocab, used inside and outside a run
 agents/                         one file per role; frontmatter sets the model
@@ -236,6 +248,8 @@ scripts/conf.sh                 loads config/idleflow.conf, then a project's .id
 scripts/idleflow.py             the JSON / gate / guard logic (Python)
 scripts/idleflow.js             the same program in Node; keep the two in sync
 scripts/selftest.sh             end-to-end check of the scripts in a throwaway repo
+scripts/slop-scan.sh            the static tier of /idleflow:unslopify: catalogue patterns found in UI source
+scripts/slop-page.js            the rendered tier: one expression a browser tool evaluates in the page; returns measures and flags
 scripts/shellcheck-new.sh       fails only on shellcheck findings a change adds over a base commit
 .github/workflows/checks.yml    CI: selftest on both runtimes, plugin validate, new shellcheck findings
 config/idleflow.conf            every number the workflow uses
