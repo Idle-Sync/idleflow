@@ -1,6 +1,6 @@
 # UI slop: the catalogue and how it is used
 
-Read by `idleflow:slop-auditor` and by `/idleflow:unslopify`. The evidence for every pattern, with its sources, is in `docs/research/ui-slop.md`. Last reviewed: 2026-11-25. The patterns that mark a UI as generated move within about a year; when this date is more than six months old, the audit says so in its report and the catalogue is due a refresh from new research.
+Read by `idleflow:slop-auditor` and `/idleflow:unslopify`, by the designer while it designs and by the design reviewer (`procedures/design.md` §9). The evidence for every pattern, with its sources, is in `docs/research/ui-slop.md`. Last reviewed: 2026-11-25. The patterns that mark a UI as generated move within about a year; when this date is more than six months old, the audit says so in its report and the catalogue is due a refresh from new research.
 
 ## What a pattern is
 
@@ -18,7 +18,7 @@ A pattern with two tiers is found by the first and confirmed by the second.
 
 ## The catalogue
 
-Weight is how strong the evidence is that people read the pattern as generated: **strong** (many independent sources plus data or tool support), **medium**, **contested** (named, and defended about as often), or **note**. A palette is not a reliable tell: the generated look has moved between palettes, and people's own designs use every one of them. So every pattern that is only a hue or a palette is a **note**: reported, so the human sees it, but never scored and never fixed unless the human asks. Look is the cluster it belongs to: **2024** (the earlier generated look), **paper** (the later one, a warm light page with a serif display face), **template** (structure any generated page shares), or `-`.
+Weight is how strong the evidence is that people read the pattern as generated: **strong** (many independent sources plus data or tool support), **medium**, **contested** (named, and defended about as often), or **note**. A palette is not a reliable tell: the generated look has moved between palettes, and people's own designs use every one of them. So every pattern that is only a hue or a palette is a **note**: reported, so the human sees it, but never scored and never fixed unless the human asks. A `contested` pattern whose look is `-` is likewise reported in an audit's list and never scored, since no stronger pattern of its look can stand beside it. Look is the cluster it belongs to: **2024** (the earlier generated look), **paper** (the later one, a warm light page with a serif display face), **template** (structure any generated page shares), or `-`.
 
 ### Colour and surface effects
 
@@ -26,6 +26,8 @@ Weight is how strong the evidence is that people read the pattern as generated: 
 |---|---|---|---|---|
 | violet-accent | an accent or primary hue in the violet-indigo band the project's brand does not define | static | note | 2024 |
 | gradient-text | headline text filled with a gradient | static | medium | 2024 |
+| gradient-surface | gradients on backgrounds, buttons or borders that nothing in the direction or the subject calls for | static | contested | 2024 |
+| stock-shadow | one soft shadow on every card and panel | judged | medium | template |
 | neon-glow | a coloured glow with no offset, mostly on a dark page | static | medium | 2024 |
 | blur-orbs | large blurred shapes or halos behind content | static | contested | 2024 |
 | glass-cards | frosted translucent panels as the default surface | static | contested | 2024 |
@@ -41,6 +43,8 @@ Weight is how strong the evidence is that people read the pattern as generated: 
 | id | pattern | tier | weight | look |
 |---|---|---|---|---|
 | stock-display-face | a framework's default sans as the display face | static | contested | 2024 |
+| stock-icons | a framework's default icon set used everywhere with no adjustment | judged | contested | 2024 |
+| icon-for-words | icons standing in for words the end user needs to read | judged | medium | - |
 | eyebrow-label | a tracked all-caps small label above headings | static | strong | paper |
 | accent-word | one word of a headline set apart in another face, style or colour | static | medium | paper |
 | mono-costume | a monospace face on text that is not code | static | medium | paper |
@@ -104,7 +108,7 @@ Weight is how strong the evidence is that people read the pattern as generated: 
 
 | id | pattern | tier | weight | look |
 |---|---|---|---|---|
-| fake-proof | invented numbers, testimonials, customer logos or placeholder names | static, judged | strong | template |
+| fake-proof | invented numbers, testimonials, customer logos, placeholder names or placeholder text | static, judged | strong | template |
 | fake-controls | links to nowhere, buttons with no action, forms that report success without sending | static, judged | strong | - |
 | raw-errors | raw error text shown to the end user, or no error shown at all | static, judged | medium | - |
 | missing-states | no designed empty, loading or error state where data can be absent, slow or fail | judged | medium | - |
@@ -118,6 +122,7 @@ Weight is how strong the evidence is that people read the pattern as generated: 
 |---|---|---|---|---|
 | median-look | without its logo, the page could belong to any product | judged | strong | - |
 | quilt | many effects competing, none of them the one memorable thing | judged | medium | - |
+| idle-decoration | decoration that serves neither the subject nor the direction | judged | medium | - |
 | greyscale-collapse | hierarchy that disappears in greyscale because colour alone carries it | judged | medium | - |
 | audience-mismatch | a style at odds with who the end users are and what they came to do | judged | medium | - |
 
@@ -125,7 +130,7 @@ Weight is how strong the evidence is that people read the pattern as generated: 
 
 For each hit, before it is scored:
 
-- **chosen** when the project's design system file, tokens or brand assets define it, when a waiver in `.idleflow/slop-waivers.md` names it for that place, or when the source line holds `slop-ignore`. Reported as chosen with the record that chose it; never scored and never fixed.
+- **chosen** when the project's design system file, tokens or brand assets define it, when the run's `design.md` spec names it for that screen (for a reader that has one), when a waiver in `.idleflow/slop-waivers.md` names it for that place, or when the source line holds `slop-ignore`. Reported as chosen with the record that chose it; never scored and never fixed.
 - **default** when it matches a framework's default theme, or a literal no project record defines. A framework default is not a choice.
 - **ask** when the evidence cannot settle it. The human is asked, and the answer is kept as a waiver or treated as a default.
 
@@ -134,7 +139,7 @@ For each hit, before it is scored:
 The score is a lead, not the verdict. Score each page audited, from its default hits only:
 
 - Count the distinct patterns, not the hits: one pattern on ten lines counts once. A static hit counts for the pages that render its file. A note never counts.
-- A contested pattern counts only on a page where a strong or medium pattern of the same look also counts.
+- A contested pattern counts only on a page where a strong or medium pattern of the same look also counts; one whose look is `-` never counts.
 - **low** at 0 to 1, **medium** at 2 to 3, **high** at 4 or more.
 - A look is **named** for the page when three or more of its patterns count; the report says which look the page reads as.
 - `median-look` and `quilt`, when judged present, raise the page one level.

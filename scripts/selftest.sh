@@ -74,8 +74,11 @@ commit() { git -c user.name=t -c user.email=t@t commit -q "$@"; }
 
 echo "runtime: $(idleflow_rt_name)"
 d="$(mktemp -d)"; d="$(cd "$d" && pwd)"
+# checks run through eval in this shell, so one that assigns `d` would turn the cleanup on whatever it
+# names; the cleanup keeps its own copy, which nothing can change
+readonly SUITE_ROOT="$d"
 can_symlink=""; ln -s "$d" "$d.probe" 2>/dev/null && [ -L "$d.probe" ] && can_symlink=1; rm -f "$d.probe"
-cleanup() { cd / ; rm -rf "$d" "$d-tmp" "${d}__wt" "$d.link" "${d}__wt.link" "$d-mig" "$d-human" "${d}-human__wt" "$d-stray" "$d-pin" 2>/dev/null || true; }
+cleanup() { local r="$SUITE_ROOT"; cd / ; rm -rf "$r" "$r-tmp" "${r}__wt" "$r.link" "${r}__wt.link" "$r-mig" "$r-human" "${r}-human__wt" "$r-stray" "$r-pin" 2>/dev/null || true; }
 trap cleanup EXIT
 # the suite's own root for task temp folders and port claims, so a suite running beside it never meets it
 export IDLEFLOW_TMP_ROOT="$d-tmp"; mkdir -p "$IDLEFLOW_TMP_ROOT"; utmp="$IDLEFLOW_TMP_ROOT/idleflow-$(id -u)"
@@ -1938,6 +1941,9 @@ check "api-docs check --task exits 2, not 1, for a task it cannot find" '{ (cd "
 (cd "$ad" && bash "$RUN" wt rm TA >/dev/null 2>&1; bash "$RUN" finish "done" >/dev/null 2>&1) || true
 check "a task that changes a documented source updates its docs before review" 'f="$HERE/../commands/feature.md"; has -F "**API docs check**, before a task" "$f" && has -F "api-docs check --task <id>" "$f" && has -F "API docs stale: <its api-docs.txt>" "$f" && has -F "\`API docs: <folder>\` when \`api_docs:\` in conventions names one" "$f" && has -F "then \`bash \"\$RUN\" api-docs check --since <bash \"\$RUN\" get base_sha>\` when \`api_docs:\` names a folder" "$f" && has -F "**API docs.** When your prompt gives \`API docs: <folder>\`" "$HERE/../agents/planner.md" && has -F "**API docs stale**" "$HERE/../agents/review-conform.md" && has -F "**API docs stale**" "$HERE/../agents/review-correct.md" && grep -q "^api_docs: unset\$" "$HERE/../templates/conventions.md"'
 check "/idleflow:api-docs writes the reference from the code and records each source" 'c="$HERE/../commands/api-docs.md"; a="$HERE/../agents/api-docs.md"; has -F "idleflow:api-docs" "$c" && has -F "api-docs check" "$c" && has -F "<docs file>.sources" "$a" && has -F "not run: <why>" "$a" && has -F "git -C <repo root> hash-object -- <source file>" "$a"'
+
+# one catalogue of generic patterns: design.md points at it, the designer and design reviewer use it
+check "the designer and design reviewer use the one slop catalogue unslopify checks" 'dm="$HERE/../procedures/design.md"; has -F "The signs are the catalogue in \`procedures/slop.md\`" "$dm" && ! has -F "a gradient chosen without a reason" "$dm" && has -F "against the catalogue in \`procedures/slop.md\`" "$HERE/../agents/designer.md" && has -F "against the catalogue in \`procedures/slop.md\`" "$HERE/../agents/review-design.md" && has -F "scripts/slop-scan.sh" "$HERE/../agents/review-design.md" && has -F "scripts/slop-page.js" "$HERE/../agents/review-design.md" && n=0; for id in template-sequence gradient-surface pill-everything stock-shadow stock-display-face stock-icons icon-for-words fake-proof idle-decoration; do grep -q "^| $id |" "$HERE/../procedures/slop.md" && n=$((n+1)); done; [ "$n" = 9 ] && has -F "running checks 1 and 5, and of check 4 only its rendered and judged part" "$HERE/../agents/review-design.md"'
 
 # the lifecycle hunt: maps, plays out and probes lifecycles; the red team checks plans against it
 check "the lifecycle hunter reports each bug as a scenario with a test that fails on it" 'lh="$HERE/../agents/lifecycle-hunter.md"; lp="$HERE/../procedures/lifecycle-hunt.md"; [ -f "$lh" ] && [ -f "$lp" ] && has -F "## 2. Simulate long use" "$lp" && has -F "## 3. Probe the edges" "$lp" && has -F "**Control the clock.**" "$lp" && has -F "### L<n>. <title>   severity: blocking | major | minor" "$lh" && has -F "test: <path in the failing-tests folder>" "$lh" && has -F "unproven:" "$lh" && ! grep -q "^tools:" "$lh"'

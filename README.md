@@ -45,7 +45,8 @@ For work an end user sees (the classifier reports `ui: true`, or `STEP_DESIGN=on
 - **Libraries** it would use (an animation library such as GSAP, a component set such as shadcn/ui) go to the
   library step for research and the human's yes; it never installs anything.
 - **`idleflow:review-design`** reviews every `ui` task against the spec and tokens, checks accessibility and the
-  signs of a generic look, and, when a browser tool is available and the repo has an approved `preview:`
+  patterns of a generic look from the researched catalogue `/idleflow:unslopify` uses
+  (`procedures/slop.md`), and, when a browser tool is available and the repo has an approved `preview:`
   command, renders the changed screens at 390 and 1440 px and reviews the images. For an app that runs
   only from the main checkout (`preview_in: main`), it checks the merged screens, and each
   `verify: browser after merge` criterion, once after the last merge (`run.sh preview main`).

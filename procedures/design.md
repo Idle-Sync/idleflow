@@ -65,15 +65,12 @@ Semantic structure (landmarks, headings in order, real buttons and links), full 
 
 ## 9. Signs a screen looks generic
 
-Replace each with a decision tied to the direction:
+The signs are the catalogue in `procedures/slop.md`, beside this file: the one list idleflow keeps, with the evidence for each pattern, read by the designer, the design reviewer and `/idleflow:unslopify` alike. How design uses it:
 
-- a page laid out in the sequence of sections most sites use, because that is what pages look like;
-- a gradient chosen without a reason;
-- every corner the same large radius and every card the same soft shadow;
-- the default font stack and default icon set used everywhere with no adjustment;
-- icons standing in for words the end user needs to read;
-- placeholder copy that reached a review;
-- decoration that does not serve the direction's two words.
+- **A pattern is a default unless the direction chooses it.** Use one only for a reason tied to the direction's two words or the subject, and write that choice into the design system, in the section it decides, with its reason and the pattern's catalogue id in parentheses. A choice recorded there, or in the run's spec for one screen, is read as chosen by every later check; one that is not recorded is read as a default.
+- **Replace a default with a decision tied to the direction**, removing before adding, and never with a pattern of another look in the catalogue: trading one generated look for another is not a fix.
+- **A palette is only a note** (`procedures/slop.md`, its weights): it is no reason to change a palette the direction chose, and no reason to keep one nothing chose.
+- **Judge the whole by craft, not taste**, as the catalogue's verdict section says: whether the screen's choices follow from its own subject and the people it is for.
 
 ## 10. Components and libraries
 
