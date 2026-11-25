@@ -57,6 +57,12 @@ For work an end user sees (the classifier reports `ui: true`, or `STEP_DESIGN=on
   the practice the published guidance agrees on (`procedures/security-review.md`): each finding traces where
   outside data enters and where it is used, is rated with the OWASP Risk Rating and carries its CWE id, and
   only what the diff introduced counts.
+- **`/idleflow:api-docs`** writes a project's API and service reference from its code in one step
+  (**`idleflow:api-docs`**): every element callers use, its inputs, outputs, errors and authentication, and an
+  example run against the service where one is served, in the repo's own docs format. A source list beside each
+  docs file records the files each element depends on; `run.sh api-docs check` lists the elements whose source changed since their docs were
+  written, every run checks a task's changes with it before review, and `/idleflow:api-docs check` reports
+  drift at any time.
 
 ## What it adds over plain Claude Code
 
@@ -85,6 +91,7 @@ For work an end user sees (the classifier reports `ui: true`, or `STEP_DESIGN=on
 | Design | designer before planning and a design reviewer on `ui` tasks; a lasting design system per repo | `STEP_DESIGN`, `STEP_DESIGN_OPTIONS`, `agents/designer.md`, `agents/review-design.md`, `procedures/design.md` |
 | API review | an API reviewer on `api` tasks: the API's own conventions first, compatibility only once it has callers | plan `api:`, `agents/review-api.md`, `procedures/api-design.md` |
 | Security review | a security reviewer on `security` tasks: the repo's own controls first, a traced source and use for every finding, OWASP risk rating with CWE ids | plan `security:`, `agents/review-security.md`, `procedures/security-review.md` |
+| API docs | written from the code by one step, each element's source recorded; a task that changes a source updates its docs before review | `api_docs:` in conventions, `agents/api-docs.md`, `commands/api-docs.md`, `run.sh api-docs` |
 | Placeholders | code that cannot do its job yet fails loudly; a plausible default is a blocking finding | implementer, correctness reviewer |
 | Checkable findings | each review finding says whether a deterministic check would have caught it; repeats become a lesson | reviewers, `agents/retro.md` |
 | Known base failures | a failure already on the commit a task started from is shown there with `run.sh exec --base`, never argued; the gate's baseline and every task's proven ones go into the run's `known-failures.md`, which later implementers and the correctness reviewer get, with or without a gate | step 5 of `commands/feature.md`, `agents/implementer.md` |
@@ -215,6 +222,7 @@ commands/setup.md               set idleflow up in a project that already has co
 commands/progress.md            where the project stands: milestones ticked and open, who landed what, what is next, what waits on a human
 commands/customize.md           per-project settings, step toggles, agent models, extra instructions, agent replacement; reports each change
 commands/doctor.md              check the repo's idleflow setup and for a newer release; offers the safe fixes
+commands/api-docs.md            write the API and service reference from the code; `check` reports docs that no longer match
 skills/vocab/SKILL.md           one term per concept: check, fix, backfill and add a term; /idleflow:vocab, used inside and outside a run
 agents/                         one file per role; frontmatter sets the model
 hooks/hooks.json                PreToolUse → ownership-guard
