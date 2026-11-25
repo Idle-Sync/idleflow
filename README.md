@@ -65,6 +65,13 @@ For work an end user sees (the classifier reports `ui: true`, or `STEP_DESIGN=on
   Each bug comes back as a scenario with a test that fails on it, fixed through `/idleflow:fix` on a yes. A plan that
   changes a lifecycle gives the task a played-out test in its acceptance, and the red team, when the plan is
   debated, checks the plan against the same procedure.
+- **`/idleflow:blueprint <part>`** saves a reusable part of a project, a feature or mechanism worth having again,
+  as ideas with no code and no stack (**`idleflow:blueprinter`**, `templates/blueprint.md`): its flows, rules,
+  states, edge cases, what it keeps, outside services by role, lessons and plain-language test cases.
+  `run.sh blueprint-check` lists every line with code, a file name or an identifier, and fails until none is left. It is kept in
+  `~/.idleflow/blueprints/` for any project, and in `docs/blueprints/` on a yes. `/idleflow:feature <blueprint>`
+  builds it in another project, its test cases as the acceptance. The retro and `/idleflow:endsession` suggest
+  one when a run or a session built something worth keeping.
 - **`/idleflow:unslopify`** audits any project's UI for what makes it read as AI-generated, against a cited
   catalogue (`procedures/slop.md`; the research is `docs/research/ui-slop.md`). `scripts/slop-scan.sh` finds the
   patterns in the source, `scripts/slop-page.js` measures them in the rendered page, and the
@@ -118,6 +125,7 @@ For work an end user sees (the classifier reports `ui: true`, or `STEP_DESIGN=on
 | AI-looking UI | `/idleflow:unslopify`: a cited catalogue, static and rendered checks, chosen looks kept, pages scored on combinations of patterns, fixes at the level the human picks and checked again | `procedures/slop.md`, `agents/slop-auditor.md`, `scripts/slop-scan.sh`, `scripts/slop-page.js` |
 | UX review | a reviewer walks the app's journeys as an end user on `ui` tasks with a preview, and on its own; each place an end user gets stuck is a finding with its screenshot | `STEP_UX`, `agents/review-ux.md`, `procedures/ux-review.md`, `commands/ux.md` |
 | API docs | written from the code by one step, each element's source recorded; a task that changes a source updates its docs before review | `api_docs:` in conventions, `agents/api-docs.md`, `commands/api-docs.md`, `run.sh api-docs` |
+| Blueprints | a reusable part saved as ideas with no code, in `~/.idleflow/blueprints/` and the repo on a yes; built from as an issue; suggested by the retro when worth keeping | `agents/blueprinter.md`, `commands/blueprint.md`, `templates/blueprint.md`, `run.sh blueprint-check` |
 | Placeholders | code that cannot do its job yet fails loudly; a plausible default is a blocking finding | implementer, correctness reviewer |
 | Checkable findings | each review finding says whether a deterministic check would have caught it; repeats become a lesson | reviewers, `agents/retro.md` |
 | Known base failures | a failure already on the commit a task started from is shown there with `run.sh exec --base`, never argued; the gate's baseline and every task's proven ones go into the run's `known-failures.md`, which later implementers and the correctness reviewer get, with or without a gate | step 5 of `commands/feature.md`, `agents/implementer.md` |
@@ -252,6 +260,7 @@ commands/progress.md            where the project stands: milestones ticked and 
 commands/customize.md           per-project settings, step toggles, agent models, extra instructions, agent replacement; reports each change
 commands/doctor.md              check the repo's idleflow setup and for a newer release; offers the safe fixes
 commands/lifecycle.md           hunt the bugs that appear over time; each comes back with a failing test, fixed on a yes
+commands/blueprint.md           save a reusable part as a code-free blueprint, to build again later in any project
 commands/unslopify.md           audit a UI for what reads as AI-generated, then fix it at the level the human picks
 commands/ux.md                  use the app as its end users would, report where they get stuck, fix on a yes and walk again
 commands/api-docs.md            write the API and service reference from the code; `check` reports docs that no longer match
@@ -274,7 +283,7 @@ scripts/shellcheck-new.sh       fails only on shellcheck findings a change adds 
 .github/workflows/checks.yml    CI: selftest on both runtimes, plugin validate, new shellcheck findings
 config/idleflow.conf            every number the workflow uses
 templates/                      plan.md, context.md, lessons.md, conventions.md, prd.md, progress.md, install-note.md,
-                                index.md, session.md, time-log.md, CLAUDE.md, vocabulary.md, design-system.md
+                                index.md, session.md, time-log.md, CLAUDE.md, vocabulary.md, design-system.md, blueprint.md
 setup.md                        global install, written for Claude Code to execute
 PUBLISHING.md                   validate, push to GitHub, install elsewhere, release updates
 ISSUES.md                       how every idleflow issue is written: kinds, title, four headings; the form and plugin-feedback use it
