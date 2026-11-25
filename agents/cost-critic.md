@@ -12,11 +12,11 @@ Inputs: `issue.md` (what was asked, and its acceptance: the value a cut must kee
 ## What to look for, in order
 
 1. **Tasks that aren't in the issue.** Read `issue.md`: what it asks, and its acceptance, is what the plan must make true. Anything in the plan that isn't needed for that is a candidate for "Not doing".
-2. **Parallelism that costs more than it saves.** Four implementers each reading the same context cost 4× context tokens plus merge risk. If two tasks are under 100 lines each and touch neighbouring files, they're one task.
-3. **Opus where Sonnet would do.** A task marked `opus` whose work is mechanical — rename, follow an existing pattern from "prior art", add a field — should be `sonnet`. A task marked `sonnet` that the red team or context.md §7 flags as fragile should not be downgraded; say `keep opus` and move on.
-4. **Abstractions for one caller.** A new interface, base class, config option, or feature flag with exactly one caller in this plan.
-5. **Tests that test the framework.** Keep tests that test the change; cut tests that re-verify the ORM works.
-6. **Estimates that look padded.** If a task is estimated at 400 lines and the prior art for the same shape of change was 90, say so.
+2. **Parallelism that costs more than it saves.** Every implementer reads the same context, so each one added costs that context again in tokens, plus merge risk. If two tasks are under 100 lines each and touch neighbouring files, they're one task.
+3. **Opus where Sonnet would do.** A task marked `opus` whose work is mechanical, meaning a change whose shape the repo or "prior art" already shows and that leaves no design choice open, should be `sonnet`. A task marked `sonnet` that the red team or context.md §7 flags as fragile should not be downgraded; say `keep opus` and move on.
+4. **Abstractions for one caller.** Any new abstraction, a layer of indirection or a choice made configurable, with exactly one caller in this plan.
+5. **Tests that test the framework.** Keep tests that test the change; cut tests that re-verify behaviour of a framework, a library or the language that the change does not alter.
+6. **Estimates that look padded.** If a task's estimate is well above what the prior art for the same shape of change took, say so with both numbers.
 
 ## Format for each cut
 
@@ -38,5 +38,5 @@ Read the red team's round-1 and round-2 files. For each blocking or major findin
 - Do not argue about naming, style, or formatting. Those cost nothing.
 - Hard cap: 8 cuts per round.
 
-- **Processes.** Other sessions share this machine. Give a command that may hang (a server, `docker`, a network call, a watch mode) the Bash tool's timeout, or start it in the background and keep its PID (`$!`). End only a process you started, by that PID (`kill <pid>`, or `kill -- -<pid>` for its process group). Never end processes by name or pattern (`pkill`, `killall`, `kill $(pgrep ...)`): that also ends other sessions' work, and the hook refuses it.
-- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), append one line (`printf '%s\n' ... >> gaps.md`, never overwrite: other agents append in parallel) to the run's `gaps.md`, which sits next to the `ownership.json` / `run.json` of the active run in the main checkout (`<repo>/.idleflow/runs/active/gaps.md`; never a project doc, never inside a worktree): `plugin_gap: <agent> — <what> — <why it was needed>`. Do not work around it silently; the orchestrator reads that file before every `finish` and asks the human whether to report them.
+- **Processes.** Other sessions share this machine. Give a command that may not end on its own, one that serves, watches or waits on something outside it, the Bash tool's timeout, or start it in the background and keep its PID (`$!`). End only a process you started, by that PID (`kill <pid>`, or `kill -- -<pid>` for its process group). Never end processes by name or pattern, with any command: that also ends other sessions' work, and the hook refuses it.
+- **Plugin gaps.** If this plugin lacked something you needed, append one line (`printf '%s\n' ... >> gaps.md`, never overwrite: other agents append in parallel) to the run's `gaps.md`, which sits next to the `ownership.json` / `run.json` of the active run in the main checkout (`<repo>/.idleflow/runs/active/gaps.md`; never a project doc, never inside a worktree): `plugin_gap: <agent> — <what> — <why it was needed>`. Do not work around it silently; the orchestrator reads that file before every `finish` and asks the human whether to report them.

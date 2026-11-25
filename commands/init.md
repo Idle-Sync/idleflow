@@ -18,7 +18,7 @@ Idea: $ARGUMENTS
 
 Record paths: where this file names `progress.md`, `index.md`, `docs/sessions/`, the lessons file or the time log, use the path `bash "$RUN" path progress|index|sessions|lessons|time-log` prints; a repo can keep its records elsewhere (conventions "Records"), and agents get the resolved paths in their prompts.
 
-**Push back when an answer is wrong.** You are not a yes machine. Whenever an answer conflicts with something you can point at (an earlier answer, a documented constraint of the chosen platform, a licence, a number that does not add up, a research file from step 2 or 4), say so before moving on: the conflict in one sentence, the evidence, a better option with its cost. Once. If the human keeps their answer, write both the answer and the reason into `brainstorm.md` and move on. No pushback without something to cite.
+**Push back when an answer is wrong.** You are not a yes machine. Whenever an answer conflicts with something you can point at, an earlier answer and the research files from steps 2 and 4 included, say so before moving on: the conflict in one sentence, the evidence, a better option with its cost. Once. If the human keeps their answer, write both the answer and the reason into `brainstorm.md` and move on. No pushback without something to cite.
 
 ---
 
@@ -77,7 +77,7 @@ Write `mode:`, `docs: yes`, `docs_in_git:` and `ignore_in:` into `.idleflow/conv
 
 ## 4. Stack, libraries, tooling
 
-Run **R3**, **R4** and **R5** from `procedures/repo-setup.md` with `greenfield` true and `brainstorm.md` as the project description, issue and context. The stack advisor scans an empty folder, so its proposals come from the brainstorm (language, platform, hosting) and the machine (Docker, uv, pnpm present?); the researcher grounds them; the human accepts or declines. The library scout researches the capabilities the core job needs. The tooling advisor proposes skills, plugins and workflows and checks the Idle-Sync/skills catalogue. All three write under `docs/research/`.
+Run **R3**, **R4** and **R5** from `procedures/repo-setup.md` with `greenfield` true and `brainstorm.md` as the project description, issue and context. The stack advisor scans an empty folder, so its proposals come from the brainstorm and from the tools the machine has; the researcher grounds them; the human accepts or declines. The library scout researches the capabilities the core job needs. The tooling advisor proposes skills, plugins and workflows and checks the Idle-Sync/skills catalogue. All three write under `docs/research/`.
 
 ## 5. PRD (Fable)
 
@@ -99,7 +99,7 @@ Only when the brainstorm says the project has screens people see: a website or w
 3. `progress.md` (its "Milestones" section is already written): first "Log" entry: `## <date> — project initialised (run <ID>)` with: brainstorm done, market research verdict, N stack decisions, N library decisions, N tooling items, PRD approved, next: milestone 1 from `progress.md` "Milestones".
 4. The note at `$(bash "$RUN" session-name)` from the template: what this session decided, the files it created, next = milestone 1.
 5. On the **Team** answer "Recommend", `bash "$RUN" team-install`.
-6. `.gitignore`: add the stack's usual entries (`.venv/`, `node_modules/`, `dist/`, `.env`) only for stacks that were accepted; every clone needs them, so they go here whatever `ignore_in:` says. idleflow's own entries were placed in step 3.
+6. `.gitignore`: add the usual ignore entries of each accepted stack, the files that hold local secrets included, and of no other; every clone needs them, so they go here whatever `ignore_in:` says. idleflow's own entries were placed in step 3.
 7. `README.md` if absent: the project name, the one-sentence "what", the one-line "who", and `See prd.md`. Nothing else; it grows with the code.
 
 ## 7. First commit and, if chosen, the GitHub repo
@@ -135,8 +135,8 @@ Then ask: **Start milestone 1 now** / **End the session** / **Stop here**. On "S
 
 - Never write application code or scaffold a framework yourself; accepted stack decisions become tasks in the first feature run.
 - Never skip the market research or the PRD approval; the point of this command is that the first session is thorough.
-- Never put meta commentary in any file you create: no "the user asked", "as requested", "I decided". State the decision. <!-- vocab: allow -->
-- Never add `Co-Authored-By: Claude` unless `co_author_claude: yes` was chosen; never add "Generated with Claude Code" footers at all.
+- Never put meta commentary in any file you create: nothing that narrates how the file came to be. State the decision.
+- Never add `Co-Authored-By: Claude` unless `co_author_claude: yes` was chosen; never add any other line or footer that credits an assistant.
 - Never create the GitHub repo without the human confirming owner, name and visibility in this session.
 - Never install anything into the repo. The only installs are the tooling commands the human accepted by name in R5, and those change the human's Claude Code setup, not the repo.
 - Never agree with an answer the evidence contradicts without saying so once, with the evidence.

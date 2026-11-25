@@ -7,7 +7,7 @@ Read by `idleflow:review-security` before it reviews. The rules below are the on
 A task gets this review when its change does any of these:
 - touches how callers are identified, how sessions or tokens are made and checked, or who may do what;
 - adds or changes an entry point that takes input from outside the process;
-- passes data that may come from outside into a place where it is interpreted (a query, a command, a template, a file path, an outbound request, a deserialiser, a redirect) or rendered without the default encoding;
+- passes data that may come from outside into anything that interprets it as code, structure or a destination, or renders it without the default encoding;
 - adds or changes cryptography, randomness used for security, or the handling of secrets and credentials;
 - changes configuration, infrastructure or CI that decides what is exposed, trusted or allowed;
 - adds or changes a dependency;
@@ -29,7 +29,7 @@ Controls are built once and reused; the guides agree on it. Before judging the d
 
 - **Access control is the first risk.** Every entry point checks that the caller may act on this particular object and see each field it returns, through the repo's control, and fails closed.
 - **Authentication and sessions** use the platform's established mechanisms; credentials are stored only as slow salted hashes; tokens are checked for signature, issuer, audience, expiry and algorithm; sessions are renewed on privilege change and ended on logout.
-- **Outside data is never interpreted as code or structure.** It reaches a query, command, template, path, outbound request or deserialiser only through a parameterised or allow-listed interface, and is encoded for the context it is rendered in.
+- **Outside data is never interpreted as code or structure.** It reaches anything that interprets it as code, structure or a destination only through a parameterised or allow-listed interface, and is encoded for the context it is rendered in.
 - **Secrets stay out of code, logs and URLs.** They come from the repo's secret source; one that leaked is revoked and rotated, not only deleted.
 - **Cryptography** uses current, vetted library primitives with safe parameters, and security-relevant randomness comes from a cryptographic source; nothing is hand-rolled.
 - **Files and paths** from outside are canonicalised and confined; uploads are checked for type and size and stored where they cannot run.

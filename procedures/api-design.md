@@ -10,7 +10,7 @@ The guides disagree on several choices, so applying one guide to another API pro
 2. **Otherwise the unchanged API is the convention.** Derive, for each kind of element the change touches, the pattern the existing API uses most, and note the count behind it.
 3. **New and changed elements are judged against that convention.** A mismatch is a finding even when the new element follows a published guide better.
 4. **A change that only adds to the API never migrates a convention.** Migrating one is a separate decision, and on an API with outside callers it is itself a breaking change. Record it as an observation at most.
-5. **With no convention yet** (a first endpoint, a new API), recommend the standards-based default and ask that the choice be written down as the API's convention. Where the guides disagree (section 3), present the options and their trade-offs, not one answer.
+5. **With no convention yet**, recommend the standards-based default and ask that the choice be written down as the API's convention. Where the guides disagree (section 3), present the options and their trade-offs, not one answer.
 6. **Conventions that conflict with each other** are flagged, and new code follows the majority.
 7. **Some findings hold whatever the house style:** a security weakness, a breaking change on an API with outside callers, and new code that violates a requirement of a protocol the API claims to follow. When the house style itself does the wrong thing throughout, report that as an observation; do not ask the new element alone to differ, since that adds inconsistency.
 

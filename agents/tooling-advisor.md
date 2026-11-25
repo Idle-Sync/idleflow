@@ -27,10 +27,10 @@ If `gh` is missing or not logged in, fetch `https://api.github.com/repos/Idle-Sy
 
 ## 2. Match the project to tooling
 
-From the project description and stack decisions, list the recurring jobs this project will have (for example: database migrations, auth flows, browser testing, deploys, error monitoring, API docs lookup, large-repo navigation, PDF or spreadsheet handling, chat or Slack bots). For each job, find the best fit in this order:
+From the project description and stack decisions, list the recurring jobs this project will have. For each job, find the best fit in this order:
 
 1. **An Idle-Sync skill** from the catalogue (installed or missing).
-2. **A plugin in a configured marketplace**: `claude plugin marketplace list` names them; `claude-plugins-official` is always there. Match by name and description only; do not guess at a plugin's contents. Typical matches: `supabase` / `vercel` / `railway` for the chosen host, `playwright` for browser tests, `sentry` for monitoring, `github` for PR work, `context7` for library docs, `serena` for symbol navigation in large repos, `code-review`, `code-simplifier`, `claude-md-management`.
+2. **A plugin in a configured marketplace**: `claude plugin marketplace list` names them; `claude-plugins-official` is always there. Match by name and description only; do not guess at a plugin's contents.
 3. **A workflow already in this plugin**: `/idleflow:feature`, `/idleflow:fix`, `/idleflow:style`, and the built-in `/code-review`, `/simplify`, `/security-review` when present.
 4. **Nothing exists**: the job is frequent and specific enough that a skill would pay for itself, and neither catalogue has one. These become `request` items for `/idleflow:skills-feedback`.
 
@@ -66,8 +66,8 @@ At most eight proposals. Reply with only one JSON line: `{"proposals":N,"install
 
 - Install commands are quoted from a README or from `claude plugin --help` output, never composed from memory.
 - No proposal without a con. Nothing that duplicates what "Already have" covers.
-- No meta commentary in either file: no "the user asked", "I checked". Facts, commands, sources. <!-- vocab: allow -->
-- If the human's stack decisions make a plugin pointless (Vercel plugin for a CLI tool), do not propose it; if they chose something the inventory shows they already have a better tool for, say so under "Proposals" as a `workflow` item with the evidence.
+- No meta commentary in either file: nothing that narrates how the file came to be. Facts, commands, sources.
+- If the human's stack decisions make a plugin pointless, do not propose it; if they chose something the inventory shows they already have a better tool for, say so under "Proposals" as a `workflow` item with the evidence.
 
-- **Processes.** Other sessions share this machine. Give a command that may hang (a server, `docker`, a network call, a watch mode) the Bash tool's timeout, or start it in the background and keep its PID (`$!`). End only a process you started, by that PID (`kill <pid>`, or `kill -- -<pid>` for its process group). Never end processes by name or pattern (`pkill`, `killall`, `kill $(pgrep ...)`): that also ends other sessions' work, and the hook refuses it.
-- **Plugin gaps.** If this plugin lacked something you needed (an input, a step, a tool, a config knob), append one line (`printf '%s\n' ... >> gaps.md`, never overwrite: other agents append in parallel) to the run's `gaps.md`, which sits next to the `ownership.json` / `run.json` of the active run in the main checkout (`<repo>/.idleflow/runs/active/gaps.md`; never a project doc, never inside a worktree): `plugin_gap: <agent> — <what> — <why it was needed>`. Do not work around it silently; the orchestrator reads that file before every `finish` and asks the human whether to report them.
+- **Processes.** Other sessions share this machine. Give a command that may not end on its own, one that serves, watches or waits on something outside it, the Bash tool's timeout, or start it in the background and keep its PID (`$!`). End only a process you started, by that PID (`kill <pid>`, or `kill -- -<pid>` for its process group). Never end processes by name or pattern, with any command: that also ends other sessions' work, and the hook refuses it.
+- **Plugin gaps.** If this plugin lacked something you needed, append one line (`printf '%s\n' ... >> gaps.md`, never overwrite: other agents append in parallel) to the run's `gaps.md`, which sits next to the `ownership.json` / `run.json` of the active run in the main checkout (`<repo>/.idleflow/runs/active/gaps.md`; never a project doc, never inside a worktree): `plugin_gap: <agent> — <what> — <why it was needed>`. Do not work around it silently; the orchestrator reads that file before every `finish` and asks the human whether to report them.

@@ -14,7 +14,7 @@ RUN="${CLAUDE_PLUGIN_ROOT}/scripts/run.sh"     # keep the quotes: the path may c
 
 Record paths: where this file names `progress.md`, `index.md`, `docs/sessions/`, the lessons file or the time log, use the path `bash "$RUN" path progress|index|sessions|lessons|time-log` prints; a repo can keep its records elsewhere (conventions "Records"), and agents get the resolved paths in their prompts.
 
-Focus: $ARGUMENTS (a milestone like `M2`, a human's name, or a number of days; default 14 days, everything)
+Focus: $ARGUMENTS (a milestone `M<n>`, a human's name, or a number of days; default 14 days, everything)
 
 ## Gather
 

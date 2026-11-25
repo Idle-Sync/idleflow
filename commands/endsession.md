@@ -39,7 +39,7 @@ Stop, write nothing, and say what is still running when any of these holds:
 - **Runs this session.** Lines of `.idleflow/runs/log.jsonl` whose `finished` is later than the commit time of the newest note in `docs/sessions/` (by name) with `by: Claude Code session` (`git log -1 --format=%cI -- <note>`); with no such note, the runs finished today. For each: id, status, size, and from `.idleflow/runs/<id>/tasks/*/report.md` every `deviations:`, `blocked_on:` and `unfixed:` that is not `none`, and every entry of `.idleflow/runs/<id>/after-merge.md`: a next step with its `/idleflow:fix` command, ahead of any push. Each line of `.idleflow/runs/<id>/plan.md` "By hand after merge" that is not `none` is a next step too: the change to make by hand in the main checkout. A run that finished `needs-human` is a next step with its reason and, once the reason is dealt with, `/idleflow:feature resume <run id>`.
 - **Releases.** When `CLAUDE.md` says `releases: github-tagged` and a run this session proposed a tag (or every box of a `progress.md` milestone is ticked and it has no tag yet: `git tag --list`), the next step is the two commands from `CLAUDE.md` "Releases" with the version filled in. Deploy steps named in `CLAUDE.md` or `progress.md` that have not run are next steps too.
 - **Restarts.** Tooling installed this session (`tooling_installed` above 0 in a run's `run.json`, or an install you ran yourself) and plugin updates mean the next session starts with a Claude Code restart.
-- **The rest of the session.** Work done outside runs in this conversation: prototypes, research, decisions and their reasons, human decisions taken mid-run. You were there; write what happened, not what was said.
+- **The rest of the session.** Work done outside runs in this conversation: everything made, found or decided, with the reason for each decision, the human's decisions taken mid-run included. You were there; write what happened, not what was said.
 
 ## 3. Write
 
@@ -51,7 +51,7 @@ When `docs: yes`:
 
 1. The note at `$(bash "$RUN" session-name)` (named by time and author, so teammates never pick the same name), from `docs/sessions/TEMPLATE.md`, `by: Claude Code session, <git user.name>`. "Done" covers the whole session: each run (id, title, what merged, with paths) and the work outside runs. "Next" is the handoff: a numbered list in the order the next session should do it, each item one line with the exact command where there is one. Uncommitted changes and unpushed commits come first, then CI, then restarts, then release and deploy steps, then `needs-human` runs and open deviations, then the first open box of the first unfinished milestone in `progress.md`. Add the human's notes from `$ARGUMENTS` where they belong. "Open questions" holds what the human still has to decide.
 2. `progress.md`: one entry at the top, under `<!-- progress start -->`: `## <date> — session end`, at most four bullets: what landed this session, and the first two items of the handoff. Skip it when a run's retro already wrote an entry today and nothing landed since; the note alone carries the handoff then.
-3. Stage only those two files, plus any `run.sh docs` regenerated, and commit: `docs: session handoff`. Follow `CLAUDE.md` for the `Co-Authored-By` trailer. `git add` refuses an ignored path (a `docs/` kept local): skip it, never `git add -f`, and say the note stays local.
+3. Stage only those two files, plus any `run.sh docs` regenerated, and commit: `docs: session handoff`. Follow `CLAUDE.md` for the `Co-Authored-By` trailer. `git add` refuses an ignored path: skip it, never `git add -f`, and say the note stays local.
 
 No meta commentary in the note or the commit: state what happened and what is next.
 
@@ -61,8 +61,8 @@ Print the session report, then stop. It writes nothing new; every number and cla
 
 1. **Handoff**: `Handoff: <note path> (<committed <sha> | local>)`.
 2. **What happened**: each run and each piece of work outside runs, one line: what it does, estimate against actual where the time log has both, review rounds and what each found.
-3. **What broke**: everything that went wrong, Claude's own mistakes first (a wrong claim, a rule broken, a check skipped, rework, a wasted run), then retries, gate trips, review rejections, blocked tasks and failed gates. Each with its evidence (commit, `file:line`, review file, log) and what was done about it. Nothing is softened or left out because it was fixed.
-4. **What went right**: what worked and the evidence for it (a task under estimate, a clean review, a check that caught a real bug).
+3. **What broke**: everything that went wrong, Claude's own mistakes first (anything Claude got wrong or had to redo), then retries, gate trips, review rejections, blocked tasks and failed gates. Each with its evidence (commit, `file:line`, review file, log) and what was done about it. Nothing is softened or left out because it was fixed.
+4. **What went right**: what worked and the evidence for it.
 5. **Lessons**: each lesson the session recorded, one line; then any lesson the session showed that nothing records yet, marked `not recorded`.
 6. **Waiting on the human**: open decisions and questions, each with a recommendation.
 7. **Next**: the first three items of the handoff, in order.
