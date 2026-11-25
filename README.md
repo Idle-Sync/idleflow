@@ -73,6 +73,12 @@ For work an end user sees (the classifier reports `ui: true`, or `STEP_DESIGN=on
   design reviewer on `ui` tasks when the repo has an approved preview (`STEP_UX`), after the merge when the app
   runs only from the main checkout, and on its own as `/idleflow:ux`, which can fix the findings through a run
   and walk the journeys again.
+- **`/idleflow:api-docs`** writes a project's API and service reference from its code in one step
+  (**`idleflow:api-docs`**): every element callers use, its inputs, outputs, errors and authentication, and an
+  example run against the service where one is served, in the repo's own docs format. A source list beside each
+  docs file records the files each element depends on; `run.sh api-docs check` lists the elements whose source changed since their docs were
+  written, every run checks a task's changes with it before review, and `/idleflow:api-docs check` reports
+  drift at any time.
 
 ## What it adds over plain Claude Code
 
@@ -103,6 +109,7 @@ For work an end user sees (the classifier reports `ui: true`, or `STEP_DESIGN=on
 | Security review | a security reviewer on `security` tasks: the repo's own controls first, a traced source and use for every finding, OWASP risk rating with CWE ids | plan `security:`, `agents/review-security.md`, `procedures/security-review.md` |
 | AI-looking UI | `/idleflow:unslopify`: a cited catalogue, static and rendered checks, chosen looks kept, pages scored on combinations of patterns, fixes at the level the human picks and checked again | `procedures/slop.md`, `agents/slop-auditor.md`, `scripts/slop-scan.sh`, `scripts/slop-page.js` |
 | UX review | a reviewer walks the app's journeys as an end user on `ui` tasks with a preview, and on its own; each place an end user gets stuck is a finding with its screenshot | `STEP_UX`, `agents/review-ux.md`, `procedures/ux-review.md`, `commands/ux.md` |
+| API docs | written from the code by one step, each element's source recorded; a task that changes a source updates its docs before review | `api_docs:` in conventions, `agents/api-docs.md`, `commands/api-docs.md`, `run.sh api-docs` |
 | Placeholders | code that cannot do its job yet fails loudly; a plausible default is a blocking finding | implementer, correctness reviewer |
 | Checkable findings | each review finding says whether a deterministic check would have caught it; repeats become a lesson | reviewers, `agents/retro.md` |
 | Known base failures | a failure already on the commit a task started from is shown there with `run.sh exec --base`, never argued; the gate's baseline and every task's proven ones go into the run's `known-failures.md`, which later implementers and the correctness reviewer get, with or without a gate | step 5 of `commands/feature.md`, `agents/implementer.md` |
@@ -237,6 +244,7 @@ commands/customize.md           per-project settings, step toggles, agent models
 commands/doctor.md              check the repo's idleflow setup and for a newer release; offers the safe fixes
 commands/unslopify.md           audit a UI for what reads as AI-generated, then fix it at the level the human picks
 commands/ux.md                  use the app as its end users would, report where they get stuck, fix on a yes and walk again
+commands/api-docs.md            write the API and service reference from the code; `check` reports docs that no longer match
 skills/vocab/SKILL.md           one term per concept: check, fix, backfill and add a term; /idleflow:vocab, used inside and outside a run
 agents/                         one file per role; frontmatter sets the model
 hooks/hooks.json                PreToolUse → ownership-guard
