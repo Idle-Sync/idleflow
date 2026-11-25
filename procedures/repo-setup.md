@@ -6,7 +6,7 @@ Record paths, throughout: where this file names `progress.md`, `index.md`, the v
 
 Pushback applies throughout: when the human's answer conflicts with something you can cite, say so once before acting, with the evidence and a better option with its cost; then do what they decide and record the decision and its reason. Nothing without evidence.
 
-## R1. Readability mode and ignore file — when `.idleflow/conventions.md` is missing, or its `mode:` or `ignore_in:` is `unset` or absent
+## R1. Readability mode, ignore file and commit subjects — when `.idleflow/conventions.md` is missing, or its `mode:`, `ignore_in:` or `commit_format:` is `unset` or absent, or `commit_format:` is the retired `idleflow`
 
 Ensure `.idleflow/conventions.md` exists (copy `templates/conventions.md` if not; if it has no `ignore_in:` line, add the template's "Ignore rules" section). Ask the unanswered questions in one AskUserQuestion call.
 
@@ -28,6 +28,13 @@ Write the answer into the `mode:` line (`repo`, `balanced`, `explicit` or `idiom
 - **Shared: .gitignore** — the rules are committed and apply to every clone. Cons: everyone who reads the repo sees idleflow's paths.
 
 Write `exclude` or `gitignore` into the `ignore_in:` line, then run `bash "$RUN" ignore .idleflow/runs/` so the entry is in the chosen file (`run.sh new` put it in `.git/info/exclude` before the question was asked; that copy is harmless). An entry already in a committed `.gitignore` stays until the human removes it. If the human is not present, write `exclude` and say so.
+
+**Commit subjects.** How the subjects of the commits a run writes read in `git log` and the pull request. Mark Recommended the one `bash "$RUN" commit-style` prints, and put the evidence from `bash "$RUN" detect`'s `suggest commit_format:` line in its description when there is one:
+
+- **Conventional Commits** — a type and what changed (`feat: ...`, `fix: ...`), at most 72 characters; merges read `chore: merge <task title>`. Pros: what most tools and CI subject checks expect. Cons: the type prefix reads oddly in a repo that writes plain sentences.
+- **Plain sentences** — what changed, capitalised, no prefix; merges read `Merge <task title>`. Pros: matches a history written as sentences. Cons: nothing a changelog or CI check can parse.
+
+Either way the task and run ids go in the commit body (`Task:`, `Run:`), never the subject. Write `conventional` or `plain` into the `commit_format:` line (replacing a retired `idleflow`). If the human is not present, write what `commit-style` printed and say so.
 
 ## R2. Project docs
 

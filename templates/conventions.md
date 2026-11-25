@@ -144,7 +144,7 @@ the end of a run may propose one; `none` means the repo has decided to go withou
 
 worktrees_in: sibling
 worktree_setup: unset
-commit_format: idleflow
+commit_format: unset
 gate: unset
 gate_quick: unset
 gate_runs: every-task
@@ -199,12 +199,13 @@ api_docs: unset
   from the main checkout (a dev stack whose containers mount it): the screens are then checked once,
   from the main checkout, after the last merge, and the plan writes a browser criterion as
   `verify: browser after merge`.
-- `commit_format`: `idleflow` (task commits `T1: ...`, merges `idleflow: merge T1 (<run>)`),
-  `conventional` (Conventional Commits subjects of at most 72 characters, merges `chore: merge
-  <task title>`, for repos whose CI checks commit subjects) or `plain` (plain-sentence subjects
-  with no prefix, merges `Merge <task title>`, for repos whose history reads that way). Only the
-  `idleflow` format names the tool; every format puts the run and task ids in the body (`Run:`,
-  `Task:`).
+- `commit_format`: `conventional` (Conventional Commits subjects of at most 72 characters, merges
+  `chore: merge <task title>`) or `plain` (plain-sentence subjects with no prefix, merges `Merge
+  <task title>`). Either way the subject says what changed and reads on its own in `git log`; the
+  run and task ids go in the body (`Run:`, `Task:`), never the subject, since the run folder they
+  point to is not committed. `unset`, and the retired `idleflow` (task commits `T1: ...`), follow
+  the style the repo's history already uses, else `conventional` (`run.sh commit-style` prints the
+  one in force); setup asks.
 - `while_waiting`: what a run does while a slow step's result is still to come. `work` goes on with
   whatever needs nothing that result decides and touches no file the slow step uses; `wait` waits for
   each result before going on, and a missing line means `wait`.

@@ -1366,7 +1366,7 @@ bash "$RUN" own T2 '["src/sa/**"]'; bash "$RUN" own T3 '["src/sb/**","src/sc/**"
 w2="$(bash "$RUN" wt add T2 HEAD 2> "$scratch/bring2.err")"
 w3="$(bash "$RUN" wt add T3 HEAD 2> "$scratch/bring3.err")"
 check "a sub-task starts with the split task's work on the files it owns, as one commit on its own base" '[ -d "$w2" ] && [ "$(cat "$w2/src/sa/a.txt")" = a1 ] && [ "$(cat "$w2/src/sb/b.txt")" = b0 ] && [ ! -e "$w2/src/sc" ] && [ -f "$w2/src/other.txt" ] && [ "$(git -C "$w2" rev-parse HEAD^)" = "$(git rev-parse HEAD)" ] && [ -z "$(git -C "$w2" status --porcelain --untracked-files=no)" ] && has -F "T2 starts with T1'"'"'s finished work on 1 file(s) it owns" "$scratch/bring2.err"'
-check "the bring commit follows the commit format and carries the task trailer" '[ "$(git -C "$w2" log -1 --format=%s)" = "T2: bring over T1'"'"'s finished work on the files it owns" ] && [ "$(git -C "$w2" log -1 --format="%(trailers:key=Task,valueonly)")" = T2 ]'
+check "the bring commit follows the commit format, names no task in its subject and carries the task trailer" '[ "$(git -C "$w2" log -1 --format=%s)" = "chore: bring over the split task'"'"'s finished work" ] && git -C "$w2" log -1 --format=%b | has -xF "T1'"'"'s finished work on the files T2 owns." && [ "$(git -C "$w2" log -1 --format="%(trailers:key=Task,valueonly)")" = T2 ]'
 check "a sub-task whose from: has backticks and a comment brings its files too" '[ "$(cat "$w3/src/sb/b.txt")" = b1 ] && [ "$(cat "$w3/src/sc/c.txt")" = c1 ] && [ "$(cat "$w3/src/sa/a.txt")" = a0 ] && has -F "T3 starts with T1'"'"'s finished work on 2 file(s) it owns" "$scratch/bring3.err"'
 # the same file changed since on the base: the work no longer applies, and the sub-task starts clean
 bash "$RUN" wt rm T2; echo zz > src/sa/a.txt && git add src/sa/a.txt && commit -m "a.txt changed on the base"
@@ -1633,9 +1633,19 @@ det="$(cd "$f" && bash "$RUN" detect)"
 for want in "commit_format: conventional" "lessons_in: lessons.md" "progress_file: docs/progress.md" "session_names: numbered" "index_rewrite: no" "shared_files: CHANGELOG.md" "worktrees_in: inside" "gate: python3 tools/gate.py"; do
   check "detect suggests $want" 'echo "$det" | has -F "suggest $want —"'
 done
-( cd "$f" && printf 'commit_format: idleflow\n' >> .idleflow/conventions.md && mkdir -p .idleflow && printf -- '- declined: gate -> python3 tools/gate.py (doctor, today)\n' > .idleflow/suggestions.md )
-det="$(cd "$f" && bash "$RUN" detect)"; doc="$(cd "$f" && bash "$RUN" doctor 2>/dev/null)"
+cs="$(cd "$f" && bash "$RUN" commit-style)"
+check "an unset commit format follows the repo's Conventional Commits history" '[ "$cs" = conventional ]'
+( cd "$f" && printf 'commit_format: idleflow\n' >> .idleflow/conventions.md )
+det="$(cd "$f" && bash "$RUN" detect)"
+check "the retired idleflow format counts as no answer, and detect suggests the history's style" 'echo "$det" | has -F "suggest commit_format: conventional — 12 of the last 12 commit subjects are Conventional Commits"'
+( cd "$f" && sed -i.bak 's/^commit_format: .*/commit_format: plain/' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak && printf -- '- declined: gate -> python3 tools/gate.py (doctor, today)\n' > .idleflow/suggestions.md )
+det="$(cd "$f" && bash "$RUN" detect)"; doc="$(cd "$f" && bash "$RUN" doctor 2>/dev/null)"; cs="$(cd "$f" && bash "$RUN" commit-style)"
 check "detect leaves an answered key alone" '! echo "$det" | has "^suggest commit_format"'
+check "an answered commit format wins over the history" '[ "$cs" = plain ]'
+( cd "$f" && sed -i.bak 's/^commit_format: .*/commit_format: Conventional/' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak )
+det="$(cd "$f" && bash "$RUN" detect)"
+check "detect reports a commit format value it does not know" 'echo "$det" | has -F "suggest commit_format: conventional — commit_format: Conventional is not conventional or plain, so commits follow conventional"'
+( cd "$f" && sed -i.bak 's/^commit_format: .*/commit_format: plain/' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak )
 check "doctor hides a declined fit suggestion" '! echo "$doc" | has "^suggest fit gate" && echo "$doc" | has "^suggest fit lessons_in"'
 rm -rf "$f"
 f="$(mktemp -d)"; ( cd "$f" && git init -q && printf '{"scripts":{"dev":"vite"}}' > package.json )
@@ -1694,6 +1704,13 @@ det="$(cd "$f" && bash "$RUN" detect)"
 ( cd "$f" && for i in $(seq 1 40); do echo "$i" > "p$i.txt"; git add "p$i.txt"; git commit -qm "Add the p$i notes"; done )
 det="$(cd "$f" && bash "$RUN" detect)"
 check "detect suggests plain subjects for a plain history" 'echo "$det" | has "^suggest commit_format: plain —"'
+cs="$(cd "$f" && bash "$RUN" commit-style)"
+check "an unset commit format follows a plain history" '[ "$cs" = plain ]'
+fc="$(mktemp -d)"; ( cd "$fc" && git init -q && mkdir .idleflow && printf 'commit_format: idleflow\n' > .idleflow/conventions.md && git add -A && git -c user.name=t -c user.email=t@example.invalid commit -qm "Start" )
+det_c="$(cd "$fc" && bash "$RUN" detect)"; cs="$(cd "$fc" && bash "$RUN" commit-style)"
+check "a retired idleflow format with too little history becomes Conventional Commits, and detect says why" '[ "$cs" = conventional ] && echo "$det_c" | has -F "suggest commit_format: conventional — commit_format: idleflow is retired, since its subjects start with a task id"'
+rm -r -- "$fc"
+check "no commit subject idleflow writes or asks for starts with a task id, and setup asks for the style" 'has -xF "commit_format: unset" "$HERE/../templates/conventions.md" && ! has -F "idleflow: merge \$tid" "$HERE/run.sh" && ! has -F "<task-id>: test for" "$HERE/../agents/implementer.md" && has -F "it never starts with or names the task id" "$HERE/../agents/implementer.md" && has -F "it never starts with or names the task id" "$HERE/../agents/implementer-hard.md" && has -F "**Commit subjects.**" "$HERE/../procedures/repo-setup.md" && has -F "Mark Recommended the one \`bash \"\$RUN\" commit-style\` prints" "$HERE/../procedures/repo-setup.md" && has -F "\`Commit format: <what bash \"\$RUN\" commit-style prints>\`" "$HERE/../commands/feature.md" && has -F "**Commit subjects** questions" "$HERE/../commands/init.md" && ! has -F "under \`idleflow\`" "$HERE/../agents/review-conform.md"'
 check "detect suggests generated blocks for a hand-kept index" 'echo "$det" | has "^suggest generated_docs: index.md —"'
 ( cd "$f" && git checkout -q -- index.md 2>/dev/null; printf '# Index\n<!-- idleflow:generated files -->\n<!-- idleflow:end -->\n' > index.md && echo x > é.txt && git add -A && git commit -qm "é" && bash "$RUN" docs >/dev/null )
 check "the files block names non-ASCII files as they are" 'grep -qxF -- "- \`é.txt\` — (describe)" "$f/index.md"'

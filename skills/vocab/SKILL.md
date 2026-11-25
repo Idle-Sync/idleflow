@@ -46,5 +46,5 @@ The whole-repo pass, for a repo whose docs predate its vocabulary file or a newl
 ## Rules
 
 - Change only what a hit names; never reword a sentence beyond the term.
-- Commit only the files the step changed. The message is the one the step names when `commit_format:` in `.idleflow/conventions.md` is `idleflow` or `conventional`; under `plain`, the same words as a plain sentence with no prefix.
+- Commit only the files the step changed. The message is the one the step names when `bash "<run.sh>" commit-style` prints `conventional`; when it prints `plain`, the same words as a plain sentence with no prefix.
 - No meta commentary in any file or commit.
