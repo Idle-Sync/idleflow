@@ -287,7 +287,7 @@ check "every unverified check is written where the reports read it" 'for a in im
 check "every plan is checked by plan-check, and the planner knows what it checks" 'grep -q "after this and every later planner call that writes plan.md (a revision, a split): \`bash \"\$RUN\" plan-check\`" "$HERE/../commands/feature.md" && grep -q "which \`run.sh plan-check\` checks" "$HERE/../agents/planner.md"'
 check "a fix round names what it could not fix apart from the build's deviations" 'for a in implementer implementer-hard; do grep -q "^unfixed: <none | Fix mode only" "$HERE/../agents/$a.md" && grep -q "name it under \`unfixed\`, never under \`deviations\`" "$HERE/../agents/$a.md" || exit 1; done && grep -q "report names a finding under \`unfixed:\`" "$HERE/../commands/feature.md" && ! grep -q "fix round.s report named a deviation" "$HERE/../commands/feature.md" && grep -q "\`blocked_on:\` and \`unfixed:\` that is not" "$HERE/../commands/endsession.md"'
 check "a task the plan cannot finish yet is marked, revised before its group, and named in the template" 'grep -q "^blocked_until: none " "$HERE/../templates/plan.md" && grep -q "give it \`blocked_until: revision" "$HERE/../agents/planner.md" && grep -q "^0\. \*\*Blocked tasks first\.\*\*" "$HERE/../commands/feature.md"'
-check "the agents that judge the plan get the issue" '( for a in planner red-team cost-critic; do grep -q "issue.md" "$HERE/../agents/$a.md" || exit 1; done ) && grep -q "Spawn \`idleflow:planner\` with: the issue path" "$HERE/../commands/feature.md" && grep -q "each with the issue, plan.md and context.md paths" "$HERE/../commands/feature.md"'
+check "the agents that judge the plan get the issue" '( for a in planner red-team cost-critic; do grep -q "issue.md" "$HERE/../agents/$a.md" || exit 1; done ) && grep -q "Spawn \`idleflow:planner\` with: the issue path" "$HERE/../commands/feature.md" && grep -q "each with the issue, plan.md, context.md and" "$HERE/../commands/feature.md"'
 check "agents that run suites wait on long checks as jobs" '( for a in implementer implementer-hard review-correct; do grep -q "run.sh>\" wait <task-id> <n>" "$HERE/../agents/$a.md" && grep -q "Never start it again while it runs" "$HERE/../agents/$a.md" || exit 1; done )'
 
 echo "--- keep"
@@ -472,7 +472,7 @@ printf '# x\n' > .idleflow/design-system.md
 check "the doctor passes a UI repo that has its design system file" 'bash "$RUN" doctor | has -F "ok design: .idleflow/design-system.md"'
 if grep -q '^docs:' .idleflow/conventions.md; then sed -i.bak 's#^docs: .*#docs: yes#' .idleflow/conventions.md && rm -f .idleflow/conventions.md.bak; else echo 'docs: yes' >> .idleflow/conventions.md; fi
 check "with project docs on, the design system file lives with them" '[ "$(bash "$RUN" path --relative design-system)" = docs/design-system.md ] && [ "$(bash "$RUN" path design-system)" = "$(native "$(git rev-parse --show-toplevel)")/docs/design-system.md" ]'
-git rm -q --cached site.css && rm -f site.css .idleflow/design-system.md && cp "$d-conv-ds.bak" .idleflow/conventions.md
+git rm -q --cached site.css && rm -f site.css .idleflow/design-system.md && cp "$d-conv-ds.bak" .idleflow/conventions.md && rm -f "$d-conv-ds.bak"
 mkdir -p dist tests/fixtures docs/_templates ProjectSettings
 printf 'a{}\n' > dist/app.css; printf '<p>x</p>\n' > tests/fixtures/page.html; printf '<p>x</p>\n' > docs/_templates/layout.html
 git add -f dist/app.css tests/fixtures/page.html docs/_templates/layout.html
@@ -483,6 +483,19 @@ git rm -q --cached dist/app.css tests/fixtures/page.html docs/_templates/layout.
 rm -f dist/app.css tests/fixtures/page.html docs/_templates/layout.html ProjectSettings/ProjectVersion.txt; rmdir dist tests/fixtures tests docs/_templates docs ProjectSettings 2>/dev/null || true
 check "init and setup make the design system file only for a project people look at" 'grep -q "^## 5b. Design system (Opus), for a project people look at" "$HERE/../commands/init.md" && grep -q "gets no design system file" "$HERE/../commands/init.md" && grep -q "^## 5b. Design system, for a repo with a UI" "$HERE/../commands/setup.md" && grep -qF "the \`design\` line is \`ok\` or absent" "$HERE/../commands/setup.md" && grep -qF "bash \"\$RUN\" ui\` prints \`yes <file>\`" "$HERE/../commands/setup.md" && grep -q "^## System mode" "$HERE/../agents/designer.md" && grep -qF "\`DESIGN_SYSTEM\` is the path \`bash \"\$RUN\" path design-system\` prints." "$HERE/../commands/feature.md"'
 check "the design system template has every section the designer fills" '[ "$(grep -cE "^## (Direction|Type|Colour roles|Space and layout|Shape and depth|Motion|Components|Libraries|Looks this project avoids|Game)\$" "$HERE/../templates/design-system.md")" = 10 ]'
+cp .idleflow/conventions.md "$d-conv-rel.bak"
+printf 'release: unreleased\nkept_data: no\n' >> .idleflow/conventions.md
+check "unreleased software with no release tag gets no release suggestion" '! bash "$RUN" doctor | has "^suggest release:"'
+git tag v0.1.0 >/dev/null 2>&1
+check "a release tag on unreleased software suggests switching to live" 'bash "$RUN" doctor | has -F "suggest release: conventions say release: unreleased, but the repo has a release tag (v0.1.0) | fix: set release: live in .idleflow/conventions.md once the software has end users or outside callers"'
+git tag backup-1 >/dev/null 2>&1; git tag -d v0.1.0 >/dev/null 2>&1
+check "a tag that is not a release tag suggests nothing" '! bash "$RUN" doctor | has "^suggest release:"'
+git tag -d backup-1 >/dev/null 2>&1; git tag v0.2.0 >/dev/null 2>&1; [ -f .idleflow/suggestions.md ] && cp .idleflow/suggestions.md "$d-sugg-rel.bak"
+printf -- '- declined: release -> live (doctor, 2026-01-01)\n' >> .idleflow/suggestions.md
+check "a declined release suggestion stays quiet" '! bash "$RUN" doctor | has "^suggest release:"'
+git tag -d v0.2.0 >/dev/null 2>&1; if [ -f "$d-sugg-rel.bak" ]; then cp "$d-sugg-rel.bak" .idleflow/suggestions.md && rm -f "$d-sugg-rel.bak"; else rm -f .idleflow/suggestions.md; fi
+cp "$d-conv-rel.bak" .idleflow/conventions.md && rm -f "$d-conv-rel.bak"
+check "every agent that weighs compatibility follows the release setting" 'grep -q "^release: unset\$" "$HERE/../templates/conventions.md" && grep -q "^kept_data: unset\$" "$HERE/../templates/conventions.md" && grep -q "^4c. \*\*Unreleased software.\*\*" "$HERE/../agents/planner.md" && grep -qF "When the conventions say \`release: unreleased\`, ask only about what cannot be redone" "$HERE/../agents/red-team.md" && grep -qF "Under \`release: unreleased\` in conventions" "$HERE/../agents/review-conform.md" && grep -qF "\`release:\` in \`.idleflow/conventions.md\` decides first" "$HERE/../procedures/api-design.md" && grep -qF "set \`release: unreleased\` and \`kept_data: no\`" "$HERE/../commands/init.md" && grep -qF "When \`release:\` is \`unset\` or missing, ask" "$HERE/../commands/setup.md" && grep -qF "\`release:\` is answered (\`unreleased\` or \`live\`)" "$HERE/../commands/setup.md" && grep -qF "A \`suggest release\` line" "$HERE/../commands/doctor.md" && grep -qF "context.md and \`.idleflow/conventions.md\` paths" "$HERE/../commands/feature.md"'
 
 echo "--- records where the repo keeps them"
 cp .idleflow/conventions.md "$d-conv.bak"

@@ -27,6 +27,7 @@ Read `.idleflow/conventions.md` before your first edit; its rules apply to every
 - **Plain names, no jargon.** A reader who knows the language but not this codebase must understand a function from its name and its first five lines. No abbreviations the codebase does not already use everywhere.
 - **One idea per function; early return over nesting; comments say why, not what.**
 - **Boring over clever.** The plainest construct that does the job: what the language and its standard library give before a dependency, ordinary control flow before code that generates code, plain data before a class until there is behaviour to attach.
+- **Unreleased software** (`release: unreleased` in conventions.md): replace the old thing outright and leave nothing that keeps it working beside its replacement, except for stored data other programs read back and the migration `kept_data: yes` asks for; the "Release" section there says what else still holds.
 - **Handle failures where they happen.** No handler that catches every error, no swallowed errors, no silent fallbacks.
 - **No placeholder that looks finished.** Code that cannot do its job yet fails loudly and names what is missing. Never a plausible default value that lets callers and tests carry on as if it worked: a default hides the gap from every check downstream.
 - **Readability mode** (`mode:` in conventions.md) decides the shape of equivalent code:

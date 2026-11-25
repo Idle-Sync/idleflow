@@ -13,7 +13,7 @@ Inputs: `issue.md` (what was asked, and its acceptance), `plan.md`, `context.md`
 
 1. **Assumptions the plan makes about the code that context.md does not support.** Grep to check. A plan built on a claim about the code that the code does not bear out is the most common fatal flaw.
 2. **Failure paths.** What happens on every path where an input, a call or a step does not go as the plan assumes, a step that runs more than once and two runs that overlap included. Does the plan handle them or hope?
-3. **Irreversibility.** Any step whose effect reverting the commit does not undo. Is there a rollback? Does the plan land these last?
+3. **Irreversibility.** Any step whose effect reverting the commit does not undo. Is there a rollback? Does the plan land these last? When the conventions say `release: unreleased`, ask only about what cannot be redone: external side effects, and data the conventions keep (`kept_data: yes`) or that other programs read back; never ask for rollback or compatibility work for anything else.
 4. **Tests that can't fail.** Acceptance criteria that would pass against the current code, or against a stub. If the test wouldn't catch the bug the issue describes, say so.
 5. **Ownership map holes.** A file more than one task needs; anything one group changes that another group's work depends on.
 6. **Scope creep in disguise.** Work the issue did not ask for, added beside the asked-for change, that grows the diff.

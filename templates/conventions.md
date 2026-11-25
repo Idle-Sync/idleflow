@@ -70,6 +70,24 @@ Where the lessons file lives. `idleflow` keeps it at `.idleflow/lessons.md`; `do
 lessons file the repo already keeps. Either way it is committed and the whole team reads the same
 lessons. Unset means `.idleflow/`. Asked once, when docs are on.
 
+## Release
+
+release: unset
+kept_data: unset
+
+`unreleased` means no one outside the team uses the software yet: no public end users, no outside
+callers of its APIs, no stored data anyone needs kept. While it holds, no plan, task or review adds
+or asks for anything whose only purpose is to keep something old working for end users or callers
+beside its replacement: a change replaces the old thing outright, everywhere in one go, and a
+finding about breaking existing end users or callers is not raised. The code still works and its
+tests pass, and teammates' setups keep working: a change that needs their local data reset says
+so in its PR. `kept_data: yes` means the team keeps a shared development or staging database whose
+data survives changes, so a schema change still comes with a migration for it, without rollback or
+compatibility work; `no` means development data may be reset. `live` means the software has
+end users or callers outside the team, and every rule that protects them applies. `unset` reads as
+`live`, the safe side, until setup or init answers it. Stored data in a format other programs read
+back keeps its compatibility rules either way.
+
 ## Records
 
 Where this repo keeps the records idleflow reads and writes. The defaults are idleflow's own files;

@@ -34,7 +34,7 @@ Casing of fields, where a version goes (or whether there is one), the error body
 
 ## 4. Outside callers
 
-Compatibility rules apply when the API has a caller the change cannot update in the same commit. That is so when any of these holds: a release tag or a published package exists, the contract names a production server, a stability marker says beta or stable, other repositories or installed clients call it, data or messages in the API's format are already stored, or a receiver has registered for its events. When none holds, the API has no outside callers yet:
+Compatibility rules apply when the API has a caller the change cannot update in the same commit. `release:` in `.idleflow/conventions.md` decides first: `unreleased` means it has none, apart from stored data (below). With `live`, or with no answer, it has one when any of these holds: a release tag or a published package exists, the contract names a production server, a stability marker says beta or stable, other repositories or installed clients call it, data or messages in the API's format are already stored, or a receiver has registered for its events. When none holds, the API has no outside callers yet:
 
 - The compatibility checks in section 2 (removal, rename, retype, changed defaults, deprecation work, breaking-change tools) are skipped.
 - Every other check still applies.
