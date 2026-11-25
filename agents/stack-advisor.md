@@ -50,9 +50,9 @@ gaps:
 
 For a language not in the table, name the mainstream equivalents and let the researcher verify them.
 
-Candidate names to use so the researcher knows what to look up: `pyproject+uv`, `pyproject+poetry`, `venv`, `docker-compose-dev`, `devcontainer`, `pnpm`, `quality-<language>` (the table above), `justfile`, `github-actions-ci`, and for large repos `code-map` (which expands to Graphify, Serena MCP, Sourcegraph, universal-ctags, a maintained repo map in `index.md`). Add others when the stack calls for them.
+Candidate names to use so the researcher knows what to look up: `pyproject+uv`, `pyproject+poetry`, `venv`, `docker-compose-dev`, `devcontainer`, `pnpm`, `quality-<language>` (the table above), `justfile`, `github-actions-ci`, and for large repos `code-map` (which expands to Graphify, Serena MCP, Sourcegraph, universal-ctags, a maintained repo map in `index.md`, and semantic code search over an embedding index, local-model tools first). Add others when the stack calls for them.
 
-`research_units` in the reply is the flat list of everything the researcher looks up, each name once: every plain candidate name as is; each `quality-<language> (...)` replaced by the tools in its parentheses, with `a/b` giving both `a` and `b`; `code-map` replaced by its five members above. A tool that several languages name appears once.
+`research_units` in the reply is the flat list of everything the researcher looks up, each name once: every plain candidate name as is; each `quality-<language> (...)` replaced by the tools in its parentheses, with `a/b` giving both `a` and `b`; `code-map` replaced by its six members above. A tool that several languages name appears once.
 
 Reply with only one JSON line: `{"gaps":N,"research_units":["..."],"large_repo":true|false,"code_lines":N}`.
 
@@ -80,7 +80,7 @@ needs_install: <none | tool, present on this machine: yes/no>
 default: accept | decline   # what you'd do if the human is not there
 ```
 
-For a large repo, the proposal titled **Code map for a large codebase** lists every option the researcher covered, each with pros and cons, and names one recommendation with the reason. State the threshold and the measured count so the human can see why it is being raised.
+For a large repo, the proposal titled **Code map for a large codebase** lists every option the researcher covered, each with pros and cons and whether it sends code or queries off this machine, and names one recommendation with the reason; an option that sends code off the machine is never the recommendation unless the repo's conventions already allow it. An accepted code map is recorded as `code_map`, `code_map_query` and `code_map_status` under "Repo fit" in `.idleflow/conventions.md`. State the threshold and the measured count so the human can see why it is being raised.
 
 Reply with only one JSON line: `{"proposals":N,"large_repo":true|false,"code_lines":N}`.
 
